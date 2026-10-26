@@ -44,6 +44,10 @@ export interface TaskItem {
   slaDueMs: number;
   description: string;
   requester: string;
+  /** Revision rows: validation detail, shown as "Validation failed · <summary>". */
+  checkSummary?: string;
+  /** Waiting rows: shown as "Submitted by …" instead of "Assigned by …" when present. */
+  submittedBy?: string;
 }
 
 export const PRIORITY_RANK: Record<TaskPriority, number> = {
@@ -87,6 +91,47 @@ export function formatSla(slaDueMs: number, nowMs: number): string {
   return diff < 0 ? `Overdue ${label}` : `${label} left`;
 }
 
+/* -------------------------------------------------------- glance flags -- */
+
+export type GlanceFlagTone = 'danger' | 'warn' | 'ok' | 'dark' | 'light';
+
+export interface GlanceFlag {
+  text: string;
+  tone: GlanceFlagTone;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Right-side badge for "Needs revision" rows: HI PRI (dark grey) or LOW PRI (light grey). */
+export function revisionRowFlag(priority: TaskPriority): GlanceFlag {
+  const hi = priority === 'urgent' || priority === 'high';
+  return hi ? { text: 'HI PRI', tone: 'dark' } : { text: 'LOW PRI', tone: 'light' };
+}
+
+/** Right-side badge for "Waiting for your review" rows, bucketed by day. */
+export function pendingRowFlag(slaDueMs: number, nowMs: number): GlanceFlag {
+  const diff = slaDueMs - nowMs;
+  if (diff < 0) return { text: 'Past due', tone: 'danger' };
+  const days = Math.floor(diff / DAY_MS);
+  if (days < 1) return { text: '0d left', tone: 'warn' };
+  return { text: `${days}d left`, tone: 'ok' };
+}
+
+/** Glance ordering for revision rows: HI PRI (0) always precedes LOW PRI (1). */
+export function revisionRank(priority: TaskPriority): number {
+  return priority === 'urgent' || priority === 'high' ? 0 : 1;
+}
+
+/**
+ * Glance ordering for waiting-review rows: Past due (0) first,
+ * then days-left ascending — 0d left (1), 1d left (2), and so on.
+ */
+export function pendingRank(slaDueMs: number, nowMs: number): number {
+  const diff = slaDueMs - nowMs;
+  if (diff < 0) return 0;
+  return 1 + Math.floor(diff / DAY_MS);
+}
+
 /* ------------------------------------------------------------------ goals -- */
 
 export interface WeeklyGoals {
@@ -108,6 +153,11 @@ export function validateGoalInput(raw: string): string | null {
 export function parseGoalInput(raw: string): number | null {
   if (validateGoalInput(raw) !== null) return null;
   return Number(raw.trim());
+}
+
+/** Step a goal up/down by one, never dropping below 1. */
+export function stepGoal(goal: number, delta: 1 | -1): number {
+  return Math.max(1, goal + delta);
 }
 
 /** Ring fill fraction, capped at 100%. Text counts may still exceed the goal. */

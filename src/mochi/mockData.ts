@@ -8,12 +8,13 @@ function dueIn(ms: number): number {
   return Date.now() + ms;
 }
 
-export const DEFAULT_GOALS: WeeklyGoals = { reviewGoal: 5, submissionGoal: 4 };
+export const DEFAULT_GOALS: WeeklyGoals = { reviewGoal: 5, submissionGoal: 2 };
 
-/** Completed counts this week. Reviews intentionally exceed the goal to show ring capping. */
-export const WEEKLY_COMPLETED = { reviewsCompleted: 7, submissionsCompleted: 3 };
+/** Completed counts this week: 1/5 reviewed, 2/2 accepted. */
+export const WEEKLY_COMPLETED = { reviewsCompleted: 1, submissionsCompleted: 2 };
 
-export const GOALS_STORAGE_KEY = 'mochi.goals.v1';
+/* v3: accepted-goal default is now 2, so stored v2 goals don't linger. */
+export const GOALS_STORAGE_KEY = 'mochi.goals.v3';
 export const PET_POS_STORAGE_KEY = 'mochi.petPos.v1';
 
 export function loadGoals(): WeeklyGoals {
@@ -49,103 +50,62 @@ export function saveGoals(goals: WeeklyGoals): void {
 
 export const MOCK_TASKS: TaskItem[] = [
   {
-    id: 'T-1042',
-    title: 'Checkout flow refactor',
-    type: 'Code review',
-    priority: 'urgent',
-    status: 'pending_review',
-    slaDueMs: dueIn(35 * MIN),
-    description:
-      'Refactors the checkout state machine into smaller reducers. Please check the payment retry path and the new error boundary before sign-off.',
-    requester: 'Priya N.',
-  },
-  {
-    id: 'T-1043',
-    title: 'Payments SLA copy pass',
-    type: 'Doc review',
+    id: 'T-2001',
+    title: 'ember-campfire-create-uniqueness',
+    type: 'Validation',
     priority: 'urgent',
     status: 'revision_required',
-    slaDueMs: dueIn(50 * MIN),
-    description:
-      'Second pass on the payments SLA wording. Legal flagged two paragraphs; the author has addressed one and needs a decision on the refund window phrasing.',
-    requester: 'Marcus L.',
-  },
-  {
-    id: 'T-1044',
-    title: 'OAuth token rotation',
-    type: 'Security review',
-    priority: 'urgent',
-    status: 'pending_review',
-    slaDueMs: dueIn(3 * HOUR),
-    description:
-      'Rotates OAuth refresh tokens on each use. Review the migration plan for existing sessions and the fallback when the token endpoint is slow.',
-    requester: 'Aisha K.',
-  },
-  {
-    id: 'T-1045',
-    title: 'Onboarding empty states',
-    type: 'Design review',
-    priority: 'high',
-    status: 'pending_review',
     slaDueMs: dueIn(2 * HOUR),
     description:
-      'Empty-state illustrations and copy for the new onboarding checklist. Three variants to compare; accessibility notes are attached to the mock.',
-    requester: 'Diego R.',
+      'Uniqueness check on campfire creation failed Oracle sampling 1 of 3. Rework the dedupe key, then request another validation pass.',
+    requester: 'Arnav Narula',
+    checkSummary: 'Oracle 1/3',
   },
   {
-    id: 'T-1046',
-    title: 'Push notification payload',
+    id: 'T-2002',
+    title: 'ember-campfire-retention-age-trim',
+    type: 'Validation',
+    priority: 'low',
+    status: 'revision_required',
+    slaDueMs: dueIn(30 * HOUR),
+    description:
+      'Retention age trim failed 5 validation checks. Address the failing checks and request another validation pass.',
+    requester: 'Debra Xu',
+    checkSummary: '5 checks failed',
+  },
+  {
+    id: 'T-2003',
+    title: 'ember-llm-egress-failover-complete',
     type: 'Code review',
     priority: 'high',
-    status: 'revision_required',
-    slaDueMs: dueIn(5 * HOUR),
+    status: 'pending_review',
+    slaDueMs: dueIn(-45 * MIN),
     description:
-      'Shrinks the push payload and adds a version flag. Revision requested: add a fallback for older clients that ignore the new flag.',
-    requester: 'Sofia M.',
+      'Failover-complete signal for LLM egress is past due. Arnav is waiting on sign-off to close the rollout.',
+    requester: 'Arnav Narula',
   },
   {
-    id: 'T-1047',
-    title: 'Avatar upload edge cases',
-    type: 'QA sign-off',
+    id: 'T-2004',
+    title: 'automend-add-aggregate-persistence-schema',
+    type: 'Code review',
     priority: 'normal',
     status: 'pending_review',
-    slaDueMs: dueIn(15 * MIN),
+    slaDueMs: dueIn(5 * HOUR),
     description:
-      'Sign-off on avatar upload retries after network drops. The SLA clock is almost out — a quick pass over the two failing device logs is enough.',
-    requester: 'Tom H.',
+      'Aggregate persistence schema for automend, submitted this morning. Review the migration before end of day.',
+    requester: 'Sai Sriram Morthi',
+    submittedBy: 'Sai Sriram Morthi',
   },
   {
-    id: 'T-1048',
-    title: 'Weekly analytics export',
-    type: 'QA sign-off',
-    priority: 'normal',
+    id: 'T-2005',
+    title: 'ember-creature-reply-no-bump',
+    type: 'Code review',
+    priority: 'low',
     status: 'pending_review',
     slaDueMs: dueIn(26 * HOUR),
     description:
-      'Routine sign-off that the weekly export matches the dashboard totals. Spot-check the top three rows and confirm the CSV encoding.',
-    requester: 'Lena W.',
-  },
-  {
-    id: 'T-1049',
-    title: 'Dark mode contrast fixes',
-    type: 'Design review',
-    priority: 'low',
-    status: 'revision_required',
-    slaDueMs: dueIn(-20 * MIN),
-    description:
-      'Contrast fixes for dark mode missed the AA threshold on two surfaces. The SLA has lapsed; still worth a quick look so it can ship with the next train.',
-    requester: 'Diego R.',
-  },
-  {
-    id: 'T-1050',
-    title: 'Help center IA draft',
-    type: 'Doc review',
-    priority: 'low',
-    status: 'pending_review',
-    slaDueMs: dueIn(3 * 24 * HOUR),
-    description:
-      'Early draft of the help-center information architecture. No rush — comments on section grouping are welcome whenever there is time.',
-    requester: 'Priya N.',
+      'Reply-no-bump behavior for creature notifications, assigned yesterday and due tomorrow.',
+    requester: 'Debra Xu',
   },
 ];
 
@@ -157,18 +117,18 @@ export interface NotificationTemplate {
 export const NOTIFICATION_TEMPLATES: NotificationTemplate[] = [
   {
     title: 'Review requested',
-    body: 'Priya N. requested your review on “Checkout flow refactor”.',
+    body: 'Arnav Narula requested your review on “ember-llm-egress-failover-complete”.',
   },
   {
     title: 'SLA approaching',
-    body: '“Avatar upload edge cases” needs QA sign-off in about 15 minutes.',
+    body: '“automend-add-aggregate-persistence-schema” is due later today.',
   },
   {
     title: 'Revision submitted',
-    body: 'Marcus L. resubmitted “Payments SLA copy pass” for another look.',
+    body: '“ember-campfire-create-uniqueness” failed validation — Oracle 1/3.',
   },
   {
-    title: 'Urgent review',
-    body: 'Aisha K. flagged “OAuth token rotation” as urgent security review.',
+    title: 'Assigned to you',
+    body: 'Debra Xu assigned “ember-creature-reply-no-bump” to you.',
   },
 ];

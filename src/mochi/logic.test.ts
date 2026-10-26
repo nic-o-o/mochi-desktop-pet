@@ -4,10 +4,15 @@ import {
   clampPetPosition,
   formatSla,
   parseGoalInput,
+  pendingRank,
+  pendingRowFlag,
   placeFloating,
   resolvePetState,
+  revisionRank,
+  revisionRowFlag,
   ringFraction,
   sortTasks,
+  stepGoal,
   unionBounds,
   validateGoalInput,
 } from './logic.ts';
@@ -136,6 +141,18 @@ describe('validateGoalInput / parseGoalInput — positive integers only', () => 
   });
 });
 
+describe('stepGoal — card steppers never drop below 1', () => {
+  it('steps the goal up and down by one', () => {
+    expect(stepGoal(4, 1)).toBe(5);
+    expect(stepGoal(4, -1)).toBe(3);
+  });
+
+  it('clamps at 1 instead of reaching 0', () => {
+    expect(stepGoal(1, -1)).toBe(1);
+    expect(stepGoal(2, -1)).toBe(1);
+  });
+});
+
 describe('ringFraction — capped at 100%, text counts unaffected', () => {
   it('caps over-goal counts at 1 while partial progress stays proportional', () => {
     expect(ringFraction(7, 5)).toBe(1);
@@ -156,6 +173,42 @@ describe('formatSla', () => {
     expect(formatSla(now + 200 * 60_000, now)).toBe('3h 20m left');
     expect(formatSla(now + 49 * 3_600_000, now)).toBe('2d 1h left');
     expect(formatSla(now - 15 * 60_000, now)).toBe('Overdue 15m');
+  });
+});
+
+describe('glance flags — panel row badges', () => {
+  it('marks revision rows HI PRI dark grey, LOW PRI light grey', () => {
+    expect(revisionRowFlag('urgent')).toEqual({ text: 'HI PRI', tone: 'dark' });
+    expect(revisionRowFlag('high')).toEqual({ text: 'HI PRI', tone: 'dark' });
+    expect(revisionRowFlag('normal')).toEqual({ text: 'LOW PRI', tone: 'light' });
+    expect(revisionRowFlag('low')).toEqual({ text: 'LOW PRI', tone: 'light' });
+  });
+
+  it('buckets waiting-review SLAs into Past due / 0d left / Nd left', () => {
+    const now = 1_000_000_000;
+    expect(pendingRowFlag(now - 1, now)).toEqual({ text: 'Past due', tone: 'danger' });
+    expect(pendingRowFlag(now + 60_000, now)).toEqual({ text: '0d left', tone: 'warn' });
+    expect(pendingRowFlag(now + 23 * 3_600_000, now)).toEqual({ text: '0d left', tone: 'warn' });
+    expect(pendingRowFlag(now + 26 * 3_600_000, now)).toEqual({ text: '1d left', tone: 'ok' });
+    expect(pendingRowFlag(now + 3 * 86_400_000, now)).toEqual({ text: '3d left', tone: 'ok' });
+  });
+
+  it('ranks HI PRI revision rows above LOW PRI rows', () => {
+    expect(revisionRank('urgent')).toBeLessThan(revisionRank('low'));
+    expect(revisionRank('high')).toBeLessThan(revisionRank('normal'));
+    expect(revisionRank('urgent')).toBe(revisionRank('high'));
+    expect(revisionRank('normal')).toBe(revisionRank('low'));
+  });
+
+  it('ranks waiting-review rows Past due first, then days ascending', () => {
+    const now = 1_000_000_000;
+    const overdue = pendingRank(now - 1, now);
+    const d0 = pendingRank(now + 60_000, now);
+    const d1 = pendingRank(now + 26 * 3_600_000, now);
+    const d2 = pendingRank(now + 2 * 86_400_000, now);
+    expect(overdue).toBeLessThan(d0);
+    expect(d0).toBeLessThan(d1);
+    expect(d1).toBeLessThan(d2);
   });
 });
 

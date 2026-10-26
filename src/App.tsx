@@ -31,14 +31,14 @@ import { OverviewPanel } from './mochi/OverviewPanel.tsx';
 import { ExpandedView } from './mochi/ExpandedView.tsx';
 import './App.css';
 
-export const PET_BOX = 168;
-const PANEL_SIZE = { w: 320, h: 470 };
+export const PET_BOX = 144;
+const PANEL_SIZE = { w: 352, h: 470 };
 const BUBBLE_SIZE = { w: 264, h: 132 };
 const BUBBLE_AUTO_DISMISS_MS = 7000;
 /* desktop shell union rects (outer sizes + shadow margin, generous on purpose) */
 const UNION_PAD = 16;
 const PET_UNION_H = 212;
-const PANEL_UNION = { w: 384, h: 518 };
+const PANEL_UNION = { w: 384, h: 700 };
 const BUBBLE_UNION = { w: 312, h: 180 };
 const EXPANDED_UNION = { w: 624, h: 692 };
 const PAW_UNION = { w: 96, h: 96 };
@@ -433,7 +433,8 @@ export default function App() {
           <section className="page-card">
             <h2>Weekly goals</h2>
             <p>
-              Goals live with Mochi: open the task panel, choose “Edit weekly goals”, and the rings
+              Goals live with Mochi: open the task panel, hover a stat card and use the
+              ^/v steppers (or “Edit weekly goals” in the full task view), and the rings
               around the pet update immediately. Goals and the pet's position persist across refreshes.
             </p>
           </section>
@@ -501,15 +502,6 @@ export default function App() {
           >
             −
           </button>
-          <p className="pet-caption" aria-hidden="true">
-            <span className="cap-item" title={`Reviews: ${WEEKLY_COMPLETED.reviewsCompleted} of ${goals.reviewGoal}`}>
-              <span className="dot dot-green" />R {WEEKLY_COMPLETED.reviewsCompleted}/{goals.reviewGoal}
-            </span>
-            <span className="cap-item" title={`Submissions: ${WEEKLY_COMPLETED.submissionsCompleted} of ${goals.submissionGoal}`}>
-              <span className="dot dot-orange" />S {WEEKLY_COMPLETED.submissionsCompleted}/{goals.submissionGoal}
-            </span>
-          </p>
-          <p className="pet-state" aria-hidden="true">{petState}</p>
         </div>
       ) : (
         <button
@@ -536,22 +528,10 @@ export default function App() {
           submissionsCompleted={WEEKLY_COMPLETED.submissionsCompleted}
           goals={goals}
           nowMs={nowMs}
-          editing={editingIn === 'panel'}
           onSaveGoals={handleSaveGoals}
-          onCancelEdit={() => setEditingIn(null)}
           onClose={() => {
             setPanelOpen(false);
             setEditingIn(null);
-          }}
-          onEditGoals={() => {
-            touch();
-            setEditingIn('panel');
-          }}
-          onViewAll={() => {
-            touch();
-            setPanelOpen(false);
-            setSelectedId(null);
-            setExpandedOpen(true);
           }}
           onOpenTask={openTaskDetail}
         />

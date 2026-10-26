@@ -60,7 +60,7 @@ Manual checklist on the Mac (not yet run — no display server here):
    goals, Cmd+Shift+M simulates a notification.
 4. Clicks on transparent gaps beside the pet reach the app below (nothing
    hides unexpectedly); idle 10s → sleepy; swipe Spaces — the pet follows.
-5. `npm test` still passes (38 tests, incl. bridge + union geometry).
+5. `npm test` still passes (44 tests, incl. bridge + union geometry + glance flags + goal steppers).
 
 Limits: primary display only (re-clamped on display change); overlay level is
 `floating` (switch to `screen-saver` in `electron/main.mjs` to float over
@@ -76,9 +76,9 @@ the fix is a direct move-window IPC bypassing React state per frame.
 - “Simulate notification” → nervous bubble near the pet → clicking the bubble
   opens the panel and dismisses the bubble (bubbles also auto-dismiss after 7s).
 - Goal editor accepts positive integers only (`0`, `abc`, `2.5` rejected with
-  messages, Save disabled); saving updates the panel meters, the pet rings, and
+  messages, Save disabled); saving updates the panel cards, the pet rings, and
   `localStorage` immediately.
-- Expanded view lists 9 mock tasks sorted by priority then nearest SLA;
+- Expanded view lists 5 mock tasks sorted by priority then nearest SLA;
   titles open a local mock detail; search drives an empty state; the footer
   stays visible while the list scrolls; “Back to overview” returns to the panel.
 - Hide (−) closes pet + panel and leaves a paw restore button; restore works.
@@ -100,6 +100,6 @@ the fix is a direct move-window IPC bypassing React state per frame.
   avoid double cards; the expanded task view counts as “panel open” for the
   Focused state.
 - Hidden state is session-only (not persisted); completed counts are fixed mock
-  data (7 reviews / 5 goal shows ring capping with true counts in text).
+  data (1 review of 5, 2 submissions of 2, with true counts in text).
 - Task detail actions (approve/request changes) are not included — detail is
   read-only by design for this phase.

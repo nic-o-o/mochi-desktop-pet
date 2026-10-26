@@ -10,16 +10,19 @@ interface MochiPetProps {
 
 const CX = 74;
 const CY = 70;
+/* Body scale — the pet shrinks toward the center while the ring stays put. */
+const BODY_SCALE = 0.85;
 /* Single split ring: green fills the upper half, orange the lower half.
    Arc ends stop short of the 3/9 o'clock joints so the round caps meet
    with a small gap instead of overlapping. */
-const RING_R = 63;
+const RING_R = 48;
 const GAP_DEG = 6;
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 const ringPt = (deg: number) =>
   `${(CX + RING_R * Math.cos(toRad(deg))).toFixed(2)} ${(CY - RING_R * Math.sin(toRad(deg))).toFixed(2)}`;
 const TOP_HALF = `M ${ringPt(180 - GAP_DEG)} A ${RING_R} ${RING_R} 0 0 1 ${ringPt(GAP_DEG)}`;
-const BOTTOM_HALF = `M ${ringPt(180 + GAP_DEG)} A ${RING_R} ${RING_R} 0 0 0 ${ringPt(360 - GAP_DEG)}`;
+/* Bottom half runs right-to-left so the orange fill grows from the right. */
+const BOTTOM_HALF = `M ${ringPt(360 - GAP_DEG)} A ${RING_R} ${RING_R} 0 0 1 ${ringPt(180 + GAP_DEG)}`;
 
 /**
  * Placeholder "Mochi" illustration (SVG/CSS approximation — no design assets
@@ -66,25 +69,28 @@ export function MochiPet({ state, reviewFrac, subFrac }: MochiPetProps) {
       )}
 
       {/* body */}
-      <g className="mochi-body">
+      <g
+        className="mochi-body"
+        transform={`translate(${CX} ${CY}) scale(${BODY_SCALE}) translate(${-CX} ${-CY})`}
+      >
         {/* tail */}
         <path
-          d="M38 92 Q22 94 24 78 Q25 68 34 70"
+          d="M110 92 Q126 94 124 78 Q123 68 114 70"
           fill="none"
-          stroke="#f3c98b"
+          stroke="#7f6cc4"
           strokeWidth={9}
           strokeLinecap="round"
         />
-        {/* ears */}
-        <path d="M50 44 L44 22 L64 34 Z" fill="#fdf1de" stroke="#e8b96f" strokeWidth={2.5} strokeLinejoin="round" />
-        <path d="M98 44 L104 22 L84 34 Z" fill="#fdf1de" stroke="#e8b96f" strokeWidth={2.5} strokeLinejoin="round" />
-        <path d="M51 38 L48 28 L58 33 Z" fill="#f6c9d4" />
-        <path d="M97 38 L100 28 L90 33 Z" fill="#f6c9d4" />
+        {/* ears — wide bases sunk into the head so no gap shows */}
+        <path d="M52 54 L48 28 L68 46 Z" fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} strokeLinejoin="round" />
+        <path d="M96 54 L100 28 L80 46 Z" fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} strokeLinejoin="round" />
+        <path d="M54 48 L52 35 L61 42 Z" fill="#b3a1e1" />
+        <path d="M94 48 L96 35 L87 42 Z" fill="#b3a1e1" />
         {/* body blob */}
-        <ellipse cx={CX} cy={CY + 4} rx={37} ry={35} fill="#fff8ee" stroke="#e8b96f" strokeWidth={2.5} />
+        <ellipse cx={CX} cy={CY + 4} rx={37} ry={35} fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} />
         {/* feet */}
-        <ellipse cx={58} cy={102} rx={10} ry={6} fill="#fbeed7" stroke="#e8b96f" strokeWidth={2} />
-        <ellipse cx={90} cy={102} rx={10} ry={6} fill="#fbeed7" stroke="#e8b96f" strokeWidth={2} />
+        <ellipse cx={58} cy={102} rx={10} ry={6} fill="#e7def9" stroke="#7f6cc4" strokeWidth={2} />
+        <ellipse cx={90} cy={102} rx={10} ry={6} fill="#e7def9" stroke="#7f6cc4" strokeWidth={2} />
         {/* blush */}
         <ellipse cx={52} cy={76} rx={6} ry={4} fill="#f6c9d4" opacity={0.8} />
         <ellipse cx={96} cy={76} rx={6} ry={4} fill="#f6c9d4" opacity={0.8} />
