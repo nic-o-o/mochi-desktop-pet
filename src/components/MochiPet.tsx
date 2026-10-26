@@ -38,43 +38,91 @@ function clampPosition(x: number, y: number): XY {
   };
 }
 
-function Ring({
-  radius,
-  fraction,
-  color,
-  track,
+const RING_R = 72;
+const REVIEW_RING = '#80b588';
+const REVIEW_TRACK = 'rgba(128, 181, 136, 0.28)';
+const SUBMISSION_RING = '#b2a898';
+const SUBMISSION_TRACK = 'rgba(178, 168, 152, 0.32)';
+
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n));
+}
+
+/**
+ * Single ring split half-and-half: reviews fill the top-left half,
+ * submissions fill the bottom-right half. Each half shows its own
+ * progress fraction over a soft track of the same hue.
+ *
+ * The SVG circle path starts at 3 o'clock and runs clockwise, so the
+ * group is rotated 120°: local path units 0–50 land on clock positions
+ * ~7–8 o'clock → 12 → ~1–2 o'clock (top-left half), and units 50–100
+ * land on the bottom-right half. pathLength={100} keeps the dash
+ * math in percent.
+ */
+function SplitRing({
+  reviewFraction,
+  submissionFraction,
 }: {
-  radius: number;
-  fraction: number;
-  color: string;
-  track: string;
+  reviewFraction: number;
+  submissionFraction: number;
 }) {
-  const c = 2 * Math.PI * radius;
-  const offset = c * (1 - Math.min(1, Math.max(0, fraction)));
+  const reviewFill = clamp01(reviewFraction) * 50;
+  const submissionFill = clamp01(submissionFraction) * 50;
   return (
-    <>
+    <g transform="rotate(120 84 84)">
       <circle
         cx={84}
         cy={84}
-        r={radius}
+        r={RING_R}
         fill="none"
-        stroke={track}
+        stroke={REVIEW_TRACK}
         strokeWidth={7}
+        pathLength={100}
+        strokeDasharray="50 100"
+        strokeDashoffset={0}
       />
       <circle
         cx={84}
         cy={84}
-        r={radius}
+        r={RING_R}
         fill="none"
-        stroke={color}
+        stroke={SUBMISSION_TRACK}
         strokeWidth={7}
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={offset}
-        transform="rotate(-90 84 84)"
-        className="mochi-ring-fill"
+        pathLength={100}
+        strokeDasharray="50 100"
+        strokeDashoffset={-50}
       />
-    </>
+      {reviewFill > 0 && (
+        <circle
+          cx={84}
+          cy={84}
+          r={RING_R}
+          fill="none"
+          stroke={REVIEW_RING}
+          strokeWidth={7}
+          strokeLinecap="round"
+          pathLength={100}
+          strokeDasharray={`${reviewFill} 100`}
+          strokeDashoffset={0}
+          className="mochi-ring-fill"
+        />
+      )}
+      {submissionFill > 0 && (
+        <circle
+          cx={84}
+          cy={84}
+          r={RING_R}
+          fill="none"
+          stroke={SUBMISSION_RING}
+          strokeWidth={7}
+          strokeLinecap="round"
+          pathLength={100}
+          strokeDasharray={`${submissionFill} 100`}
+          strokeDashoffset={-50}
+          className="mochi-ring-fill"
+        />
+      )}
+    </g>
   );
 }
 
@@ -290,17 +338,9 @@ export default function MochiPet(props: MochiPetProps) {
 
       <div className="mochi-rings">
         <svg viewBox="0 0 168 168" aria-hidden="true">
-          <Ring
-            radius={76}
-            fraction={reviewFraction}
-            color="#2fa36b"
-            track="rgba(47,163,107,0.18)"
-          />
-          <Ring
-            radius={65}
-            fraction={submissionFraction}
-            color="#e8930c"
-            track="rgba(232,147,12,0.18)"
+          <SplitRing
+            reviewFraction={reviewFraction}
+            submissionFraction={submissionFraction}
           />
         </svg>
         <div className="mochi-body">
@@ -324,10 +364,10 @@ export default function MochiPet(props: MochiPetProps) {
       </div>
 
       <div className="mochi-caption" aria-label={`Reviews ${reviewCaption}, submissions ${submissionCaption}`}>
-        <span className="mochi-dot mochi-dot--green" aria-hidden="true" />
+        <span className="mochi-dot mochi-dot--review" aria-hidden="true" />
         {reviewCaption}
         <span className="mochi-caption-sep" aria-hidden="true">·</span>
-        <span className="mochi-dot mochi-dot--orange" aria-hidden="true" />
+        <span className="mochi-dot mochi-dot--submission" aria-hidden="true" />
         {submissionCaption}
       </div>
     </div>

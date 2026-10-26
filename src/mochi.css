@@ -171,8 +171,8 @@
   display: inline-block;
 }
 
-.mochi-dot--green { background: #2fa36b; }
-.mochi-dot--orange { background: #e8930c; }
+.mochi-dot--review { background: #80b588; }
+.mochi-dot--submission { background: #b2a898; }
 .mochi-caption-sep { color: #b8a88d; }
 
 /* Notification bubble */
