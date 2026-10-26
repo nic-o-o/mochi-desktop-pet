@@ -1,72 +1,105 @@
-# Mochi · Desktop Pet UI (prototype)
+# Mochi — Desktop Pet UI Prototype
 
-A floating desktop-pet companion that tracks pending tasks, items awaiting
-review, and weekly goals. Built with React + TypeScript + Vite, using local
-mock data only.
+A floating desktop-pet companion that tracks pending reviews, revision requests,
+and weekly goals. Built with React, TypeScript, and Vite. Local mock data only —
+no network, auth, or internal APIs.
 
 ## Run it
 
-```bash
+```sh
 npm install
-npm run dev      # prototype UI in the browser
-npm test         # vitest suite (24 tests)
-npm run build    # production build
+npm run dev
 ```
 
-## Desktop app (Tauri, macOS)
+Then open the printed local URL (default `http://localhost:5173/`).
 
-Mochi can run as a real desktop pet: a frameless, transparent,
-always-on-top window that hugs the visible UI, so the rest of your screen
-stays clickable. The browser version above is unchanged.
+Other commands:
 
-One-time setup on your Mac:
-
-```bash
-xcode-select --install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```sh
+npm test    # Vitest suite: state priority, task sorting, goal validation, geometry, shell bridge
+npm run build
+npm run lint
 ```
 
-Then, from this folder:
+## Desktop pet (Electron shell, Mac-first dev prototype)
 
-```bash
-npm install
-npm run tauri dev    # live desktop pet
-npm run tauri build  # produces Mochi.app / .dmg under src-tauri/target
+The same React app runs as a real floating desktop pet: a single SMALL
+transparent window (`electron/main.mjs`) shrink-wrapped around the visible UI
+— pet-sized normally, growing to cover the panel/bubble/task card while open,
+paw-sized when hidden. The renderer computes the union of visible rects in
+screen coordinates (`unionBounds` in `src/mochi/logic.ts`) and pushes it to
+the shell, which resizes/moves the window to match. Technically everything on
+a desktop is a window — but this one never exists beyond Mochi's own pixels.
+
+Clicks need no hover toggling: mouse events stay enabled permanently and
+unpainted (fully transparent) pixels pass through to the apps below natively,
+so small buttons can't fall through a toggling race. Dragging moves the pet by
+moving the window (pet position state → bounds sync). The Simulate control is
+not on screen in shell mode — press **Cmd+Shift+M** anywhere to trigger a
+notification instead.
+
+Run it on your Mac (it cannot open a window on a headless devserver):
+
+```sh
+rsync -avz --exclude node_modules --exclude dist zixuanchen@devvm7438.hil0:/home/zixuanchen/bin/Oct23Nwr/model1/ ~/mochi-prototype/
+cd ~/mochi-prototype
+npm install     # downloads the Mac Electron binary (~100MB) on first install
+npm run desktop # starts Vite + the pet; quit with Cmd+Q or the dock icon
 ```
 
-Notes:
+The terminal prints `[mochi] preload bridge installed`, `[mochi] shell
+renderer ready`, and the shortcut registration — if the pet never appears,
+those lines say which half failed (plus a warning after 5s with no sync).
 
-- v1 covers the primary display only.
-- If `tauri dev`/`build` complains about a missing window permission, it
-  names the exact permission — add it to
-  `src-tauri/capabilities/default.json` and retry.
-- The app icon is generated from `src/assets/hero.png` (placeholder art);
-  swap the source and re-run `npx tauri icon <file>` to change it.
+Manual checklist on the Mac (not yet run — no display server here):
 
-## Verified interactions
+1. Only Mochi floats over your desktop — no backdrop page, no big window
+   (Mission Control shows a small window titled “Mochi”).
+2. Drag moves the pet (window follows); click (no drag) opens the panel.
+3. Minus hides to the paw; paw restores. Panel/bubble/expanded open, edit
+   goals, Cmd+Shift+M simulates a notification.
+4. Clicks on transparent gaps beside the pet reach the app below (nothing
+   hides unexpectedly); idle 10s → sleepy; swipe Spaces — the pet follows.
+5. `npm test` still passes (38 tests, incl. bridge + union geometry).
 
-- Drag the pet: it follows the pointer, stays inside the viewport, and
-  releasing after a drag does **not** open the panel (6px click/drag threshold).
-- Click the pet: toggles the task overview panel.
-- 🔔 Simulate notification → bubble appears near the pet (Mochi turns
-  Nervous) → clicking the bubble opens the panel and dismisses it.
-- Edit weekly goals: invalid inputs (0, negatives, decimals, letters, empty,
-  >999) show inline errors; Save updates the panel bars, the pet rings, and
-  `localStorage` immediately. Cancel discards drafts.
-- View all tasks: list is sorted urgent → high → medium → low, then nearest
-  SLA; titles open a local mock detail view; footer actions stay visible while
-  the list scrolls.
-- Hide (−) and restore (🐾 pill, bottom-right).
-- Idle 10s → Sleepy; hover/drag → Happy; bubble → Nervous; open panel →
-  Focused. Priority is deterministic: Focused > Nervous > Happy > Sleepy >
-  Chilling (see `src/logic/petState.ts` + tests).
-- Refresh the page: goals and pet position persist via `localStorage`.
+Limits: primary display only (re-clamped on display change); overlay level is
+`floating` (switch to `screen-saver` in `electron/main.mjs` to float over
+fullscreen video too); dock icon kept so the prototype is easy to quit (no
+tray menu, no autostart, no `.dmg` packaging yet); dev-only (backed by the
+Vite dev server, no rebuild per change). If dragging feels laggy, say so —
+the fix is a direct move-window IPC bypassing React state per frame.
 
-## Approximations / incomplete
+## What was verified (headless Chromium, 45 checks + Vitest, 30 tests)
 
-- Pet art is a placeholder SVG/CSS blob (no reference assets were provided).
-- "Always-on-top across applications" is out of scope: Mochi floats above the
-  page content within the browser tab.
-- Task detail links open a local mock view, not any internal site.
-- Weekly completed counts are fixed mock values (`src/data/mockTasks.ts`).
-- No chat, accounts, or backend — by design for this phase.
+- Drag moves the pet without opening the panel (6px click/drag threshold); a
+  plain click toggles the task panel.
+- “Simulate notification” → nervous bubble near the pet → clicking the bubble
+  opens the panel and dismisses the bubble (bubbles also auto-dismiss after 7s).
+- Goal editor accepts positive integers only (`0`, `abc`, `2.5` rejected with
+  messages, Save disabled); saving updates the panel meters, the pet rings, and
+  `localStorage` immediately.
+- Expanded view lists 9 mock tasks sorted by priority then nearest SLA;
+  titles open a local mock detail; search drives an empty state; the footer
+  stays visible while the list scrolls; “Back to overview” returns to the panel.
+- Hide (−) closes pet + panel and leaves a paw restore button; restore works.
+- States follow Focused > Nervous > Happy > Sleepy > Chilling (hover can't
+  override an open panel; bubble beats hover); sleepy triggers after 10s idle;
+  `prefers-reduced-motion` disables animations (asserted via computed style).
+- Bubble and panel flip to stay inside the viewport near screen edges
+  (asserted with the pet parked at the right edge); goals and pet position
+  survive a page reload via `localStorage` (`mochi.goals.v1`, `mochi.petPos.v1`).
+
+## Approximations and limits
+
+- No design assets were provided: Mochi is an original placeholder SVG/CSS pet
+  (see `MochiPet.tsx`); silhouette and expressions are stand-ins, noted in the
+  page footer.
+- True always-on-top system-window behavior is out of scope: Mochi floats above
+  the page content via fixed positioning.
+- The expanded view replaces (rather than stacks on) the overview panel to
+  avoid double cards; the expanded task view counts as “panel open” for the
+  Focused state.
+- Hidden state is session-only (not persisted); completed counts are fixed mock
+  data (7 reviews / 5 goal shows ring capping with true counts in text).
+- Task detail actions (approve/request changes) are not included — detail is
+  read-only by design for this phase.

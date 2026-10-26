@@ -1,27 +1,27 @@
 {
-  "name": "mochi-desktop-pet",
+  "name": "mochi",
+  "main": "electron/main.mjs",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "vitest run",
-    "tauri": "tauri",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "desktop": "node electron/dev.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.12.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
     "oxlint": "^1.88.0",
     "typescript": "~6.0.3",
     "vite": "^8.3.4",

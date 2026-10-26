@@ -1,483 +1,597 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import MochiPet, { PET_H, PET_W } from './components/MochiPet';
-import NotificationBubble from './components/NotificationBubble';
-import TaskPanel from './components/TaskPanel';
-import './mochi.css';
-import { DEFAULT_GOALS, MOCK_TASKS, WEEKLY_PROGRESS } from './data/mockTasks';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
-  placeBesidePet,
-  placeBubbleAbovePet,
-  progressFraction,
-} from './logic/format';
-import { resolvePetState } from './logic/petState';
-import { sortTasks } from './logic/sorting';
-import { disableShadow, isTauri, syncTauriWindow } from './tauri';
-import type { WindowRect } from './tauri';
-import type { Goals, PanelMode, PetNotification, Task, XY } from './types';
+  DRAG_THRESHOLD_PX,
+  clampPetPosition,
+  placeFloating,
+  resolvePetState,
+  ringFraction,
+  sortTasks,
+  unionBounds,
+} from './mochi/logic.ts';
+import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
+import {
+  MOCK_TASKS,
+  NOTIFICATION_TEMPLATES,
+  PET_POS_STORAGE_KEY,
+  WEEKLY_COMPLETED,
+  loadGoals,
+  saveGoals,
+} from './mochi/mockData.ts';
+import { MochiPet } from './mochi/MochiPet.tsx';
+import {
+  getDisplayBounds,
+  isDesktopShell,
+  isShellMode,
+  onDisplayChanged,
+  onSimulateNotification,
+  syncBounds,
+} from './mochi/shell.ts';
+import { OverviewPanel } from './mochi/OverviewPanel.tsx';
+import { ExpandedView } from './mochi/ExpandedView.tsx';
+import './App.css';
 
-const TAURI_MODE = isTauri();
+export const PET_BOX = 168;
+const PANEL_SIZE = { w: 320, h: 470 };
+const BUBBLE_SIZE = { w: 264, h: 132 };
+const BUBBLE_AUTO_DISMISS_MS = 7000;
+/* desktop shell union rects (outer sizes + shadow margin, generous on purpose) */
+const UNION_PAD = 16;
+const PET_UNION_H = 212;
+const PANEL_UNION = { w: 384, h: 518 };
+const BUBBLE_UNION = { w: 312, h: 180 };
+const EXPANDED_UNION = { w: 624, h: 692 };
+const PAW_UNION = { w: 96, h: 96 };
 
-const LS_GOALS = 'mochi.goals.v1';
-const LS_POS = 'mochi.petPos.v1';
-const LS_HIDDEN = 'mochi.hidden.v1';
-
-/** Screen size in Tauri overlay mode, viewport size in the browser. */
-function screenW(): number {
-  if (TAURI_MODE && window.screen?.width) return window.screen.width;
-  return window.innerWidth;
+interface Bubble {
+  id: number;
+  title: string;
+  body: string;
 }
 
-function screenH(): number {
-  if (TAURI_MODE && window.screen?.height) return window.screen.height;
-  return window.innerHeight;
-}
-
-function clampToScreen(x: number, y: number): XY {
+function defaultPetPos(): XY {
   return {
-    x: Math.min(Math.max(0, x), Math.max(0, screenW() - PET_W)),
-    y: Math.min(Math.max(0, y), Math.max(0, screenH() - PET_H)),
+    x: Math.max(8, window.innerWidth - PET_BOX - 24),
+    y: Math.max(8, window.innerHeight - PET_BOX - 120),
   };
 }
 
-function defaultPosition(): XY {
-  return clampToScreen(screenW() - PET_W - 24, screenH() - PET_H - 24);
-}
-
-function loadGoals(): Goals {
+function loadPetPos(): XY {
   try {
-    const raw = localStorage.getItem(LS_GOALS);
-    if (!raw) return DEFAULT_GOALS;
-    const parsed = JSON.parse(raw) as Partial<Goals>;
-    const reviewGoal =
-      typeof parsed.reviewGoal === 'number' &&
-      Number.isInteger(parsed.reviewGoal) &&
-      parsed.reviewGoal >= 1
-        ? parsed.reviewGoal
-        : DEFAULT_GOALS.reviewGoal;
-    const submissionGoal =
-      typeof parsed.submissionGoal === 'number' &&
-      Number.isInteger(parsed.submissionGoal) &&
-      parsed.submissionGoal >= 1
-        ? parsed.submissionGoal
-        : DEFAULT_GOALS.submissionGoal;
-    return { reviewGoal, submissionGoal };
-  } catch {
-    return DEFAULT_GOALS;
-  }
-}
-
-function loadPosition(): XY {
-  try {
-    const raw = localStorage.getItem(LS_POS);
-    if (!raw) return defaultPosition();
+    const raw = localStorage.getItem(PET_POS_STORAGE_KEY);
+    if (!raw) return defaultPetPos();
     const parsed = JSON.parse(raw) as Partial<XY>;
-    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') {
-      return defaultPosition();
-    }
-    return clampToScreen(parsed.x, parsed.y);
+    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return defaultPetPos();
+    return clampPetPosition(
+      { x: parsed.x, y: parsed.y },
+      { w: window.innerWidth, h: window.innerHeight },
+      PET_BOX,
+    );
   } catch {
-    return defaultPosition();
+    return defaultPetPos();
   }
-}
-
-function useViewport() {
-  const [viewport, setViewport] = useState({
-    w: window.innerWidth,
-    h: window.innerHeight,
-  });
-  useEffect(() => {
-    const onResize = () =>
-      setViewport({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-  return viewport;
-}
-
-const PANEL_BOX: Record<PanelMode, { w: number; h: number }> = {
-  overview: { w: 322, h: 452 },
-  goals: { w: 322, h: 452 },
-  all: { w: 364, h: 484 },
-  detail: { w: 364, h: 484 },
-};
-const BUBBLE_BOX = { w: 264, h: 120 };
-const TOOLBAR_BOX = { w: 330, h: 56 };
-const RESTORE_BOX = { w: 150, h: 56 };
-const UNION_PAD = 12;
-
-/** Bounding box of every visible floating element, in screen coordinates. */
-function unionOfVisible(
-  rects: WindowRect[],
-  max: { w: number; h: number },
-): WindowRect {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const r of rects) {
-    minX = Math.min(minX, r.x);
-    minY = Math.min(minY, r.y);
-    maxX = Math.max(maxX, r.x + r.w);
-    maxY = Math.max(maxY, r.y + r.h);
-  }
-  minX = Math.max(0, minX - UNION_PAD);
-  minY = Math.max(0, minY - UNION_PAD);
-  maxX = Math.min(max.w, maxX + UNION_PAD);
-  maxY = Math.min(max.h, maxY + UNION_PAD);
-  return {
-    x: Math.floor(minX),
-    y: Math.floor(minY),
-    w: Math.max(1, Math.ceil(maxX - minX)),
-    h: Math.max(1, Math.ceil(maxY - minY)),
-  };
 }
 
 export default function App() {
-  const [goals, setGoals] = useState<Goals>(loadGoals);
-  const [position, setPosition] = useState<XY>(loadPosition);
-  const [hidden, setHidden] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(LS_HIDDEN) === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [goals, setGoals] = useState<WeeklyGoals>(loadGoals);
+  const [petPos, setPetPos] = useState<XY>(loadPetPos);
+  const [hidden, setHidden] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelMode, setPanelMode] = useState<PanelMode>('overview');
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [notification, setNotification] = useState<PetNotification | null>(null);
-  const [notifCount, setNotifCount] = useState(0);
-  const [petActive, setPetActive] = useState(false);
-  const [lastInteract, setLastInteract] = useState(() => Date.now());
-  const [now, setNow] = useState(() => Date.now());
-  const viewport = useViewport();
+  const [expandedOpen, setExpandedOpen] = useState(false);
+  const [editingIn, setEditingIn] = useState<'panel' | 'expanded' | null>(null);
+  const [bubble, setBubble] = useState<Bubble | null>(null);
+  const [hovering, setHovering] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lastActive, setLastActive] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [viewport, setViewport] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  /* desktop shell: display origin (for global window coords) + readiness gate */
+  const [displayOrigin, setDisplayOrigin] = useState({ x: 0, y: 0 });
+  const [displayReady, setDisplayReady] = useState(() => !isShellMode());
 
-  const touch = useCallback(() => setLastInteract(Date.now()), []);
+  const dragRef = useRef<{
+    lastX: number;
+    lastY: number;
+    accX: number;
+    accY: number;
+    origX: number;
+    origY: number;
+    moved: boolean;
+  } | null>(null);
+  const notifIndex = useRef(0);
+  // TEMP-DEBUG: dedupe for sync logging; remove with the log below.
+  const lastSyncKey = useRef('');
 
-  // Flag transparent overlay styling for Tauri mode.
+  const touch = useCallback(() => setLastActive(Date.now()), []);
+
+  /* desktop shell: pet-only backdrop, short window title, boot proof in terminal */
   useEffect(() => {
-    if (TAURI_MODE) {
-      document.documentElement.dataset.tauri = '1';
-      void disableShadow();
-    }
+    if (!isShellMode()) return;
+    document.documentElement.classList.add('mochi-shell');
+    document.title = 'Mochi';
+    console.log('[mochi] shell renderer ready');
   }, []);
 
-  // Screen size drives layout in Tauri mode, viewport in the browser.
-  const screen = useMemo(
-    () => (TAURI_MODE ? { w: screenW(), h: screenH() } : viewport),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [viewport],
-  );
-
-  // 1s ticker so the 10s idle rule re-evaluates without interaction.
+  /* one-second ticker drives idle detection + SLA countdowns */
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  // Persist goals, position, and hidden flag.
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_GOALS, JSON.stringify(goals));
-    } catch {
-      /* storage unavailable: prototype keeps in-memory state */
-    }
-  }, [goals]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_POS, JSON.stringify(position));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [position]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_HIDDEN, hidden ? '1' : '0');
-    } catch {
-      /* storage unavailable */
-    }
-  }, [hidden]);
-
-  // Keep the pet inside the screen on resize.
-  useEffect(() => {
-    setPosition((p) => clampToScreen(p.x, p.y));
-  }, [viewport]);
-
-  // Notification bubbles are brief: auto-dismiss after 9s.
-  useEffect(() => {
-    if (!notification) return;
-    const id = window.setTimeout(() => setNotification(null), 9000);
-    return () => window.clearTimeout(id);
-  }, [notification]);
-
-  // Escape closes the panel.
-  useEffect(() => {
-    if (!panelOpen) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setPanelOpen(false);
-        touch();
-      }
+    /* desktop shell resizes its own window: display changes arrive via the bridge instead */
+    if (isDesktopShell()) return;
+    const onResize = () => {
+      const next = { w: window.innerWidth, h: window.innerHeight };
+      setViewport(next);
+      /* keep the pet inside the visible area after resizes */
+      setPetPos((p) => clampPetPosition(p, next, PET_BOX));
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [panelOpen, touch]);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
-  const tasks = useMemo(() => sortTasks(MOCK_TASKS), []);
+  /* desktop shell: learn the real display bounds (the window starts tiny) */
+  useEffect(() => {
+    if (!isDesktopShell()) return;
+    let alive = true;
+    const refresh = () => {
+      getDisplayBounds().then((b) => {
+        if (!alive || !b) return;
+        setViewport({ w: b.width, h: b.height });
+        setDisplayOrigin({ x: b.x, y: b.y });
+        setPetPos((p) => clampPetPosition(p, { w: b.width, h: b.height }, PET_BOX));
+        setDisplayReady(true);
+      });
+    };
+    refresh();
+    return onDisplayChanged(refresh);
+  }, []);
+
+  /* persist position across refreshes */
+  useEffect(() => {
+    try {
+      localStorage.setItem(PET_POS_STORAGE_KEY, JSON.stringify(petPos));
+    } catch {
+      /* ignore — position still applies for the session */
+    }
+  }, [petPos]);
+
+  /* notification bubbles dismiss themselves after a few seconds */
+  useEffect(() => {
+    if (!bubble) return;
+    const id = bubble.id;
+    const timer = window.setTimeout(() => {
+      setBubble((b) => (b && b.id === id ? null : b));
+    }, BUBBLE_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [bubble]);
+
+  const idleSeconds = Math.max(0, Math.floor((nowMs - lastActive) / 1000));
+  const panelLikeOpen = panelOpen || expandedOpen;
   const petState = resolvePetState({
-    panelOpen,
-    bubbleVisible: notification !== null,
-    hoverOrDrag: petActive,
-    idleSeconds: (now - lastInteract) / 1000,
+    panelOpen: panelLikeOpen,
+    bubbleVisible: bubble !== null,
+    hoveringOrDragging: hovering || dragging,
+    idleSeconds,
   });
 
-  const reviewFraction = progressFraction(
-    WEEKLY_PROGRESS.reviewsCompleted,
-    goals.reviewGoal,
+  const shell = isShellMode();
+  /* belt-and-braces clamp so the first shell frame (pre-display-bounds) stays sane */
+  const petRenderPos = clampPetPosition(petPos, viewport, PET_BOX);
+  const pawPos = { x: viewport.w - 80, y: viewport.h - 80 };
+
+  const sortedTasks = useMemo(() => sortTasks(MOCK_TASKS), []);
+  const pending = useMemo(() => sortedTasks.filter((t) => t.status === 'pending_review'), [sortedTasks]);
+  const revisions = useMemo(() => sortedTasks.filter((t) => t.status === 'revision_required'), [sortedTasks]);
+
+  const petRect = useMemo(
+    () => ({ x: petRenderPos.x, y: petRenderPos.y, w: PET_BOX, h: PET_BOX }),
+    [petRenderPos],
   );
-  const submissionFraction = progressFraction(
-    WEEKLY_PROGRESS.submissionsCompleted,
-    goals.submissionGoal,
+  const panelPos = useMemo(() => placeFloating(petRect, PANEL_SIZE, viewport), [petRect, viewport]);
+  const bubblePos = useMemo(
+    () => placeFloating(petRect, BUBBLE_SIZE, viewport, 16),
+    [petRect, viewport],
+  );
+  const expandedPos = useMemo(
+    () => placeFloating(petRect, { w: 592, h: 660 }, viewport),
+    [petRect, viewport],
   );
 
-  const openPanel = useCallback(
-    (mode: PanelMode) => {
-      setPanelMode(mode);
-      setSelectedTask((prev) => (mode === 'detail' ? prev : null));
-      setPanelOpen(true);
-      touch();
-    },
-    [touch],
-  );
+  /* desktop shell: union of visible UI in screen-local coords. The container
+     is shifted by -union so screen coords render at the right window offset
+     (without this, positions apply twice: once in state, once via the window
+     origin — a runaway that flings the pet out of its own window). */
+  const visibleRects: PlacedRect[] = [];
+  if (!hidden) {
+    visibleRects.push({ x: petRenderPos.x, y: petRenderPos.y, w: PET_BOX, h: PET_UNION_H });
+  } else {
+    visibleRects.push({ x: pawPos.x - UNION_PAD, y: pawPos.y - UNION_PAD, w: PAW_UNION.w, h: PAW_UNION.h });
+  }
+  if (panelOpen && !hidden) {
+    visibleRects.push({ x: panelPos.x, y: panelPos.y, w: PANEL_UNION.w, h: PANEL_UNION.h });
+  }
+  if (bubble && !hidden) {
+    visibleRects.push({ x: bubblePos.x, y: bubblePos.y, w: BUBBLE_UNION.w, h: BUBBLE_UNION.h });
+  }
+  if (expandedOpen) {
+    visibleRects.push({ x: expandedPos.x, y: expandedPos.y, w: EXPANDED_UNION.w, h: EXPANDED_UNION.h });
+  }
+  const unionLocal = shell && displayReady ? unionBounds(visibleRects, viewport, UNION_PAD) : null;
+  const unionSafe = unionLocal ?? { x: 0, y: 0, width: 1, height: 1 };
 
-  const handlePetTap = useCallback(() => {
-    if (panelOpen) {
-      setPanelOpen(false);
-    } else {
-      setPanelMode('overview');
-      setPanelOpen(true);
+  const reviewFrac = ringFraction(WEEKLY_COMPLETED.reviewsCompleted, goals.reviewGoal);
+  const subFrac = ringFraction(WEEKLY_COMPLETED.submissionsCompleted, goals.submissionGoal);
+
+  const togglePanel = useCallback(() => {
+    touch();
+    setEditingIn(null);
+    setPanelOpen((v) => !v);
+  }, [touch]);
+
+  function handlePetPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if ((e.target as HTMLElement).closest('[data-nodrag]')) return;
+    touch();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture unavailable — drag tracking and click still work without it */
+    }
+    dragRef.current = {
+      lastX: e.clientX,
+      lastY: e.clientY,
+      accX: 0,
+      accY: 0,
+      origX: petPos.x,
+      origY: petPos.y,
+      moved: false,
+    };
+  }
+
+  function handlePetPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    const mdx = e.movementX ?? 0;
+    const mdy = e.movementY ?? 0;
+    const cdx = e.clientX - d.lastX;
+    const cdy = e.clientY - d.lastY;
+    d.lastX = e.clientX;
+    d.lastY = e.clientY;
+    /* Prefer screen-space deltas: clientX shifts when the shell window moves
+       under the cursor mid-drag, which would double-count motion. */
+    const useMovement = mdx !== 0 || mdy !== 0 || (cdx === 0 && cdy === 0);
+    const dx = useMovement ? mdx : cdx;
+    const dy = useMovement ? mdy : cdy;
+    d.accX += dx;
+    d.accY += dy;
+    if (!d.moved && Math.hypot(d.accX, d.accY) <= DRAG_THRESHOLD_PX) return;
+    if (!d.moved) {
+      d.moved = true;
+      setDragging(true);
     }
     touch();
-  }, [panelOpen, touch]);
+    setPetPos(clampPetPosition({ x: d.origX + d.accX, y: d.origY + d.accY }, viewport, PET_BOX));
+  }
+
+  function handlePetPointerUp() {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    if (d && !d.moved) togglePanel();
+  }
+
+  function handlePetKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      togglePanel();
+    }
+  }
+
+  function handleGlobalKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'Escape') return;
+    if (editingIn) setEditingIn(null);
+    else if (selectedId) setSelectedId(null);
+    else if (expandedOpen) setExpandedOpen(false);
+    else if (panelOpen) setPanelOpen(false);
+  }
+
+  function hidePet() {
+    setHidden(true);
+    setPanelOpen(false);
+    setBubble(null);
+    setHovering(false);
+  }
+
+  function restorePet() {
+    touch();
+    setHidden(false);
+  }
 
   const simulateNotification = useCallback(() => {
-    const task = MOCK_TASKS[notifCount % MOCK_TASKS.length];
-    setNotifCount((c) => c + 1);
-    setNotification({
-      id: Date.now(),
-      text: `New ${task.kind} request: ${task.title}`,
-      taskId: task.id,
-    });
     touch();
-  }, [notifCount, touch]);
+    const tpl = NOTIFICATION_TEMPLATES[notifIndex.current % NOTIFICATION_TEMPLATES.length];
+    notifIndex.current += 1;
+    setBubble({ id: Date.now(), title: tpl.title, body: tpl.body });
+  }, [touch]);
 
-  const openFromBubble = useCallback(() => {
-    if (notification?.taskId) {
-      const task = tasks.find((t) => t.id === notification.taskId) ?? null;
-      setSelectedTask(task);
-      setPanelMode(task ? 'detail' : 'overview');
-    } else {
-      setPanelMode('overview');
-    }
-    setNotification(null);
-    setPanelOpen(true);
-    touch();
-  }, [notification, tasks, touch]);
-
-  const panelPos = placeBesidePet(
-    { x: position.x, y: position.y, w: PET_W, h: PET_H },
-    PANEL_BOX[panelMode],
-    screen,
-  );
-  const bubblePos = placeBubbleAbovePet(
-    { x: position.x, y: position.y, w: PET_W, h: PET_H },
-    BUBBLE_BOX,
-    screen,
-  );
-
-  const handleSelectTask = useCallback(
-    (task: Task) => {
-      setSelectedTask(task);
-      setPanelMode('detail');
-      touch();
-    },
-    [touch],
-  );
-
-  const handleSaveGoals = useCallback(
-    (next: Goals) => {
-      setGoals(next);
-      touch();
-    },
-    [touch],
-  );
-
-  // In Tauri mode the native window hugs the visible UI: resize/move it
-  // to the union rect whenever what is on screen changes.
-  const union = useMemo<WindowRect>(() => {
-    const rects: WindowRect[] = [];
-    if (!hidden) {
-      rects.push({ x: position.x, y: position.y, w: PET_W, h: PET_H });
-      if (panelOpen) {
-        const box = PANEL_BOX[panelMode];
-        rects.push({ x: panelPos.left, y: panelPos.top, w: box.w, h: box.h });
-      }
-      if (notification) {
-        rects.push({
-          x: bubblePos.left,
-          y: bubblePos.top,
-          w: BUBBLE_BOX.w,
-          h: BUBBLE_BOX.h,
-        });
-      }
-    } else {
-      rects.push({
-        x: screen.w - RESTORE_BOX.w - 14,
-        y: screen.h - RESTORE_BOX.h - 14,
-        w: RESTORE_BOX.w,
-        h: RESTORE_BOX.h,
-      });
-    }
-    rects.push({
-      x: 14,
-      y: screen.h - TOOLBAR_BOX.h - 14,
-      w: TOOLBAR_BOX.w,
-      h: TOOLBAR_BOX.h,
-    });
-    return unionOfVisible(rects, screen);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    hidden,
-    position,
-    panelOpen,
-    panelMode,
-    notification,
-    screen.w,
-    screen.h,
-  ]);
-
-  const lastSynced = useRef<WindowRect | null>(null);
+  /* desktop shell: the global shortcut asks us to simulate (no on-screen button there) */
   useEffect(() => {
-    if (!TAURI_MODE) return;
-    const prev = lastSynced.current;
-    if (
-      prev &&
-      prev.x === union.x &&
-      prev.y === union.y &&
-      prev.w === union.w &&
-      prev.h === union.h
-    ) {
-      return;
+    if (!isDesktopShell()) return;
+    return onSimulateNotification(() => simulateNotification());
+  }, [simulateNotification]);
+
+  /* desktop shell: shrink-wrap the window around visible UI (screen coords) */
+  useEffect(() => {
+    if (!shell || !displayReady || !unionLocal) return;
+    /* the main process diffs identical syncs, so the 1s ticker resend is free */
+    // TEMP-DEBUG: log only on change (proves the effect fires during drag).
+    const key = `${unionLocal.x},${unionLocal.y},${unionLocal.width}x${unionLocal.height}`;
+    if (key !== lastSyncKey.current) {
+      lastSyncKey.current = key;
+      console.log('[mochi] sync', key);
     }
-    lastSynced.current = union;
-    syncTauriWindow(union);
-  }, [union]);
+    syncBounds({
+      x: displayOrigin.x + unionLocal.x,
+      y: displayOrigin.y + unionLocal.y,
+      width: unionLocal.width,
+      height: unionLocal.height,
+    });
+  });
 
-  const floaters = (
-    <>
-      <div className="demo-toolbar" aria-label="Prototype test controls">
-        <button
-          type="button"
-          className="demo-simulate"
-          onClick={simulateNotification}
-          data-testid="simulate-notification"
-          title="Test control (temporary)"
-        >
-          🔔 Simulate notification
-        </button>
-        <span
-          className="demo-state-chip"
-          data-testid="mochi-state"
-          aria-live="polite"
-        >
-          Mochi: {petState}
-        </span>
-      </div>
+  function openBubble() {
+    touch();
+    setBubble(null);
+    setExpandedOpen(false);
+    setSelectedId(null);
+    setEditingIn(null);
+    setPanelOpen(true);
+  }
 
-      {hidden && (
-        <button
-          type="button"
-          className="mochi-restore"
-          onClick={() => {
-            setHidden(false);
-            touch();
-          }}
-          aria-label="Show Mochi"
-          title="Show Mochi"
-          data-testid="mochi-restore"
-        >
-          🐾 Mochi
-        </button>
-      )}
+  function handleSaveGoals(next: WeeklyGoals) {
+    touch();
+    setGoals(next);
+    saveGoals(next);
+    setEditingIn(null);
+  }
 
-      {!hidden && (
-        <MochiPet
-          position={position}
-          petState={petState}
-          reviewFraction={reviewFraction}
-          submissionFraction={submissionFraction}
-          reviewCaption={`${WEEKLY_PROGRESS.reviewsCompleted}/${goals.reviewGoal}`}
-          submissionCaption={`${WEEKLY_PROGRESS.submissionsCompleted}/${goals.submissionGoal}`}
-          onPositionChange={(p) => setPosition(clampToScreen(p.x, p.y))}
-          onTap={handlePetTap}
-          onActiveChange={setPetActive}
-          onInteract={touch}
-          onHide={() => setHidden(true)}
-        />
-      )}
+  function openTaskDetail(id: string) {
+    touch();
+    setPanelOpen(false);
+    setSelectedId(id);
+    setExpandedOpen(true);
+  }
 
-      {!hidden && notification && (
-        <NotificationBubble
-          notification={notification}
-          style={{ left: bubblePos.left, top: bubblePos.top }}
-          onOpen={openFromBubble}
-          onDismiss={() => setNotification(null)}
-          onInteract={touch}
-        />
-      )}
+  function backToOverview() {
+    touch();
+    setExpandedOpen(false);
+    setSelectedId(null);
+    setEditingIn(null);
+    setPanelOpen(true);
+  }
 
-      {!hidden && panelOpen && (
-        <TaskPanel
-          style={{
-            left: panelPos.left,
-            top: panelPos.top,
-            width: PANEL_BOX[panelMode].w,
-          }}
-          tasks={tasks}
-          goals={goals}
-          progress={WEEKLY_PROGRESS}
-          mode={panelMode}
-          selectedTask={selectedTask}
-          onModeChange={openPanel}
-          onSelectTask={handleSelectTask}
-          onSaveGoals={handleSaveGoals}
-          onClose={() => {
-            setPanelOpen(false);
-            touch();
-          }}
-          onInteract={touch}
-        />
-      )}
-    </>
-  );
+  const petLabel =
+    `Mochi is ${petState}. Reviews ${WEEKLY_COMPLETED.reviewsCompleted} of ${goals.reviewGoal} goal, ` +
+    `submissions ${WEEKLY_COMPLETED.submissionsCompleted} of ${goals.submissionGoal} goal. ` +
+    `Press Enter to ${panelOpen ? 'close' : 'open'} the task panel.`;
+
+  /* desktop shell: wait for real display bounds before painting anything */
+  if (shell && !displayReady) {
+    return <div className="desktop" />;
+  }
 
   return (
-    <div className="demo-page">
-      {TAURI_MODE ? (
-        <div
-          className="tauri-stage"
-          style={{
-            width: screen.w,
-            height: screen.h,
-            left: -union.x,
-            top: -union.y,
-          }}
+    <div
+      className="desktop"
+      onKeyDown={handleGlobalKeyDown}
+      style={
+        shell
+          ? {
+              position: 'relative',
+              width: viewport.w,
+              height: viewport.h,
+              minHeight: 0,
+              left: -unionSafe.x,
+              top: -unionSafe.y,
+            }
+          : undefined
+      }
+    >
+      {/* Backdrop page content — Mochi floats above this. */}
+      <div className="page">
+        <header className="page-header">
+          <div>
+            <p className="eyebrow">Team status · Thursday</p>
+            <h1>Launch readiness overview</h1>
+            <p className="muted">Mock page content for the prototype backdrop. Mochi floats above this page.</p>
+          </div>
+          <div className="stat-cards">
+            <div className="stat-card"><span className="stat-num">12</span><span className="muted">Shipped</span></div>
+            <div className="stat-card"><span className="stat-num">7</span><span className="muted">In review</span></div>
+            <div className="stat-card"><span className="stat-num">3</span><span className="muted">Blocked</span></div>
+          </div>
+        </header>
+        <main className="page-grid">
+          <section className="page-card">
+            <h2>Today's priorities</h2>
+            <ul>
+              <li>Sign off the checkout flow refactor before the SLA lapses.</li>
+              <li>Decide on the payments SLA refund-window phrasing.</li>
+              <li>Give the avatar upload QA logs a quick pass — 15 minutes left.</li>
+            </ul>
+          </section>
+          <section className="page-card">
+            <h2>Notes</h2>
+            <p>
+              This is placeholder content so the pet has a page to float over. Drag Mochi anywhere —
+              a click (without dragging) opens the task panel. Use “Simulate notification” below to
+              preview an incoming review request.
+            </p>
+          </section>
+          <section className="page-card">
+            <h2>Weekly goals</h2>
+            <p>
+              Goals live with Mochi: open the task panel, choose “Edit weekly goals”, and the rings
+              around the pet update immediately. Goals and the pet's position persist across refreshes.
+            </p>
+          </section>
+        </main>
+        <footer className="page-footer muted">
+          Mochi prototype backdrop · placeholder SVG/CSS pet (no design assets provided)
+        </footer>
+      </div>
+
+      {/* Testing control — no need to wait for real events. */}
+      <button type="button" className="sim-btn" onClick={simulateNotification}>
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path
+            d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.2 4.2-1.9 4.9-.3.3 0 .6.4.6h11.9c.5 0 .8-.3.5-.6-.7-.7-1.9-1.9-1.9-4.9A4.5 4.5 0 0 0 8 1.5ZM6.6 13.5a1.5 1.5 0 0 0 2.8 0H6.6Z"
+            fill="currentColor"
+          />
+        </svg>
+        Simulate notification
+      </button>
+
+      {bubble && !hidden && (
+        <button
+          type="button"
+          className="notif-bubble"
+          style={{ left: bubblePos.x, top: bubblePos.y }}
+          onClick={openBubble}
+          aria-live="polite"
+          aria-label={`${bubble.title}: ${bubble.body}. Activate to open the task panel.`}
         >
-          {floaters}
+          <strong className="bubble-title">{bubble.title}</strong>
+          <span className="bubble-body">{bubble.body}</span>
+        </button>
+      )}
+
+      {!hidden ? (
+        <div className="pet-widget" style={{ left: petRenderPos.x, top: petRenderPos.y }}>
+          <div
+            className={`pet-pressable pet-${petState}${dragging ? ' is-dragging' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={petLabel}
+            onPointerDown={handlePetPointerDown}
+            onPointerMove={handlePetPointerMove}
+            onPointerUp={handlePetPointerUp}
+            onPointerCancel={() => {
+              dragRef.current = null;
+              setDragging(false);
+            }}
+            onPointerEnter={() => {
+              touch();
+              setHovering(true);
+            }}
+            onPointerLeave={() => setHovering(false)}
+            onKeyDown={handlePetKeyDown}
+          >
+            <MochiPet state={petState} reviewFrac={reviewFrac} subFrac={subFrac} />
+          </div>
+          <button
+            type="button"
+            data-nodrag
+            className="hide-btn"
+            onClick={hidePet}
+            aria-label="Hide Mochi"
+            title="Hide Mochi"
+          >
+            −
+          </button>
+          <p className="pet-caption" aria-hidden="true">
+            <span className="cap-item" title={`Reviews: ${WEEKLY_COMPLETED.reviewsCompleted} of ${goals.reviewGoal}`}>
+              <span className="dot dot-green" />R {WEEKLY_COMPLETED.reviewsCompleted}/{goals.reviewGoal}
+            </span>
+            <span className="cap-item" title={`Submissions: ${WEEKLY_COMPLETED.submissionsCompleted} of ${goals.submissionGoal}`}>
+              <span className="dot dot-orange" />S {WEEKLY_COMPLETED.submissionsCompleted}/{goals.submissionGoal}
+            </span>
+          </p>
+          <p className="pet-state" aria-hidden="true">{petState}</p>
         </div>
       ) : (
-        floaters
+        <button
+          type="button"
+          className="restore-btn"
+          onClick={restorePet}
+          style={shell ? { left: pawPos.x, top: pawPos.y } : undefined}
+          aria-label="Show Mochi"
+          title="Show Mochi"
+        >
+          <span className="paw" aria-hidden="true">
+            <i /><i /><i /><b />
+          </span>
+        </button>
+      )}
+
+      {panelOpen && !hidden && (
+        <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
+        <OverviewPanel
+          position={panelPos}
+          pending={pending}
+          revisions={revisions}
+          reviewsCompleted={WEEKLY_COMPLETED.reviewsCompleted}
+          submissionsCompleted={WEEKLY_COMPLETED.submissionsCompleted}
+          goals={goals}
+          nowMs={nowMs}
+          editing={editingIn === 'panel'}
+          onSaveGoals={handleSaveGoals}
+          onCancelEdit={() => setEditingIn(null)}
+          onClose={() => {
+            setPanelOpen(false);
+            setEditingIn(null);
+          }}
+          onEditGoals={() => {
+            touch();
+            setEditingIn('panel');
+          }}
+          onViewAll={() => {
+            touch();
+            setPanelOpen(false);
+            setSelectedId(null);
+            setExpandedOpen(true);
+          }}
+          onOpenTask={openTaskDetail}
+        />
+        </div>
+      )}
+
+      {expandedOpen && (
+        <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
+        <ExpandedView
+          anchor={shell ? expandedPos : undefined}
+          tasks={sortedTasks}
+          nowMs={nowMs}
+          search={search}
+          onSearchChange={(q) => {
+            touch();
+            setSearch(q);
+          }}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            touch();
+            setSelectedId(id);
+          }}
+          editing={editingIn === 'expanded'}
+          goals={goals}
+          onSaveGoals={handleSaveGoals}
+          onCancelEdit={() => setEditingIn(null)}
+          onEditGoals={() => {
+            touch();
+            setEditingIn('expanded');
+          }}
+          onClose={() => {
+            setExpandedOpen(false);
+            setSelectedId(null);
+            setEditingIn(null);
+          }}
+          onBackToOverview={backToOverview}
+        />
+        </div>
       )}
     </div>
   );
 }
+

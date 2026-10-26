@@ -1,14 +1,11 @@
 :root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.45;
   color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   margin: 0;
-  background: #f4f1ea;
-}
-
-#root {
-  min-height: 100vh;
 }
