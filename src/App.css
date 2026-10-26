@@ -178,10 +178,12 @@ body {
 
 .mochi-svg .ring-track {
   stroke: #e8e2d4;
+  opacity: 0.5;
 }
 
 .mochi-svg .ring-progress {
-  transition: stroke-dashoffset 0.4s ease;
+  transition: stroke-dasharray 0.4s ease;
+  opacity: 0.7;
 }
 
 .mochi-svg .ring-green {

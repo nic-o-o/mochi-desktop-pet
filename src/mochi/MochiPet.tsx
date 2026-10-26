@@ -10,18 +10,26 @@ interface MochiPetProps {
 
 const CX = 74;
 const CY = 70;
-const OUTER_R = 63;
-const INNER_R = 53;
-const OUTER_C = 2 * Math.PI * OUTER_R;
-const INNER_C = 2 * Math.PI * INNER_R;
+/* Single split ring: green fills the upper half, orange the lower half.
+   Arc ends stop short of the 3/9 o'clock joints so the round caps meet
+   with a small gap instead of overlapping. */
+const RING_R = 63;
+const GAP_DEG = 6;
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+const ringPt = (deg: number) =>
+  `${(CX + RING_R * Math.cos(toRad(deg))).toFixed(2)} ${(CY - RING_R * Math.sin(toRad(deg))).toFixed(2)}`;
+const TOP_HALF = `M ${ringPt(180 - GAP_DEG)} A ${RING_R} ${RING_R} 0 0 1 ${ringPt(GAP_DEG)}`;
+const BOTTOM_HALF = `M ${ringPt(180 + GAP_DEG)} A ${RING_R} ${RING_R} 0 0 0 ${ringPt(360 - GAP_DEG)}`;
 
 /**
  * Placeholder "Mochi" illustration (SVG/CSS approximation — no design assets
  * were provided, so silhouette and expressions are original stand-ins).
- * Green ring = reviews completed / review goal.
- * Orange ring = submissions completed / submission goal.
+ * Upper green half-ring = reviews completed / review goal.
+ * Lower orange half-ring = submissions completed / submission goal.
  */
 export function MochiPet({ state, reviewFrac, subFrac }: MochiPetProps) {
+  const rev = Math.min(1, Math.max(0, reviewFrac));
+  const sub = Math.min(1, Math.max(0, subFrac));
   return (
     <svg
       className={`mochi-svg mochi-${state}`}
@@ -30,33 +38,32 @@ export function MochiPet({ state, reviewFrac, subFrac }: MochiPetProps) {
       aria-hidden="true"
       focusable="false"
     >
-      {/* progress rings */}
-      <circle cx={CX} cy={CY} r={OUTER_R} className="ring-track" strokeWidth={7} fill="none" />
-      <circle
-        cx={CX}
-        cy={CY}
-        r={OUTER_R}
-        className="ring-progress ring-green"
-        strokeWidth={7}
-        fill="none"
-        strokeLinecap="round"
-        strokeDasharray={OUTER_C}
-        strokeDashoffset={OUTER_C * (1 - reviewFrac)}
-        transform={`rotate(-90 ${CX} ${CY})`}
-      />
-      <circle cx={CX} cy={CY} r={INNER_R} className="ring-track" strokeWidth={6} fill="none" />
-      <circle
-        cx={CX}
-        cy={CY}
-        r={INNER_R}
-        className="ring-progress ring-orange"
-        strokeWidth={6}
-        fill="none"
-        strokeLinecap="round"
-        strokeDasharray={INNER_C}
-        strokeDashoffset={INNER_C * (1 - subFrac)}
-        transform={`rotate(-90 ${CX} ${CY})`}
-      />
+      {/* progress rings: one circle split in halves — green up, orange down.
+          pathLength=100 makes each dash length a percent of its own half. */}
+      <path d={TOP_HALF} className="ring-track" strokeWidth={7} fill="none" />
+      {rev > 0 && (
+        <path
+          d={TOP_HALF}
+          className="ring-progress ring-green"
+          strokeWidth={7}
+          fill="none"
+          strokeLinecap="round"
+          pathLength={100}
+          strokeDasharray={`${rev * 100} 100`}
+        />
+      )}
+      <path d={BOTTOM_HALF} className="ring-track" strokeWidth={7} fill="none" />
+      {sub > 0 && (
+        <path
+          d={BOTTOM_HALF}
+          className="ring-progress ring-orange"
+          strokeWidth={7}
+          fill="none"
+          strokeLinecap="round"
+          pathLength={100}
+          strokeDasharray={`${sub * 100} 100`}
+        />
+      )}
 
       {/* body */}
       <g className="mochi-body">
