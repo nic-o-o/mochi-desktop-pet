@@ -50,6 +50,8 @@ const [appDir] = await packager({
   prune: false,
   ignore,
   appBundleId: 'dev.mochi.desktop-pet',
+  // build/icon.svg is the source; `swift scripts/make-icon.swift` regenerates this.
+  icon: path.join(root, 'build', 'icon.icns'),
   appCategoryType: 'public.app-category.productivity',
 });
 
