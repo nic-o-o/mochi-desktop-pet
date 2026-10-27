@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
 import {
+  PRIORITY_RANK,
+  draftRowFlag,
   formatSla,
   pendingRank,
   pendingRowFlag,
@@ -11,11 +13,17 @@ import {
 } from './logic.ts';
 import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
+import { SECTIONS } from './sections.ts';
+import type { SectionKey, SectionPrefs } from './sections.ts';
 
 interface OverviewPanelProps {
   position: XY;
   pending: TaskItem[];
   revisions: TaskItem[];
+  drafts: TaskItem[];
+  /** Which sections show (header filter menu); saved by the caller. */
+  sections: SectionPrefs;
+  onSectionsChange: (next: SectionPrefs) => void;
   reviewsCompleted: number;
   submissionsCompleted: number;
   goals: WeeklyGoals;
@@ -143,7 +151,7 @@ function TaskSection({
   title: string;
   tasks: TaskItem[];
   nowMs: number;
-  kind: 'revision' | 'pending';
+  kind: 'revision' | 'pending' | 'draft';
   onOpen: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -153,7 +161,9 @@ function TaskSection({
     const rank =
       kind === 'revision'
         ? (t: TaskItem) => revisionRank(t.priority)
-        : (t: TaskItem) => pendingRank(t.slaDueMs, nowMs);
+        : kind === 'draft'
+          ? (t: TaskItem) => PRIORITY_RANK[t.priority]
+          : (t: TaskItem) => pendingRank(t.slaDueMs, nowMs);
     return tasks
       .map((t, i) => ({ t, i }))
       .sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i)
@@ -171,7 +181,11 @@ function TaskSection({
       </div>
       {tasks.length === 0 ? (
         <p className="muted small">
-          {kind === 'revision' ? 'No revisions requested.' : 'Nothing awaiting review. Nice.'}
+          {kind === 'revision'
+            ? 'No revisions requested.'
+            : kind === 'draft'
+              ? 'No drafts.'
+              : 'Nothing awaiting review. Nice.'}
         </p>
       ) : (
         <>
@@ -194,7 +208,13 @@ function TaskSection({
                           : `Assigned by ${t.requester}`}
                   </span>
                   <RowFlag
-                    flag={kind === 'revision' ? revisionRowFlag(t.priority) : pendingRowFlag(t.slaDueMs, nowMs)}
+                    flag={
+                      kind === 'revision'
+                        ? revisionRowFlag(t.priority)
+                        : kind === 'draft'
+                          ? draftRowFlag(t.draftState)
+                          : pendingRowFlag(t.slaDueMs, nowMs)
+                    }
                   />
                 </div>
               </li>
@@ -216,9 +236,65 @@ function TaskSection({
   );
 }
 
+/** Header menu: checkboxes for which sections the panel lists (at least one stays on). */
+function SectionFilter({
+  prefs,
+  counts,
+  onChange,
+}: {
+  prefs: SectionPrefs;
+  counts: Record<SectionKey, number>;
+  onChange: (next: SectionPrefs) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const onCount = SECTIONS.filter(({ key }) => prefs[key]).length;
+  return (
+    <div className="section-filter">
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Choose sections"
+        aria-expanded={open}
+        title="Choose sections"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6}>
+          <path d="M2 3.5h12M4.5 8h7M7 12.5h2" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="section-menu" role="group" aria-label="Sections to show">
+          <p className="section-menu-title">Show in panel</p>
+          {SECTIONS.map(({ key, label }) => {
+            const last = prefs[key] && onCount === 1;
+            return (
+              <label key={key} className="section-option">
+                <input
+                  type="checkbox"
+                  checked={prefs[key]}
+                  disabled={last}
+                  onChange={(e) => onChange({ ...prefs, [key]: e.target.checked })}
+                />
+                <span>{label}</span>
+                <span className="section-count">{counts[key]}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** "Your week at a glance" — compact floating overview next to the pet. */
 export function OverviewPanel(props: OverviewPanelProps) {
   const { goals, reviewsCompleted, submissionsCompleted } = props;
+  const lists: Record<SectionKey, { tasks: TaskItem[]; kind: 'revision' | 'pending' | 'draft' }> = {
+    revisions: { tasks: props.revisions, kind: 'revision' },
+    reviews: { tasks: props.pending, kind: 'pending' },
+    drafts: { tasks: props.drafts, kind: 'draft' },
+  };
+  const shownSections = SECTIONS.filter(({ key }) => props.sections[key]);
   return (
     <section
       className="float-panel overview-panel"
@@ -228,9 +304,22 @@ export function OverviewPanel(props: OverviewPanelProps) {
     >
       <header className="panel-header glance-header">
         <h2>Your week at a glance</h2>
-        <button type="button" className="icon-btn" onClick={props.onClose} aria-label="Close task panel">
-          ×
-        </button>
+        <div className="glance-header-actions">
+          {!props.setup && (
+            <SectionFilter
+              prefs={props.sections}
+              counts={{
+                revisions: props.revisions.length,
+                reviews: props.pending.length,
+                drafts: props.drafts.length,
+              }}
+              onChange={props.onSectionsChange}
+            />
+          )}
+          <button type="button" className="icon-btn" onClick={props.onClose} aria-label="Close task panel">
+            ×
+          </button>
+        </div>
       </header>
 
       {props.setup ? (
@@ -261,23 +350,18 @@ export function OverviewPanel(props: OverviewPanelProps) {
           {props.connecting ? (
             <p className="muted small glance-connecting">Connecting to Codimango…</p>
           ) : (
-            <>
-              <TaskSection
-                title="Needs revision"
-                tasks={props.revisions}
-                nowMs={props.nowMs}
-                kind="revision"
-                onOpen={props.onOpenTask}
-              />
-              <hr className="glance-divider" />
-              <TaskSection
-                title="Waiting for your review"
-                tasks={props.pending}
-                nowMs={props.nowMs}
-                kind="pending"
-                onOpen={props.onOpenTask}
-              />
-            </>
+            shownSections.map(({ key, label }, i) => (
+              <div key={key}>
+                {i > 0 && <hr className="glance-divider" />}
+                <TaskSection
+                  title={label}
+                  tasks={lists[key].tasks}
+                  nowMs={props.nowMs}
+                  kind={lists[key].kind}
+                  onOpen={props.onOpenTask}
+                />
+              </div>
+            ))
           )}
         </>
       )}

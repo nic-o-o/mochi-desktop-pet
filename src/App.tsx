@@ -12,6 +12,8 @@ import {
 import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
 import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
+import { loadSectionPrefs, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
+import type { SectionPrefs } from './mochi/sections.ts';
 import type { Notice } from './mochi/notifications.ts';
 import { NOTICE_ICONS, noticeAge, useNotificationHistory } from './mochi/notifications.ts';
 import { MochiPet } from './mochi/MochiPet.tsx';
@@ -195,6 +197,13 @@ export default function App() {
   const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
   const pending = useMemo(() => sortedTasks.filter((t) => t.status === 'pending_review'), [sortedTasks]);
   const revisions = useMemo(() => sortedTasks.filter((t) => t.status === 'revision_required'), [sortedTasks]);
+  const drafts = useMemo(() => sortedTasks.filter((t) => t.status === 'draft'), [sortedTasks]);
+  /* Panel sections the user chose (filter menu); the full task list follows the same choice. */
+  const [sections, setSections] = useState<SectionPrefs>(loadSectionPrefs);
+  const listedTasks = useMemo(() => {
+    const show = visibleStatuses(sections);
+    return sortedTasks.filter((t) => show.has(t.status));
+  }, [sortedTasks, sections]);
 
   const petRect = useMemo(
     () => ({ x: petRenderPos.x, y: petRenderPos.y, w: PET_BOX, h: PET_BOX }),
@@ -569,6 +578,13 @@ export default function App() {
           position={panelPos}
           pending={pending}
           revisions={revisions}
+          drafts={drafts}
+          sections={sections}
+          onSectionsChange={(next) => {
+            touch();
+            setSections(next);
+            saveSectionPrefs(next);
+          }}
           reviewsCompleted={weekly.reviewsCompleted}
           submissionsCompleted={weekly.submissionsCompleted}
           goals={goals}
@@ -603,7 +619,7 @@ export default function App() {
         <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
         <ExpandedView
           anchor={shell ? expandedPos : undefined}
-          tasks={sortedTasks}
+          tasks={listedTasks}
           nowMs={nowMs}
           search={search}
           onSearchChange={(q) => {
