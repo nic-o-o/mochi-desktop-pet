@@ -1092,3 +1092,142 @@ html.mochi-shell .expanded-view {
     transition: none !important;
   }
 }
+
+/* ---- Codimango setup card (glance panel, CLI missing or signed out) ---- */
+.setup-card {
+  --setup-ink: #5f528f;
+  --setup-soft: #efeaf9;
+  --setup-line: #ddd5f0;
+  margin: 16px 0 6px;
+  padding: 16px;
+  border: 1.5px solid var(--setup-line);
+  border-radius: 18px;
+  background: #faf8fe;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.setup-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--setup-soft);
+  color: var(--setup-ink);
+}
+
+.setup-eyebrow {
+  margin: 0 0 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--setup-ink);
+}
+
+.setup-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.setup-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.setup-body code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--setup-soft);
+  color: var(--setup-ink);
+  font-size: 11.5px;
+}
+
+.setup-primary,
+.setup-check {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.setup-primary {
+  border: 1px solid var(--setup-ink);
+  background: var(--setup-ink);
+  color: #fff;
+}
+
+.setup-primary:hover {
+  filter: brightness(1.08);
+}
+
+.setup-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1.5px solid var(--setup-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.setup-command code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--ink);
+  user-select: all;
+}
+
+.setup-copy {
+  flex: none;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--setup-soft);
+  color: var(--setup-ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.setup-check {
+  border: 1.5px solid var(--setup-line);
+  background: #fff;
+  color: var(--setup-ink);
+}
+
+.setup-check:hover:not(:disabled) {
+  border-color: var(--setup-ink);
+}
+
+.setup-check:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.setup-foot {
+  margin: 0;
+  font-size: 11px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.glance-connecting {
+  padding: 16px 0 8px;
+}

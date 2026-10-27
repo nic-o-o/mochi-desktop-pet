@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, isCodimangoUrl, pickRow } from './codimango.mjs';
+import { classifyFailure, isAllowedLink, pickRow } from './codimango.mjs';
 
 describe('classifyFailure', () => {
   it('reports a missing CLI', () => {
@@ -45,11 +45,13 @@ describe('pickRow', () => {
   });
 });
 
-describe('isCodimangoUrl', () => {
-  it('allows only https Codimango pages', () => {
-    expect(isCodimangoUrl('https://codimango.internalmeta.com/reviews/1')).toBe(true);
-    expect(isCodimangoUrl('http://codimango.internalmeta.com/reviews/1')).toBe(false);
-    expect(isCodimangoUrl('https://evil.example/codimango.internalmeta.com')).toBe(false);
-    expect(isCodimangoUrl('file:///etc/passwd')).toBe(false);
+describe('isAllowedLink', () => {
+  it('allows only https Codimango pages and the Alacarte page', () => {
+    expect(isAllowedLink('https://www.internalfb.com/alacarte')).toBe(true);
+    expect(isAllowedLink('https://www.internalfb.com/intern/anything')).toBe(false);
+    expect(isAllowedLink('https://codimango.internalmeta.com/reviews/1')).toBe(true);
+    expect(isAllowedLink('http://codimango.internalmeta.com/reviews/1')).toBe(false);
+    expect(isAllowedLink('https://evil.example/codimango.internalmeta.com')).toBe(false);
+    expect(isAllowedLink('file:///etc/passwd')).toBe(false);
   });
 });

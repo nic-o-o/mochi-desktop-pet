@@ -29,8 +29,8 @@ export interface MochiShell {
   syncBounds: (rect: BoundsRect) => void;
   /** Read your reviews and tasks through the codimango CLI login (main process). */
   fetchCodimango?: () => Promise<CodimangoFetchResult>;
-  /** Open a codimango.internalmeta.com page in the default browser. */
-  openCodimango?: (url: string) => Promise<boolean>;
+  /** Open a Codimango (or Alacarte) page in the default browser. */
+  openLink?: (url: string) => Promise<boolean>;
 }
 
 declare global {
@@ -88,10 +88,10 @@ export function fetchCodimango(): Promise<CodimangoFetchResult | null> {
 }
 
 /** Opens the page in the browser via the shell; in a plain browser, a new tab. */
-export function openCodimango(url: string): void {
+export function openLink(url: string): void {
   const b = bridge();
-  if (b?.openCodimango) {
-    void b.openCodimango(url);
+  if (b?.openLink) {
+    void b.openLink(url);
   } else if (typeof window !== 'undefined') {
     window.open(url, '_blank', 'noopener');
   }

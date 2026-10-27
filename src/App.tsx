@@ -19,10 +19,11 @@ import {
   isShellMode,
   onDisplayChanged,
   onSimulateNotification,
-  openCodimango,
+  openLink,
   syncBounds,
 } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
+import { ALACARTE_URL } from './mochi/SetupCard.tsx';
 import { ExpandedView } from './mochi/ExpandedView.tsx';
 import './App.css';
 
@@ -179,7 +180,11 @@ export default function App() {
   const pawPos = { x: viewport.w - 80, y: viewport.h - 80 };
 
   /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
-  const { tasks, weekly } = useTasks(panelOpen || expandedOpen, nowMs);
+  const { tasks, weekly, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
+  /* Missing CLI or sign-in: the panel shows setup steps. The last failure stays
+     up while "Check connection" runs, and clears only on a successful read. */
+  const setupKind =
+    failure?.kind === 'cli_missing' || failure?.kind === 'login_required' ? failure.kind : null;
   const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
   const pending = useMemo(() => sortedTasks.filter((t) => t.status === 'pending_review'), [sortedTasks]);
   const revisions = useMemo(() => sortedTasks.filter((t) => t.status === 'revision_required'), [sortedTasks]);
@@ -359,7 +364,7 @@ export default function App() {
     /* Codimango rows open their review/submission page; mock rows keep the local detail view. */
     const url = sortedTasks.find((t) => t.id === id)?.url;
     if (url) {
-      openCodimango(url);
+      openLink(url);
       return;
     }
     setPanelOpen(false);
@@ -537,6 +542,20 @@ export default function App() {
             setEditingIn(null);
           }}
           onOpenTask={openTaskDetail}
+          setup={
+            setupKind
+              ? {
+                  kind: setupKind,
+                  checking: status === 'loading',
+                  onCheck: () => {
+                    touch();
+                    refresh();
+                  },
+                  onOpenAlacarte: () => openLink(ALACARTE_URL),
+                }
+              : undefined
+          }
+          connecting={!setupKind && status === 'loading' && fetchedAtMs === null}
         />
         </div>
       )}
@@ -557,7 +576,7 @@ export default function App() {
             touch();
             const url = id ? sortedTasks.find((t) => t.id === id)?.url : undefined;
             if (url) {
-              openCodimango(url);
+              openLink(url);
               return;
             }
             setSelectedId(id);

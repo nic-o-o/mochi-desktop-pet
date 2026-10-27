@@ -40,12 +40,14 @@ token. Install the CLI from Alacarte (`devfeature_codimango`), then run
 - **Refresh:** `src/mochi/useTasks.ts` shows the cached snapshot immediately,
   then refreshes on launch, on panel open and every 10 minutes (at most once a
   minute).
-- **Failure states:** `status` / `failure` from `useTasks`: `cli_missing`,
-  `login_required` (fix: `codimango auth setup`), `offline`, `error`. They are
-  also logged to the terminal as `[mochi] codimango …`.
+- **Setup card:** when the CLI is missing (`cli_missing`) or signed out
+  (`login_required`), the glance panel shows setup steps instead of the week:
+  Open Alacarte, a copyable `codimango auth setup`, and Check connection.
+  `offline` / `error` keep the cached rows and log `[mochi] codimango …` to
+  the terminal. Try it with `MOCHI_CODIMANGO_BIN=/nonexistent npm run desktop`.
 - **Opening a task:** clicking a title (panel or full list) opens the task's
   Codimango page (`/reviews/<id>` or `/submissions/<id>`) in your browser via
-  `openCodimango` in `src/mochi/shell.ts`; the main process only opens
+  `openLink` in `src/mochi/shell.ts`; the main process only opens
   Codimango URLs. Mock rows (no `url`) keep the local detail view.
 - **Baseline:** `npm run baseline [days] [--json]` prints your time to verdict
   (pool entry to verdict: median, p90, worst) for before/after comparisons.

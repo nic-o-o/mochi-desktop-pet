@@ -130,11 +130,13 @@ export function fetchCodimango() {
   return inFlight;
 }
 
-/** Only Codimango pages may be opened from the renderer. */
-export function isCodimangoUrl(url) {
+/** Only Codimango pages and the Alacarte install page may be opened from the renderer. */
+export function isAllowedLink(url) {
   try {
     const u = new URL(String(url));
-    return u.protocol === 'https:' && u.hostname === 'codimango.internalmeta.com';
+    if (u.protocol !== 'https:') return false;
+    if (u.hostname === 'codimango.internalmeta.com') return true;
+    return u.hostname === 'www.internalfb.com' && (u.pathname === '/alacarte' || u.pathname.startsWith('/alacarte/'));
   } catch {
     return false;
   }
