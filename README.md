@@ -65,9 +65,9 @@ a desktop is a window — but this one never exists beyond Mochi's own pixels.
 Clicks need no hover toggling: mouse events stay enabled permanently and
 unpainted (fully transparent) pixels pass through to the apps below natively,
 so small buttons can't fall through a toggling race. Dragging moves the pet by
-moving the window (pet position state → bounds sync). The Simulate control is
-not on screen in shell mode — press **Cmd+Shift+M** anywhere to trigger a
-notification instead.
+moving the window (pet position state → bounds sync). There is no on-screen
+notification button in shell mode — press **Cmd+Shift+M** anywhere to replay
+past notifications instead.
 
 Run it on your Mac (it cannot open a window on a headless devserver):
 
@@ -88,10 +88,10 @@ Manual checklist on the Mac (not yet run — no display server here):
    (Mission Control shows a small window titled “Mochi”).
 2. Drag moves the pet (window follows); click (no drag) opens the panel.
 3. Minus hides to the paw; paw restores. Panel/bubble/expanded open, edit
-   goals, Cmd+Shift+M simulates a notification.
+   goals, Cmd+Shift+M replays the latest past notification.
 4. Clicks on transparent gaps beside the pet reach the app below (nothing
    hides unexpectedly); idle 10s → sleepy; swipe Spaces — the pet follows.
-5. `npm test` still passes (44 tests, incl. bridge + union geometry + glance flags + goal steppers).
+5. `npm test` still passes (82 tests, incl. bridge + union geometry + glance flags + goal steppers + notifications + setup card).
 
 Limits: primary display only (re-clamped on display change); overlay level is
 `floating` (switch to `screen-saver` in `electron/main.mjs` to float over
@@ -104,8 +104,10 @@ the fix is a direct move-window IPC bypassing React state per frame.
 
 - Drag moves the pet without opening the panel (6px click/drag threshold); a
   plain click toggles the task panel.
-- “Simulate notification” → nervous bubble near the pet → clicking the bubble
-  opens the panel and dismisses the bubble (bubbles also auto-dismiss after 7s).
+- Real arrivals (review verdicts, validation pass/fail) → nervous bubble near
+  the pet, which stays until clicked → clicking the bubble opens its task page
+  (clicking the pet clears it instead). Cmd+Shift+M replays past notifications
+  newest first.
 - Goal editor accepts positive integers only (`0`, `abc`, `2.5` rejected with
   messages, Save disabled); saving updates the panel cards, the pet rings, and
   `localStorage` immediately.

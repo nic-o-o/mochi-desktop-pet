@@ -10,8 +10,10 @@ import {
   unionBounds,
 } from './mochi/logic.ts';
 import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
-import { NOTIFICATION_TEMPLATES, PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
+import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
+import type { Notice } from './mochi/notifications.ts';
+import { NOTICE_ICONS, noticeAge, useNotificationHistory } from './mochi/notifications.ts';
 import { MochiPet } from './mochi/MochiPet.tsx';
 import {
   getDisplayBounds,
@@ -30,7 +32,6 @@ import './App.css';
 export const PET_BOX = 144;
 const PANEL_SIZE = { w: 352, h: 470 };
 const BUBBLE_SIZE = { w: 264, h: 132 };
-const BUBBLE_AUTO_DISMISS_MS = 7000;
 /* desktop shell union rects (outer sizes + shadow margin, generous on purpose) */
 const UNION_PAD = 16;
 const PET_UNION_H = 212;
@@ -42,7 +43,12 @@ const PAW_UNION = { w: 96, h: 96 };
 interface Bubble {
   id: number;
   title: string;
-  body: string;
+  taskName: string;
+  detail: string;
+  raisedAtMs: number;
+  kind: Notice['kind'];
+  /** Codimango page to open instead of the panel (real notifications). */
+  url?: string;
 }
 
 function defaultPetPos(): XY {
@@ -96,7 +102,6 @@ export default function App() {
     origY: number;
     moved: boolean;
   } | null>(null);
-  const notifIndex = useRef(0);
   // TEMP-DEBUG: dedupe for sync logging; remove with the log below.
   const lastSyncKey = useRef('');
 
@@ -155,16 +160,6 @@ export default function App() {
     }
   }, [petPos]);
 
-  /* notification bubbles dismiss themselves after a few seconds */
-  useEffect(() => {
-    if (!bubble) return;
-    const id = bubble.id;
-    const timer = window.setTimeout(() => {
-      setBubble((b) => (b && b.id === id ? null : b));
-    }, BUBBLE_AUTO_DISMISS_MS);
-    return () => window.clearTimeout(timer);
-  }, [bubble]);
-
   const idleSeconds = Math.max(0, Math.floor((nowMs - lastActive) / 1000));
   const panelLikeOpen = panelOpen || expandedOpen;
   const petState = resolvePetState({
@@ -180,7 +175,7 @@ export default function App() {
   const pawPos = { x: viewport.w - 80, y: viewport.h - 80 };
 
   /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
-  const { tasks, weekly, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
+  const { tasks, weekly, snapshot, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
   /* Missing CLI or sign-in: the panel shows setup steps. The last failure stays
      up while "Check connection" runs, and clears only on a successful read. */
   const setupKind =
@@ -228,11 +223,20 @@ export default function App() {
   const reviewFrac = ringFraction(weekly.reviewsCompleted, goals.reviewGoal);
   const subFrac = ringFraction(weekly.submissionsCompleted, goals.submissionGoal);
 
+  /* Real notifications: arrivals pop the bubble; the shortcut replays history. */
+  const { showNext, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice) => {
+    touch();
+    setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined });
+  });
+
   const togglePanel = useCallback(() => {
     touch();
+    /* Clicking the pet also clears a lingering bubble. */
+    setBubble(null);
+    resetCycle();
     setEditingIn(null);
     setPanelOpen((v) => !v);
-  }, [touch]);
+  }, [touch, resetCycle]);
 
   function handlePetPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if ((e.target as HTMLElement).closest('[data-nodrag]')) return;
@@ -304,6 +308,7 @@ export default function App() {
     setHidden(true);
     setPanelOpen(false);
     setBubble(null);
+    resetCycle();
     setHovering(false);
   }
 
@@ -312,18 +317,16 @@ export default function App() {
     setHidden(false);
   }
 
-  const simulateNotification = useCallback(() => {
+  const cycleNotification = useCallback(() => {
     touch();
-    const tpl = NOTIFICATION_TEMPLATES[notifIndex.current % NOTIFICATION_TEMPLATES.length];
-    notifIndex.current += 1;
-    setBubble({ id: Date.now(), title: tpl.title, body: tpl.body });
-  }, [touch]);
+    showNext();
+  }, [touch, showNext]);
 
-  /* desktop shell: the global shortcut asks us to simulate (no on-screen button there) */
+  /* desktop shell: the global shortcut replays past notifications (no on-screen button there) */
   useEffect(() => {
     if (!isDesktopShell()) return;
-    return onSimulateNotification(() => simulateNotification());
-  }, [simulateNotification]);
+    return onSimulateNotification(() => cycleNotification());
+  }, [cycleNotification]);
 
   /* desktop shell: shrink-wrap the window around visible UI (screen coords) */
   useEffect(() => {
@@ -343,9 +346,17 @@ export default function App() {
     });
   });
 
+  /* Bubbles never auto-dismiss: a click opens the task (or panel) and clears it. */
   function openBubble() {
     touch();
+    const url = bubble?.url;
     setBubble(null);
+    resetCycle();
+    /* Real notifications open their task page; the placeholder opens the panel. */
+    if (url) {
+      openLink(url);
+      return;
+    }
     setExpandedOpen(false);
     setSelectedId(null);
     setEditingIn(null);
@@ -434,8 +445,8 @@ export default function App() {
             <h2>Notes</h2>
             <p>
               This is placeholder content so the pet has a page to float over. Drag Mochi anywhere —
-              a click (without dragging) opens the task panel. Use “Simulate notification” below to
-              preview an incoming review request.
+              a click (without dragging) opens the task panel. Use “Notifications” below to
+              replay past notifications.
             </p>
           </section>
           <section className="page-card">
@@ -452,15 +463,15 @@ export default function App() {
         </footer>
       </div>
 
-      {/* Testing control — no need to wait for real events. */}
-      <button type="button" className="sim-btn" onClick={simulateNotification}>
+      {/* Past notifications — replays history newest first. */}
+      <button type="button" className="sim-btn" onClick={cycleNotification}>
         <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
           <path
             d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.2 4.2-1.9 4.9-.3.3 0 .6.4.6h11.9c.5 0 .8-.3.5-.6-.7-.7-1.9-1.9-1.9-4.9A4.5 4.5 0 0 0 8 1.5ZM6.6 13.5a1.5 1.5 0 0 0 2.8 0H6.6Z"
             fill="currentColor"
           />
         </svg>
-        Simulate notification
+        Notifications
       </button>
 
       {bubble && !hidden && (
@@ -470,10 +481,24 @@ export default function App() {
           style={{ left: bubblePos.x, top: bubblePos.y }}
           onClick={openBubble}
           aria-live="polite"
-          aria-label={`${bubble.title}: ${bubble.body}. Activate to open the task panel.`}
+          aria-label={`${bubble.title}: ${bubble.taskName} ${bubble.detail} Activate to open the task panel.`}
         >
-          <strong className="bubble-title">{bubble.title}</strong>
-          <span className="bubble-body">{bubble.body}</span>
+          <strong className="bubble-title">
+            <span className="bubble-icon" aria-hidden="true">
+              {bubble.kind ? NOTICE_ICONS[bubble.kind] ?? '🔔' : '🔔'}
+            </span>
+            {bubble.title}
+          </strong>
+          <span className="bubble-body">
+            {bubble.taskName ? (
+              <>
+                <span className="bubble-task">{bubble.taskName}</span> {bubble.detail}
+              </>
+            ) : (
+              bubble.detail
+            )}
+          </span>
+          <span className="bubble-time">{noticeAge(bubble.raisedAtMs, nowMs)}</span>
         </button>
       )}
 

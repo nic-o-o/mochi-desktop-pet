@@ -159,10 +159,6 @@ body {
   cursor: grabbing;
 }
 
-.pet-pressable:focus-visible {
-  outline: 3px solid var(--accent);
-}
-
 .pet-pressable.is-dragging {
   cursor: grabbing;
   filter: drop-shadow(0 10px 12px rgba(43, 38, 32, 0.25));
@@ -370,6 +366,22 @@ body {
 .bubble-body {
   color: var(--ink-soft);
   line-height: 1.4;
+}
+
+.bubble-task {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bubble-icon {
+  margin-right: 6px;
+}
+
+.bubble-time {
+  font-size: 11px;
+  color: var(--ink-soft);
 }
 
 @keyframes bubble-pop {

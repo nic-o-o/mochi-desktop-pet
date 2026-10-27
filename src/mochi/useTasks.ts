@@ -21,6 +21,8 @@ export type TasksStatus = 'mock' | 'loading' | 'ok' | CodimangoFailureKind;
 export interface TasksState {
   tasks: TaskItem[];
   weekly: WeeklyCompleted;
+  /** Last fetched snapshot (null: never fetched); drives notification diffing. */
+  snapshot: CodimangoSnapshot | null;
   status: TasksStatus;
   /** Set when the last refresh failed; `fix` is a command to show the user. */
   failure: CodimangoFailure | null;
@@ -107,5 +109,5 @@ export function useTasks(active: boolean, nowMs: number): TasksState {
   );
   const refresh = useCallback(() => run(true), [run]);
 
-  return { tasks, weekly, status, failure, fetchedAtMs: snapshot?.fetchedAtMs ?? null, refresh };
+  return { tasks, weekly, snapshot, status, failure, fetchedAtMs: snapshot?.fetchedAtMs ?? null, refresh };
 }
