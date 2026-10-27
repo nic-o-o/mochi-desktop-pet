@@ -89,6 +89,18 @@ function createWindow() {
 
 app.setName('Mochi');
 
+// One pet at a time: a second launch quits and brings the running pet forward.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) {
+  console.warn('[mochi] already running, so this copy quits');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    console.log('[mochi] second launch ignored; Mochi is already running');
+    if (win && !win.isDestroyed() && syncedOnce) win.show();
+  });
+}
+
 ipcMain.handle('mochi:get-display-bounds', () => {
   const b = screen.getPrimaryDisplay().bounds;
   return { x: b.x, y: b.y, width: b.width, height: b.height };
@@ -125,6 +137,7 @@ ipcMain.on('mochi:sync-bounds', (event, rect) => {
 });
 
 app.whenReady().then(() => {
+  if (!isPrimary) return;
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
   screen.on('display-metrics-changed', () => {

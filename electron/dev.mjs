@@ -1,6 +1,10 @@
 /* `npm run desktop` — one-command Mochi desktop shell (Mac-first).
  * Spawns Vite, waits for it to answer, then opens the Electron overlay.
  * Ctrl+C (or quitting Electron) stops both. No extra dependencies.
+ *
+ * Refuses to start when :5173 is already taken (usually a Mochi that is still
+ * running): otherwise the new Electron window would attach to the old Vite
+ * server and you'd get two pets running mixed code.
  */
 import { spawn } from 'node:child_process';
 
@@ -14,9 +18,24 @@ function startVite() {
   return vite;
 }
 
-async function waitForVite() {
+/** True when something already answers on the dev port. */
+async function portInUse() {
+  try {
+    await fetch(`http://localhost:${PORT}/`, { signal: AbortSignal.timeout(1000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForVite(vite) {
   const started = Date.now();
+  let exited = false;
+  vite.once('exit', () => {
+    exited = true;
+  });
   for (;;) {
+    if (exited) throw new Error(`Vite exited before answering on :${PORT}`);
     try {
       const res = await fetch(`http://localhost:${PORT}/`);
       if (res.ok) return;
@@ -31,6 +50,12 @@ async function waitForVite() {
 }
 
 async function main() {
+  if (await portInUse()) {
+    throw new Error(
+      `Port ${PORT} is already in use. Is Mochi already running? Quit the other pet ` +
+        '(click it, then Cmd+Q) or stop the other `npm run desktop`, then try again.',
+    );
+  }
   const vite = startVite();
   const killVite = () => {
     if (!vite.killed) vite.kill();
@@ -45,7 +70,7 @@ async function main() {
   });
 
   try {
-    await waitForVite();
+    await waitForVite(vite);
   } catch (err) {
     killVite();
     throw err;
