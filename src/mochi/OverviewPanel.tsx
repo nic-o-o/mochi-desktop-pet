@@ -9,6 +9,8 @@ import {
   ringFraction,
   stepGoal,
 } from './logic.ts';
+import { SetupCard } from './SetupCard.tsx';
+import type { SetupKind } from './SetupCard.tsx';
 
 interface OverviewPanelProps {
   position: XY;
@@ -21,6 +23,10 @@ interface OverviewPanelProps {
   onSaveGoals: (goals: WeeklyGoals) => void;
   onClose: () => void;
   onOpenTask: (id: string) => void;
+  /** Codimango CLI missing or signed out: show setup steps instead of the week. */
+  setup?: { kind: SetupKind; checking: boolean; onCheck: () => void; onOpenAlacarte: () => void };
+  /** First Codimango read still running (nothing cached yet). */
+  connecting?: boolean;
 }
 
 /** Small full-circle progress ring with a centered "done / goal" label. */
@@ -227,42 +233,54 @@ export function OverviewPanel(props: OverviewPanelProps) {
         </button>
       </header>
 
-      <div className="glance-cards">
-        <GlanceCard
-          title="Reviewed"
-          caption="tasks this week"
-          done={reviewsCompleted}
-          goal={goals.reviewGoal}
-          tone="green"
-          onStep={(d) => props.onSaveGoals({ ...goals, reviewGoal: stepGoal(goals.reviewGoal, d) })}
-        />
-        <GlanceCard
-          title="Accepted"
-          caption="goals this week"
-          done={submissionsCompleted}
-          goal={goals.submissionGoal}
-          tone="orange"
-          onStep={(d) =>
-            props.onSaveGoals({ ...goals, submissionGoal: stepGoal(goals.submissionGoal, d) })
-          }
-        />
-      </div>
+      {props.setup ? (
+        <SetupCard {...props.setup} />
+      ) : (
+        <>
+          <div className="glance-cards">
+            <GlanceCard
+              title="Reviewed"
+              caption="tasks this week"
+              done={reviewsCompleted}
+              goal={goals.reviewGoal}
+              tone="green"
+              onStep={(d) => props.onSaveGoals({ ...goals, reviewGoal: stepGoal(goals.reviewGoal, d) })}
+            />
+            <GlanceCard
+              title="Accepted"
+              caption="goals this week"
+              done={submissionsCompleted}
+              goal={goals.submissionGoal}
+              tone="orange"
+              onStep={(d) =>
+                props.onSaveGoals({ ...goals, submissionGoal: stepGoal(goals.submissionGoal, d) })
+              }
+            />
+          </div>
 
-      <TaskSection
-        title="Needs revision"
-        tasks={props.revisions}
-        nowMs={props.nowMs}
-        kind="revision"
-        onOpen={props.onOpenTask}
-      />
-      <hr className="glance-divider" />
-      <TaskSection
-        title="Waiting for your review"
-        tasks={props.pending}
-        nowMs={props.nowMs}
-        kind="pending"
-        onOpen={props.onOpenTask}
-      />
+          {props.connecting ? (
+            <p className="muted small glance-connecting">Connecting to Codimango…</p>
+          ) : (
+            <>
+              <TaskSection
+                title="Needs revision"
+                tasks={props.revisions}
+                nowMs={props.nowMs}
+                kind="revision"
+                onOpen={props.onOpenTask}
+              />
+              <hr className="glance-divider" />
+              <TaskSection
+                title="Waiting for your review"
+                tasks={props.pending}
+                nowMs={props.nowMs}
+                kind="pending"
+                onOpen={props.onOpenTask}
+              />
+            </>
+          )}
+        </>
+      )}
     </section>
   );
 }
