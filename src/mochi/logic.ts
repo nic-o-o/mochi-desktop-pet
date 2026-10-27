@@ -48,6 +48,10 @@ export interface TaskItem {
   checkSummary?: string;
   /** Waiting rows: shown as "Submitted by …" instead of "Assigned by …" when present. */
   submittedBy?: string;
+  /** Row subtitle override (Codimango rows, e.g. "Assigned to you"); wins over the rules above. */
+  subtitle?: string;
+  /** Codimango page for this task (review or submission). */
+  url?: string;
 }
 
 export const PRIORITY_RANK: Record<TaskPriority, number> = {

@@ -10,7 +10,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "desktop": "node electron/dev.mjs"
+    "desktop": "node electron/dev.mjs",
+    "baseline": "node scripts/baseline.mjs"
   },
   "dependencies": {
     "react": "^19.3.1",

@@ -15,9 +15,10 @@
  * Run on a Mac with a display server: `npm run desktop` (starts Vite + this).
  * This cannot open a window on a headless devserver.
  */
-import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchCodimango, isCodimangoUrl } from './codimango.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.MOCHI_DEV_URL ?? 'http://localhost:5173/';
@@ -91,6 +92,14 @@ app.setName('Mochi');
 ipcMain.handle('mochi:get-display-bounds', () => {
   const b = screen.getPrimaryDisplay().bounds;
   return { x: b.x, y: b.y, width: b.width, height: b.height };
+});
+
+// Codimango reads go through the user's CLI login (electron/codimango.mjs).
+ipcMain.handle('mochi:fetch-codimango', () => fetchCodimango());
+
+ipcMain.handle('mochi:open-codimango', (_event, url) => {
+  if (!isCodimangoUrl(url)) return false;
+  return shell.openExternal(url).then(() => true);
 });
 
 ipcMain.on('mochi:sync-bounds', (event, rect) => {

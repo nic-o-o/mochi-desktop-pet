@@ -10,14 +10,8 @@ import {
   unionBounds,
 } from './mochi/logic.ts';
 import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
-import {
-  MOCK_TASKS,
-  NOTIFICATION_TEMPLATES,
-  PET_POS_STORAGE_KEY,
-  WEEKLY_COMPLETED,
-  loadGoals,
-  saveGoals,
-} from './mochi/mockData.ts';
+import { NOTIFICATION_TEMPLATES, PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
+import { useTasks } from './mochi/useTasks.ts';
 import { MochiPet } from './mochi/MochiPet.tsx';
 import {
   getDisplayBounds,
@@ -183,7 +177,9 @@ export default function App() {
   const petRenderPos = clampPetPosition(petPos, viewport, PET_BOX);
   const pawPos = { x: viewport.w - 80, y: viewport.h - 80 };
 
-  const sortedTasks = useMemo(() => sortTasks(MOCK_TASKS), []);
+  /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
+  const { tasks, weekly } = useTasks(panelOpen || expandedOpen, nowMs);
+  const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
   const pending = useMemo(() => sortedTasks.filter((t) => t.status === 'pending_review'), [sortedTasks]);
   const revisions = useMemo(() => sortedTasks.filter((t) => t.status === 'revision_required'), [sortedTasks]);
 
@@ -223,8 +219,8 @@ export default function App() {
   const unionLocal = shell && displayReady ? unionBounds(visibleRects, viewport, UNION_PAD) : null;
   const unionSafe = unionLocal ?? { x: 0, y: 0, width: 1, height: 1 };
 
-  const reviewFrac = ringFraction(WEEKLY_COMPLETED.reviewsCompleted, goals.reviewGoal);
-  const subFrac = ringFraction(WEEKLY_COMPLETED.submissionsCompleted, goals.submissionGoal);
+  const reviewFrac = ringFraction(weekly.reviewsCompleted, goals.reviewGoal);
+  const subFrac = ringFraction(weekly.submissionsCompleted, goals.submissionGoal);
 
   const togglePanel = useCallback(() => {
     touch();
@@ -373,8 +369,8 @@ export default function App() {
   }
 
   const petLabel =
-    `Mochi is ${petState}. Reviews ${WEEKLY_COMPLETED.reviewsCompleted} of ${goals.reviewGoal} goal, ` +
-    `submissions ${WEEKLY_COMPLETED.submissionsCompleted} of ${goals.submissionGoal} goal. ` +
+    `Mochi is ${petState}. Reviews ${weekly.reviewsCompleted} of ${goals.reviewGoal} goal, ` +
+    `submissions ${weekly.submissionsCompleted} of ${goals.submissionGoal} goal. ` +
     `Press Enter to ${panelOpen ? 'close' : 'open'} the task panel.`;
 
   /* desktop shell: wait for real display bounds before painting anything */
@@ -524,8 +520,8 @@ export default function App() {
           position={panelPos}
           pending={pending}
           revisions={revisions}
-          reviewsCompleted={WEEKLY_COMPLETED.reviewsCompleted}
-          submissionsCompleted={WEEKLY_COMPLETED.submissionsCompleted}
+          reviewsCompleted={weekly.reviewsCompleted}
+          submissionsCompleted={weekly.submissionsCompleted}
           goals={goals}
           nowMs={nowMs}
           onSaveGoals={handleSaveGoals}
