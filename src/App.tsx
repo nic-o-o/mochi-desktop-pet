@@ -26,6 +26,7 @@ import {
 } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
 import { ALACARTE_URL } from './mochi/SetupCard.tsx';
+import type { SetupKind } from './mochi/SetupCard.tsx';
 import { ExpandedView } from './mochi/ExpandedView.tsx';
 import './App.css';
 
@@ -180,6 +181,17 @@ export default function App() {
      up while "Check connection" runs, and clears only on a successful read. */
   const setupKind =
     failure?.kind === 'cli_missing' || failure?.kind === 'login_required' ? failure.kind : null;
+  /* After a manual "Check connection" that still fails, nudge the user to finish
+     setup. Derived during render (never pressed, checking, or a new failure kind: no hint). */
+  const [checkEpoch, setCheckEpoch] = useState(0);
+  const [seenEpoch, setSeenEpoch] = useState(0);
+  const [hintKind, setHintKind] = useState<SetupKind | null>(null);
+  if (hintKind !== null && hintKind !== setupKind) setHintKind(null);
+  if (status !== 'loading' && setupKind && checkEpoch > seenEpoch) {
+    setSeenEpoch(checkEpoch);
+    setHintKind(setupKind);
+  }
+  const checkHint = hintKind === setupKind && checkEpoch === seenEpoch;
   const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
   const pending = useMemo(() => sortedTasks.filter((t) => t.status === 'pending_review'), [sortedTasks]);
   const revisions = useMemo(() => sortedTasks.filter((t) => t.status === 'revision_required'), [sortedTasks]);
@@ -572,8 +584,10 @@ export default function App() {
               ? {
                   kind: setupKind,
                   checking: status === 'loading',
+                  hint: checkHint,
                   onCheck: () => {
                     touch();
+                    setCheckEpoch((e) => e + 1);
                     refresh();
                   },
                   onOpenAlacarte: () => openLink(ALACARTE_URL),

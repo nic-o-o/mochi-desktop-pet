@@ -1233,6 +1233,22 @@ html.mochi-shell .expanded-view {
   cursor: progress;
 }
 
+.setup-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #f0dcb8;
+  border-radius: 10px;
+  background: #fdf3e3;
+  color: #8a5a12;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.setup-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
 .setup-foot {
   margin: 0;
   font-size: 11px;
