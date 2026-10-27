@@ -28,6 +28,7 @@ const ROW_FIELDS = [
   'track',
   'reviewSlaDeadline',
   'enteredPoolAt',
+  'claimedAt',
   'reviewedAt',
   'escalationLevel',
   'validationStatus',

@@ -12,6 +12,7 @@ function row(overrides: Partial<CodimangoRow> & { id: string; name: string }): C
     track: 'swe-bench-pro',
     reviewSlaDeadline: null,
     enteredPoolAt: null,
+    claimedAt: null,
     reviewedAt: null,
     escalationLevel: null,
     validationStatus: null,
@@ -54,6 +55,8 @@ describe('diffNotifications — arrivals from snapshot diffs', () => {
     expect(n.taskName).toBe('ember-one');
     expect(n.detail).toBe('A task assigned to you was accepted.');
     expect(n.url).toBe('https://codimango.internalmeta.com/reviews/r1');
+    // Usually your own verdict: kept in history, never pops the bubble.
+    expect(n.quiet).toBe(true);
   });
 
   it('fires owner-voice verdicts for my tasks', () => {
@@ -63,6 +66,7 @@ describe('diffNotifications — arrivals from snapshot diffs', () => {
     expect(n.kind).toBe('needs_revision');
     expect(n.title).toBe('Changes Requested');
     expect(n.detail).toBe('Your task needs further changes before it can be accepted.');
+    expect(n.quiet).toBeUndefined();
   });
 
   it('never fires on draft or in-review statuses', () => {
@@ -121,17 +125,44 @@ describe('diffNotifications — arrivals from snapshot diffs', () => {
     expect(fail.detail).toContain('Oracle 1/3');
   });
 
-  it('fires assigned and submitted when rows enter review', () => {
+  it('fires assigned and review-started when a reviewer claims a task', () => {
     const prev = snap([], []);
     const next = snap(
-      [row({ id: 'r1', name: 'ember-rev', enteredPoolAt: iso(NOW - 500) })],
-      [row({ id: 'm1', name: 'ember-mine', enteredPoolAt: iso(NOW - 500) })],
+      [row({ id: 'r1', name: 'ember-rev', enteredPoolAt: iso(NOW - 900), claimedAt: iso(NOW - 500) })],
+      [row({ id: 'm1', name: 'ember-mine', enteredPoolAt: iso(NOW - 900), claimedAt: iso(NOW - 500) })],
     );
-    const [submitted, assigned] = diffNotifications(prev, next, NOW);
-    expect(submitted.kind).toBe('task_submitted');
-    expect(submitted.title).toBe('Task Submitted for Review');
+    const [started, assigned] = diffNotifications(prev, next, NOW);
+    expect(started.kind).toBe('review_started');
+    expect(started.title).toBe('Review Started');
+    expect(started.detail).toBe('A reviewer picked up your task.');
+    expect(started.url).toBe('https://codimango.internalmeta.com/submissions/m1');
     expect(assigned.kind).toBe('review_assigned');
     expect(assigned.title).toBe('Review Assigned');
+  });
+
+  it('ignores old events on rows that are new to the snapshot (e.g. paged in past 100 rows)', () => {
+    const DAY = 86_400_000;
+    const prev = snap([], []);
+    const next = snap(
+      [
+        row({ id: 'r1', name: 'old-verdict', reviewStatus: 'accepted', reviewedAt: iso(NOW - 3 * DAY) }),
+        row({ id: 'r2', name: 'old-claim', claimedAt: iso(NOW - 2 * DAY) }),
+      ],
+      [
+        row({ id: 'm1', name: 'old-mine', reviewStatus: 'needs_revision', reviewedAt: iso(NOW - 5 * DAY) }),
+        row({ id: 'm2', name: 'old-validation', reviewStatus: 'draft', validationStatus: 'failed' }),
+      ],
+    );
+    expect(diffNotifications(prev, next, NOW)).toEqual([]);
+  });
+
+  it('still notifies a new row whose event happened since the last fetch', () => {
+    const prev = snap([], []);
+    const next = snap(
+      [],
+      [row({ id: 'm1', name: 'fresh', reviewStatus: 'accepted', reviewedAt: iso(NOW + 60_000) })],
+    );
+    expect(diffNotifications(prev, next, NOW).map((n) => n.kind)).toEqual(['accepted']);
   });
 });
 
@@ -157,7 +188,7 @@ describe('seedNotifications — first snapshot becomes browsable history', () =>
     const seeded = seedNotifications(s, NOW);
     expect(seeded.map((n) => n.taskId)).toEqual(['m1', 'r2', 'r1', 'm1']);
     expect(seeded.map((n) => n.kind)).toEqual([
-      'task_submitted',
+      'review_started',
       'review_assigned',
       'accepted',
       'validation_failed',
@@ -167,13 +198,13 @@ describe('seedNotifications — first snapshot becomes browsable history', () =>
     expect(seeded[3].title).toBe('Validation failed');
   });
 
-  it('seeds standing review rows as assigned/submitted', () => {
+  it('seeds standing review rows as assigned/review-started', () => {
     const s = snap(
       [row({ id: 'r1', name: 'ember-rev', enteredPoolAt: iso(NOW - 3000) })],
       [row({ id: 'm1', name: 'ember-mine', enteredPoolAt: iso(NOW - 4000) })],
     );
     const kinds = seedNotifications(s, NOW).map((n) => n.kind);
-    expect(kinds).toEqual(['review_assigned', 'task_submitted']);
+    expect(kinds).toEqual(['review_assigned', 'review_started']);
   });
 
   it('returns empty for a snapshot with nothing decided', () => {
@@ -210,7 +241,7 @@ describe('NOTICE_ICONS — canonical per-type icon', () => {
       validation_passed: '✅',
       validation_failed: '❌',
       review_assigned: '👤',
-      task_submitted: '📥',
+      review_started: '👀',
     });
   });
 });

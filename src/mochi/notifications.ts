@@ -5,13 +5,18 @@
  * validation pass/fail. The first snapshot is always a silent baseline.
  * History persists newest-first in localStorage, capped, and Cmd+Shift+M
  * walks it instead of showing canned templates.
+ *
+ * Verdicts on reviews you were assigned are usually your own decision, so they
+ * go to history without popping. A row that is new to the snapshot (e.g. it
+ * moved into the first 100 rows) only notifies if its event time is after the
+ * previous fetch, so old tasks don't re-announce themselves.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodimangoRow, CodimangoSnapshot } from './codimango.ts';
 import { failedCheckSummary, reviewUrl, submissionUrl } from './codimango.ts';
 
-/* v2: entries carry kind+icon; v1 entries are dropped and reseeded. */
-export const NOTIFICATIONS_STORAGE_KEY = 'mochi.notifications.v2';
+/* v3: task_submitted became review_started; older entries are dropped and reseeded. */
+export const NOTIFICATIONS_STORAGE_KEY = 'mochi.notifications.v3';
 export const NOTIFICATION_HISTORY_LIMIT = 50;
 
 export interface Notice {
@@ -25,6 +30,8 @@ export interface Notice {
   url: string;
   taskId: string;
   raisedAtMs: number;
+  /** Goes to history without popping the bubble (e.g. a verdict you gave yourself). */
+  quiet?: boolean;
 }
 
 export type NoticeKind =
@@ -34,7 +41,7 @@ export type NoticeKind =
   | 'validation_passed'
   | 'validation_failed'
   | 'review_assigned'
-  | 'task_submitted';
+  | 'review_started';
 
 /** Canonical per-type icon, matching the Codimango notifier taxonomy. */
 export const NOTICE_ICONS: Record<NoticeKind, string> = {
@@ -44,7 +51,7 @@ export const NOTICE_ICONS: Record<NoticeKind, string> = {
   validation_passed: '✅',
   validation_failed: '❌',
   review_assigned: '👤',
-  task_submitted: '📥',
+  review_started: '👀',
 };
 
 type NoticeVoice = 'owner' | 'reviewer';
@@ -87,6 +94,7 @@ function verdictNotice(row: CodimangoRow, status: Verdict, voice: NoticeVoice, r
     url: reviewUrl(row.id),
     taskId: row.id,
     raisedAtMs,
+    ...(voice === 'reviewer' ? { quiet: true } : {}),
   };
 }
 
@@ -103,13 +111,15 @@ function assignedNotice(row: CodimangoRow, raisedAtMs: number): Notice {
   };
 }
 
-function submittedNotice(row: CodimangoRow, raisedAtMs: number): Notice {
+/* `being_reviewed` means a reviewer has claimed the task (claimedAt is set),
+   not that it was just submitted. */
+function reviewStartedNotice(row: CodimangoRow, raisedAtMs: number): Notice {
   return {
-    id: `submitted:${row.id}:${raisedAtMs}`,
-    kind: 'task_submitted',
-    title: 'Task Submitted for Review',
+    id: `review-started:${row.id}:${raisedAtMs}`,
+    kind: 'review_started',
+    title: 'Review Started',
     taskName: row.name,
-    detail: 'Your task was submitted and is now waiting for review.',
+    detail: 'A reviewer picked up your task.',
     url: submissionUrl(row.id),
     taskId: row.id,
     raisedAtMs,
@@ -120,6 +130,15 @@ function toMs(iso: string | null, fallback: number): number {
   if (!iso) return fallback;
   const t = Date.parse(iso);
   return Number.isNaN(t) ? fallback : t;
+}
+
+/** Slack for clock skew between Codimango timestamps and the local fetch time. */
+const ARRIVAL_SKEW_MS = 2 * 60_000;
+
+/** For a row missing from the previous snapshot: did this event happen since that fetch? */
+function happenedSince(iso: string | null, prevFetchedAtMs: number): boolean {
+  const t = toMs(iso, Number.NaN);
+  return !Number.isNaN(t) && t >= prevFetchedAtMs - ARRIVAL_SKEW_MS;
 }
 
 /** Compact relative age for the bubble timestamp ("5m ago", "3h ago"). */
@@ -165,28 +184,41 @@ export function diffNotifications(
   const prevMine = new Map(prev.mine.map((r) => [r.id, r]));
   const prevReviewing = new Map(prev.reviewing.map((r) => [r.id, r]));
 
-  /* Owner voice: my tasks' verdicts, submissions, and validation. */
+  const since = (iso: string | null) => happenedSince(iso, prev.fetchedAtMs);
+
+  /* Owner voice: my tasks' verdicts, review pickups, and validation. */
   for (const row of next.mine) {
     const p = prevMine.get(row.id);
     const rs = row.reviewStatus;
-    if (isVerdict(rs) && p?.reviewStatus !== rs) {
+    if (isVerdict(rs) && (p ? p.reviewStatus !== rs : since(row.reviewedAt))) {
       out.push(verdictNotice(row, rs, 'owner', nowMs));
       seen.add(`${row.id}|${rs}`);
-    } else if (rs === 'being_reviewed' && p?.reviewStatus !== 'being_reviewed') {
-      out.push(submittedNotice(row, nowMs));
+    } else if (
+      rs === 'being_reviewed' &&
+      (p ? p.reviewStatus !== 'being_reviewed' : since(row.claimedAt))
+    ) {
+      out.push(reviewStartedNotice(row, nowMs));
     }
     const v = row.validationStatus;
-    if ((v === 'passing' || v === 'failed') && p?.validationStatus !== v) {
+    /* No validation timestamp to check, so only transitions on rows we already had. */
+    if ((v === 'passing' || v === 'failed') && p && p.validationStatus !== v) {
       out.push(validationNotice(row, nowMs));
     }
   }
-  /* Reviewer voice: verdicts I was on, and new assignments to me. */
+  /* Reviewer voice: verdicts I was on (quiet), and new assignments to me. */
   for (const row of next.reviewing) {
     const p = prevReviewing.get(row.id);
     const rs = row.reviewStatus;
-    if (isVerdict(rs) && p?.reviewStatus !== rs && !seen.has(`${row.id}|${rs}`)) {
+    if (
+      isVerdict(rs) &&
+      (p ? p.reviewStatus !== rs : since(row.reviewedAt)) &&
+      !seen.has(`${row.id}|${rs}`)
+    ) {
       out.push(verdictNotice(row, rs, 'reviewer', nowMs));
-    } else if (rs === 'being_reviewed' && p?.reviewStatus !== 'being_reviewed') {
+    } else if (
+      rs === 'being_reviewed' &&
+      (p ? p.reviewStatus !== 'being_reviewed' : since(row.claimedAt))
+    ) {
       out.push(assignedNotice(row, nowMs));
     }
   }
@@ -207,7 +239,7 @@ export function seedNotifications(snapshot: CodimangoSnapshot, nowMs: number): N
       out.push(verdictNotice(row, rs, 'owner', toMs(row.reviewedAt, nowMs)));
       seen.add(`${row.id}|${rs}`);
     } else if (rs === 'being_reviewed') {
-      out.push(submittedNotice(row, toMs(row.enteredPoolAt, nowMs)));
+      out.push(reviewStartedNotice(row, toMs(row.claimedAt ?? row.enteredPoolAt, nowMs)));
     }
     const v = row.validationStatus;
     if (v === 'passing' || v === 'failed') {
@@ -221,7 +253,7 @@ export function seedNotifications(snapshot: CodimangoSnapshot, nowMs: number): N
         out.push(verdictNotice(row, rs, 'reviewer', toMs(row.reviewedAt, nowMs)));
       }
     } else if (rs === 'being_reviewed') {
-      out.push(assignedNotice(row, toMs(row.enteredPoolAt, nowMs)));
+      out.push(assignedNotice(row, toMs(row.claimedAt ?? row.enteredPoolAt, nowMs)));
     }
   }
   out.sort((a, b) => b.raisedAtMs - a.raisedAtMs);
@@ -313,7 +345,8 @@ export function useNotificationHistory(
         const fresh = diffNotifications(prevSnapshot, snapshot, nowMs);
         if (fresh.length > 0) {
           setHistory((h) => saveNotificationHistory([...fresh.slice().reverse(), ...h]));
-          setPendingArrival(fresh[fresh.length - 1]);
+          const loud = fresh.filter((n) => !n.quiet);
+          if (loud.length > 0) setPendingArrival(loud[loud.length - 1]);
         }
       }
     }
