@@ -91,7 +91,7 @@ Manual checklist on the Mac (not yet run — no display server here):
    goals, Cmd+Shift+M replays the latest past notification.
 4. Clicks on transparent gaps beside the pet reach the app below (nothing
    hides unexpectedly); idle 10s → sleepy; swipe Spaces — the pet follows.
-5. `npm test` still passes (82 tests, incl. bridge + union geometry + glance flags + goal steppers + notifications + setup card).
+5. `npm test` still passes (84 tests, incl. bridge + union geometry + glance flags + goal steppers + notifications + setup card).
 
 Limits: primary display only (re-clamped on display change); overlay level is
 `floating` (switch to `screen-saver` in `electron/main.mjs` to float over
@@ -106,8 +106,9 @@ the fix is a direct move-window IPC bypassing React state per frame.
   plain click toggles the task panel.
 - Real arrivals (review verdicts, validation pass/fail) → nervous bubble near
   the pet, which stays until clicked → clicking the bubble opens its task page
-  (clicking the pet clears it instead). Cmd+Shift+M replays past notifications
-  newest first.
+  (clicking the pet clears it instead). Verdicts on reviews you were assigned
+  (usually your own) go to history without popping. Cmd+Shift+M replays past
+  notifications newest first.
 - Goal editor accepts positive integers only (`0`, `abc`, `2.5` rejected with
   messages, Save disabled); saving updates the panel cards, the pet rings, and
   `localStorage` immediately.

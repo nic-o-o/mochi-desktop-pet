@@ -26,6 +26,7 @@ function row(over: Partial<CodimangoRow>): CodimangoRow {
     track: 'swe-bench-pro',
     reviewSlaDeadline: null,
     enteredPoolAt: null,
+    claimedAt: null,
     reviewedAt: null,
     escalationLevel: 0,
     validationStatus: null,

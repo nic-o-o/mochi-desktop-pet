@@ -36,6 +36,8 @@ export interface CodimangoRow {
   track: string | null;
   reviewSlaDeadline: string | null;
   enteredPoolAt: string | null;
+  /** When a reviewer picked the task up; cleared again after the verdict. */
+  claimedAt: string | null;
   reviewedAt: string | null;
   escalationLevel: number | null;
   validationStatus: string | null;
