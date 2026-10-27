@@ -2,6 +2,7 @@
  * In a plain browser `window.mochiShell` is undefined and every function here
  * is a no-op, so `npm run dev` behaves exactly as before.
  */
+import type { CodimangoFetchResult } from './codimango.ts';
 
 export interface DisplayBounds {
   x: number;
@@ -26,6 +27,10 @@ export interface MochiShell {
   onSimulateNotification: (callback: () => void) => () => void;
   /** Resize/move the shell window to the union of visible UI (screen coords). */
   syncBounds: (rect: BoundsRect) => void;
+  /** Read your reviews and tasks through the codimango CLI login (main process). */
+  fetchCodimango?: () => Promise<CodimangoFetchResult>;
+  /** Open a codimango.internalmeta.com page in the default browser. */
+  openCodimango?: (url: string) => Promise<boolean>;
 }
 
 declare global {
@@ -73,4 +78,21 @@ export function onSimulateNotification(callback: () => void): () => void {
 
 export function syncBounds(rect: BoundsRect): void {
   bridge()?.syncBounds(rect);
+}
+
+/** Null outside the desktop shell (plain browser, or an older preload). */
+export function fetchCodimango(): Promise<CodimangoFetchResult | null> {
+  const b = bridge();
+  if (!b?.fetchCodimango) return Promise.resolve(null);
+  return b.fetchCodimango();
+}
+
+/** Opens the page in the browser via the shell; in a plain browser, a new tab. */
+export function openCodimango(url: string): void {
+  const b = bridge();
+  if (b?.openCodimango) {
+    void b.openCodimango(url);
+  } else if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener');
+  }
 }

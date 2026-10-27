@@ -177,13 +177,15 @@ function TaskSection({
                 </button>
                 <div className="glance-meta">
                   <span className="muted">
-                    {kind === 'revision'
-                      ? t.checkSummary
-                        ? `Validation failed · ${t.checkSummary}`
-                        : `${t.type} · ${formatSla(t.slaDueMs, nowMs)}`
-                      : t.submittedBy
-                        ? `Submitted by ${t.submittedBy}`
-                        : `Assigned by ${t.requester}`}
+                    {t.subtitle
+                      ? t.subtitle
+                      : kind === 'revision'
+                        ? t.checkSummary
+                          ? `Validation failed · ${t.checkSummary}`
+                          : `${t.type} · ${formatSla(t.slaDueMs, nowMs)}`
+                        : t.submittedBy
+                          ? `Submitted by ${t.submittedBy}`
+                          : `Assigned by ${t.requester}`}
                   </span>
                   <RowFlag
                     flag={kind === 'revision' ? revisionRowFlag(t.priority) : pendingRowFlag(t.slaDueMs, nowMs)}

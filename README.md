@@ -1,8 +1,9 @@
 # Mochi — Desktop Pet UI Prototype
 
 A floating desktop-pet companion that tracks pending reviews, revision requests,
-and weekly goals. Built with React, TypeScript, and Vite. Local mock data only —
-no network, auth, or internal APIs.
+and weekly goals. Built with React, TypeScript, and Vite. In the desktop shell the panel shows
+your real Codimango reviews and revisions (read through your `codimango` CLI
+login); in a plain browser it shows mock data.
 
 ## Run it
 
@@ -20,6 +21,34 @@ npm test    # Vitest suite: state priority, task sorting, goal validation, geome
 npm run build
 npm run lint
 ```
+
+## Codimango data (desktop shell)
+
+Sign-in is your existing Codimango CLI login; Mochi never reads or stores the
+token. Install the CLI from Alacarte (`devfeature_codimango`), then run
+`codimango auth setup` once.
+
+- **Fetch:** `electron/codimango.mjs` runs `codimango task list --filter
+  reviewing` and `--filter mine` (about 7 s total today) and passes only the
+  fields the panel needs to the renderer (about 50 KB instead of about 4 MB).
+- **Rows and ranking:** `src/mochi/codimango.ts`. Waiting for your review =
+  reviews still `being_reviewed`, ranked by time left to the SLA (past due,
+  under 24 h, 24–48 h, over 48 h; escalated reviews move up one level). Needs
+  revision = your `needs_revision` tasks, ranked by distance from the stale
+  auto-archive (archive warning, failing 10+ days, failing, then pending or
+  passing oldest first).
+- **Refresh:** `src/mochi/useTasks.ts` shows the cached snapshot immediately,
+  then refreshes on launch, on panel open and every 10 minutes (at most once a
+  minute).
+- **Failure states:** `status` / `failure` from `useTasks`: `cli_missing`,
+  `login_required` (fix: `codimango auth setup`), `offline`, `error`. They are
+  also logged to the terminal as `[mochi] codimango …`.
+- **Opening a task:** clicking a title (panel or full list) opens the task's
+  Codimango page (`/reviews/<id>` or `/submissions/<id>`) in your browser via
+  `openCodimango` in `src/mochi/shell.ts`; the main process only opens
+  Codimango URLs. Mock rows (no `url`) keep the local detail view.
+- **Baseline:** `npm run baseline [days] [--json]` prints your time to verdict
+  (pool entry to verdict: median, p90, worst) for before/after comparisons.
 
 ## Desktop pet (Electron shell, Mac-first dev prototype)
 

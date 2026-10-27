@@ -5,6 +5,7 @@ import {
   isShellMode,
   onDisplayChanged,
   onSimulateNotification,
+  openCodimango,
   syncBounds,
 } from './shell.ts';
 import type { BoundsRect } from './shell.ts';
@@ -82,5 +83,20 @@ describe('desktop shell bridge', () => {
     expect(simulated).toBe(1);
     expect(offDisplay).toEqual(expect.any(Function));
     expect(offSimulate).toEqual(expect.any(Function));
+  });
+
+  it('opens Codimango pages through the bridge, or a new tab in a plain browser', () => {
+    const opened: string[] = [];
+    vi.stubGlobal('window', {
+      location: { search: '' },
+      mochiShell: { openCodimango: (url: string) => (opened.push(url), Promise.resolve(true)) },
+    });
+    openCodimango('https://codimango.internalmeta.com/reviews/1');
+    expect(opened).toEqual(['https://codimango.internalmeta.com/reviews/1']);
+
+    const tabs: string[] = [];
+    vi.stubGlobal('window', { location: { search: '' }, open: (url: string) => tabs.push(url) });
+    openCodimango('https://codimango.internalmeta.com/submissions/2');
+    expect(tabs).toEqual(['https://codimango.internalmeta.com/submissions/2']);
   });
 });

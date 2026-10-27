@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('mochiShell', {
   onDisplayChanged: (callback) => subscribe('mochi:display-changed', callback),
   onSimulateNotification: (callback) => subscribe('mochi:simulate-notification', callback),
   syncBounds: (rect) => ipcRenderer.send('mochi:sync-bounds', rect),
+  fetchCodimango: () => ipcRenderer.invoke('mochi:fetch-codimango'),
+  openCodimango: (url) => ipcRenderer.invoke('mochi:open-codimango', url),
 });
 
 // Boot log: the only proof the bridge loaded (forwarded to the terminal).
