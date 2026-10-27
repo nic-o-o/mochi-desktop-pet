@@ -52,6 +52,25 @@ token. Install the CLI from Alacarte (`devfeature_codimango`), then run
 - **Baseline:** `npm run baseline [days] [--json]` prints your time to verdict
   (pool entry to verdict: median, p90, worst) for before/after comparisons.
 
+## Install as a Mac app (no terminal)
+
+```sh
+npm install
+npm run package
+```
+
+This builds `out/Mochi.dmg`: open it and drag **Mochi** to **Applications**,
+then open Mochi from Spotlight or Launchpad. (Or `npm run package -- --install`
+copies the app to `~/Applications`.) The packaged app loads its built files,
+so no terminal or Vite server is needed; right-click its Dock icon for
+**Open at Login**. Logs go to `~/Library/Logs/Mochi/main.log`.
+
+The app is ad-hoc signed only (no Apple Developer ID, not notarized). On the
+Mac that built it, it opens normally; a copy downloaded on another Mac needs
+System Settings → Privacy & Security → **Open Anyway** on first launch. If
+the package step can't download Electron behind the proxy, run it as
+`NODE_USE_ENV_PROXY=1 npm run package`.
+
 ## Desktop pet (Electron shell, Mac-first dev prototype)
 
 The same React app runs as a real floating desktop pet: a single SMALL

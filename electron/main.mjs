@@ -14,14 +14,20 @@
  *
  * Run on a Mac with a display server: `npm run desktop` (starts Vite + this).
  * This cannot open a window on a headless devserver.
+ *
+ * Packaged (`npm run package` → Mochi.app) it loads the built `dist/` files
+ * instead of the Vite server, logs to ~/Library/Logs/Mochi/main.log, and the
+ * Dock icon's menu offers "Open at Login".
  */
-import { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
+import { installFileLog } from './logfile.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const DEV_URL = process.env.MOCHI_DEV_URL ?? 'http://localhost:5173/';
+/* null in the packaged app: load the built files instead of the Vite server. */
+const DEV_URL = process.env.MOCHI_DEV_URL ?? (app.isPackaged ? null : 'http://localhost:5173/');
 const SYNC_WARN_MS = 5000;
 const SIMULATE_ACCELERATOR = 'CommandOrControl+Shift+M';
 
@@ -66,7 +72,11 @@ function createWindow() {
 
   // `?mochi-shell=1` switches the renderer to shell mode (pet-only backdrop,
   // screen-coordinate layout) without depending on the preload bridge.
-  win.loadURL(`${DEV_URL}${DEV_URL.includes('?') ? '&' : '?'}mochi-shell=1`);
+  if (DEV_URL) {
+    win.loadURL(`${DEV_URL}${DEV_URL.includes('?') ? '&' : '?'}mochi-shell=1`);
+  } else {
+    win.loadFile(path.join(here, '..', 'dist', 'index.html'), { query: { 'mochi-shell': '1' } });
+  }
 
   // Permanent observability: bridge/render proof in the terminal.
   win.webContents.on('console-message', (event) => {
@@ -136,8 +146,27 @@ ipcMain.on('mochi:sync-bounds', (event, rect) => {
   }
 });
 
+/** Dock icon right-click → "Open at Login" (packaged app only). */
+function setDockMenu() {
+  const { openAtLogin } = app.getLoginItemSettings();
+  app.dock?.setMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Open at Login',
+        type: 'checkbox',
+        checked: openAtLogin,
+        click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+      },
+    ]),
+  );
+}
+
 app.whenReady().then(() => {
   if (!isPrimary) return;
+  if (app.isPackaged) {
+    console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);
+    setDockMenu();
+  }
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
   screen.on('display-metrics-changed', () => {
