@@ -19,6 +19,7 @@ import {
   isShellMode,
   onDisplayChanged,
   onSimulateNotification,
+  openCodimango,
   syncBounds,
 } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
@@ -355,6 +356,12 @@ export default function App() {
 
   function openTaskDetail(id: string) {
     touch();
+    /* Codimango rows open their review/submission page; mock rows keep the local detail view. */
+    const url = sortedTasks.find((t) => t.id === id)?.url;
+    if (url) {
+      openCodimango(url);
+      return;
+    }
     setPanelOpen(false);
     setSelectedId(id);
     setExpandedOpen(true);
@@ -548,6 +555,11 @@ export default function App() {
           selectedId={selectedId}
           onSelect={(id) => {
             touch();
+            const url = id ? sortedTasks.find((t) => t.id === id)?.url : undefined;
+            if (url) {
+              openCodimango(url);
+              return;
+            }
             setSelectedId(id);
           }}
           editing={editingIn === 'expanded'}

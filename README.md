@@ -43,9 +43,10 @@ token. Install the CLI from Alacarte (`devfeature_codimango`), then run
 - **Failure states:** `status` / `failure` from `useTasks`: `cli_missing`,
   `login_required` (fix: `codimango auth setup`), `offline`, `error`. They are
   also logged to the terminal as `[mochi] codimango …`.
-- **Opening a task:** each row carries `url` (`/reviews/<id>` or
-  `/submissions/<id>`); `openCodimango(url)` in `src/mochi/shell.ts` opens it
-  in the browser (Codimango URLs only).
+- **Opening a task:** clicking a title (panel or full list) opens the task's
+  Codimango page (`/reviews/<id>` or `/submissions/<id>`) in your browser via
+  `openCodimango` in `src/mochi/shell.ts`; the main process only opens
+  Codimango URLs. Mock rows (no `url`) keep the local detail view.
 - **Baseline:** `npm run baseline [days] [--json]` prints your time to verdict
   (pool entry to verdict: median, p90, worst) for before/after comparisons.
 
