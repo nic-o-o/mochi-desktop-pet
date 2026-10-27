@@ -13,6 +13,7 @@ function row(overrides: Partial<CodimangoRow> & { id: string; name: string }): C
     reviewSlaDeadline: null,
     enteredPoolAt: null,
     claimedAt: null,
+    updatedAt: null,
     reviewedAt: null,
     escalationLevel: null,
     validationStatus: null,

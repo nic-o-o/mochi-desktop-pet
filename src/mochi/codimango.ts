@@ -10,8 +10,10 @@
  *     pending task with no push for 14 days is warned, then archived 14 days later):
  *     archive warning sent → urgent; validation failing 10+ days → urgent;
  *     failing → high; pending or passing → normal (oldest send-back first).
+ *   Drafts (optional section) — ready to submit (validation passing) first,
+ *     then failing, running, not yet validated; most recently updated first.
  */
-import type { TaskItem, TaskPriority } from './logic.ts';
+import type { DraftState, TaskItem, TaskPriority } from './logic.ts';
 
 export const CODIMANGO_WEB = 'https://codimango.internalmeta.com';
 
@@ -38,6 +40,8 @@ export interface CodimangoRow {
   enteredPoolAt: string | null;
   /** When a reviewer picked the task up; cleared again after the verdict. */
   claimedAt: string | null;
+  /** Last change to the task (pushes, validation, edits); orders drafts. */
+  updatedAt: string | null;
   reviewedAt: string | null;
   escalationLevel: number | null;
   validationStatus: string | null;
@@ -227,6 +231,52 @@ function revisionItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | nul
   };
 }
 
+const DRAFT_PRIORITY: Record<DraftState, TaskPriority> = {
+  ready: 'high',
+  failing: 'normal',
+  running: 'low',
+  new: 'low',
+};
+
+function draftState(row: CodimangoRow): DraftState {
+  if (row.validationStatus === 'passing') return 'ready';
+  if (row.validationStatus === 'failed') return 'failing';
+  if (row.validationStatus === 'pending') return 'running';
+  return 'new';
+}
+
+/** Your tasks still in draft (not submitted for review). */
+function draftItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | null {
+  if (row.status !== 'draft') return null;
+  const state = draftState(row);
+  const updatedMs = ms(row.updatedAt) ?? 0;
+  const checkSummary = state === 'failing' ? failedCheckSummary(row) : undefined;
+  const lead =
+    state === 'ready'
+      ? 'Validation passing · ready to submit'
+      : state === 'failing'
+        ? `Validation failed${checkSummary ? ` · ${checkSummary}` : ''}`
+        : state === 'running'
+          ? 'Validation running'
+          : 'Not validated yet';
+  return {
+    id: row.id,
+    title: row.name,
+    type: trackLabel(row.track),
+    priority: DRAFT_PRIORITY[state],
+    status: 'draft',
+    // Drafts have no deadline. Negative update time makes sortTasks list the
+    // most recently updated first within each state.
+    slaDueMs: -updatedMs,
+    description: `Draft. ${lead}. Last updated ${day(row.updatedAt)}.`,
+    requester: 'You',
+    checkSummary,
+    subtitle: updatedMs ? `${lead} · updated ${ago(updatedMs, nowMs)}` : lead,
+    url: submissionUrl(row.id),
+    draftState: state,
+  };
+}
+
 export function toTaskItems(snapshot: CodimangoSnapshot, nowMs: number): CodimangoTaskItem[] {
   const out: CodimangoTaskItem[] = [];
   const seen = new Set<string>();
@@ -238,7 +288,7 @@ export function toTaskItems(snapshot: CodimangoSnapshot, nowMs: number): Codiman
     }
   }
   for (const row of snapshot.mine) {
-    const item = revisionItem(row, nowMs);
+    const item = revisionItem(row, nowMs) ?? draftItem(row, nowMs);
     if (item && !seen.has(item.id)) {
       seen.add(item.id);
       out.push(item);

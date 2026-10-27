@@ -10,7 +10,7 @@ import {
   weeklyCompleted,
 } from './codimango.ts';
 import type { CodimangoRow, CodimangoSnapshot } from './codimango.ts';
-import { revisionRowFlag, sortTasks } from './logic.ts';
+import { draftRowFlag, revisionRowFlag, sortTasks } from './logic.ts';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -27,6 +27,7 @@ function row(over: Partial<CodimangoRow>): CodimangoRow {
     reviewSlaDeadline: null,
     enteredPoolAt: null,
     claimedAt: null,
+    updatedAt: null,
     reviewedAt: null,
     escalationLevel: 0,
     validationStatus: null,
@@ -185,7 +186,9 @@ describe('toTaskItems', () => {
       ),
       NOW,
     );
-    expect(items.map((t) => t.id)).toEqual(['2', '3', '4']);
+    // The draft ('5') becomes its own draft row, not a revision.
+    expect(items.map((t) => t.id)).toEqual(['2', '3', '4', '5']);
+    expect(items.filter((t) => t.status === 'revision_required').map((t) => t.id)).toEqual(['2', '3', '4']);
     expect(items[0]).toMatchObject({
       priority: 'urgent',
       slaDueMs: NOW + 10 * DAY,
@@ -264,5 +267,62 @@ describe('parseCachedSnapshot', () => {
     expect(parseCachedSnapshot(null)).toBeNull();
     expect(parseCachedSnapshot('{not json')).toBeNull();
     expect(parseCachedSnapshot(JSON.stringify({ reviewing: [] }))).toBeNull();
+  });
+});
+
+describe('draft rows', () => {
+  const draft = (id: string, over: Partial<CodimangoRow>) =>
+    row({ id, name: `draft-${id}`, status: 'draft', reviewStatus: 'draft', ...over });
+
+  it('maps drafts with validation state, subtitle and submission link', () => {
+    const [item] = toTaskItems(
+      snap(
+        [],
+        [
+          draft('d1', {
+            validationStatus: 'failed',
+            validationDetails: [{ label: 'Metacode or Opus pass/fail balance', status: 'failed' }],
+            updatedAt: iso(NOW - 2 * DAY),
+          }),
+        ],
+      ),
+      NOW,
+    );
+    expect(item).toMatchObject({
+      status: 'draft',
+      draftState: 'failing',
+      checkSummary: 'Solvability & difficulty',
+      subtitle: 'Validation failed · Solvability & difficulty · updated 2d ago',
+      url: 'https://codimango.internalmeta.com/submissions/d1',
+    });
+    expect(draftRowFlag(item.draftState).text).toBe('FAILING');
+  });
+
+  it('lists ready drafts first, then failing, running, new; newest first within each', () => {
+    const items = toTaskItems(
+      snap(
+        [],
+        [
+          draft('old-fail', { validationStatus: 'failed', updatedAt: iso(NOW - 40 * DAY) }),
+          draft('new-fail', { validationStatus: 'failed', updatedAt: iso(NOW - DAY) }),
+          draft('running', { validationStatus: 'pending', updatedAt: iso(NOW - HOUR) }),
+          draft('ready', { validationStatus: 'passing', updatedAt: iso(NOW - 5 * DAY) }),
+          draft('fresh', { validationStatus: null, updatedAt: iso(NOW - 3 * DAY) }),
+        ],
+      ),
+      NOW,
+    );
+    expect(sortTasks(items).map((t) => t.id)).toEqual(['ready', 'new-fail', 'old-fail', 'running', 'fresh']);
+    expect(items.find((t) => t.id === 'ready')?.subtitle).toBe(
+      'Validation passing · ready to submit · updated 5d ago',
+    );
+    expect(draftRowFlag('ready')).toEqual({ text: 'READY', tone: 'ok' });
+    expect(draftRowFlag('new').text).toBe('NEW');
+  });
+
+  it('does not count drafts toward reviews or revisions', () => {
+    const items = toTaskItems(snap([], [draft('d1', { validationStatus: 'passing' })]), NOW);
+    expect(items.map((t) => t.status)).toEqual(['draft']);
+    expect(weeklyCompleted(snap([], [draft('d1', { reviewedAt: iso(NOW) })]), NOW).submissionsCompleted).toBe(0);
   });
 });

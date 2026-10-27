@@ -32,7 +32,10 @@ export function resolvePetState(input: PetStateInput): PetState {
 /* ------------------------------------------------------------------ tasks -- */
 
 export type TaskPriority = 'urgent' | 'high' | 'normal' | 'low';
-export type TaskStatus = 'pending_review' | 'revision_required';
+export type TaskStatus = 'pending_review' | 'revision_required' | 'draft';
+
+/** Draft rows: where validation stands (READY = passing, can be submitted). */
+export type DraftState = 'ready' | 'failing' | 'running' | 'new';
 
 export interface TaskItem {
   id: string;
@@ -52,6 +55,8 @@ export interface TaskItem {
   subtitle?: string;
   /** Codimango page for this task (review or submission). */
   url?: string;
+  /** Draft rows only. */
+  draftState?: DraftState;
 }
 
 export const PRIORITY_RANK: Record<TaskPriority, number> = {
@@ -119,6 +124,20 @@ export function pendingRowFlag(slaDueMs: number, nowMs: number): GlanceFlag {
   const days = Math.floor(diff / DAY_MS);
   if (days < 1) return { text: '0d left', tone: 'warn' };
   return { text: `${days}d left`, tone: 'ok' };
+}
+
+/** Right-side badge for "Drafts" rows: READY (validation passing) stands out. */
+export function draftRowFlag(state: DraftState | undefined): GlanceFlag {
+  switch (state) {
+    case 'ready':
+      return { text: 'READY', tone: 'ok' };
+    case 'failing':
+      return { text: 'FAILING', tone: 'light' };
+    case 'running':
+      return { text: 'RUNNING', tone: 'light' };
+    default:
+      return { text: 'NEW', tone: 'light' };
+  }
 }
 
 /** Glance ordering for revision rows: HI PRI (0) always precedes LOW PRI (1). */
