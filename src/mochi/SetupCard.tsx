@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 
 export type SetupKind = 'cli_missing' | 'login_required';
 
-export const ALACARTE_URL = 'https://www.internalfb.com/alacarte';
+export const ALACARTE_URL =
+  'https://www.internalfb.com/alacarte?device_key=JRRQJ7M9NL%3A%3Aprod&q=%5B%7B%22field%22%3A%22keyword%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%7B%22type%22%3A%22string%22%2C%22value%22%3A%22devfeature_codimango%22%7D%7D%5D';
 export const AUTH_SETUP_COMMAND = 'codimango auth setup';
 const COPIED_MS = 2000;
 
@@ -13,11 +14,13 @@ const COPIED_MS = 2000;
 export function SetupCard({
   kind,
   checking,
+  hint,
   onCheck,
   onOpenAlacarte,
 }: {
   kind: SetupKind;
   checking: boolean;
+  hint: boolean;
   onCheck: () => void;
   onOpenAlacarte: () => void;
 }) {
@@ -81,6 +84,22 @@ export function SetupCard({
       <button type="button" className="setup-check" onClick={onCheck} disabled={checking}>
         {checking ? 'Checking…' : 'Check connection'}
       </button>
+
+      {hint && (
+        <p className="setup-hint" role="alert">
+          {missing ? (
+            <>
+              Still not connected — make sure Codimango is installed from Alacarte and you've run{' '}
+              <code>codimango auth setup</code> in Terminal, then check again.
+            </>
+          ) : (
+            <>
+              Still not connected — run <code>codimango auth setup</code> in Terminal to refresh your
+              sign-in, then check again.
+            </>
+          )}
+        </p>
+      )}
 
       <p className="setup-foot">Once connected, Mochi will fetch the latest Codimango data automatically.</p>
     </div>

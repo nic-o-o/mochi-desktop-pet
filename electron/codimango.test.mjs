@@ -48,6 +48,11 @@ describe('pickRow', () => {
 describe('isAllowedLink', () => {
   it('allows only https Codimango pages and the Alacarte page', () => {
     expect(isAllowedLink('https://www.internalfb.com/alacarte')).toBe(true);
+    expect(
+      isAllowedLink(
+        'https://www.internalfb.com/alacarte?device_key=JRRQJ7M9NL%3A%3Aprod&q=%5B%7B%22field%22%3A%22keyword%22%7D%5D',
+      ),
+    ).toBe(true);
     expect(isAllowedLink('https://www.internalfb.com/intern/anything')).toBe(false);
     expect(isAllowedLink('https://codimango.internalmeta.com/reviews/1')).toBe(true);
     expect(isAllowedLink('http://codimango.internalmeta.com/reviews/1')).toBe(false);

@@ -24,7 +24,7 @@ interface OverviewPanelProps {
   onClose: () => void;
   onOpenTask: (id: string) => void;
   /** Codimango CLI missing or signed out: show setup steps instead of the week. */
-  setup?: { kind: SetupKind; checking: boolean; onCheck: () => void; onOpenAlacarte: () => void };
+  setup?: { kind: SetupKind; checking: boolean; hint: boolean; onCheck: () => void; onOpenAlacarte: () => void };
   /** First Codimango read still running (nothing cached yet). */
   connecting?: boolean;
 }
