@@ -27,6 +27,8 @@ export interface MochiShell {
   onSimulateNotification: (callback: () => void) => () => void;
   /** Resize/move the shell window to the union of visible UI (screen coords). */
   syncBounds: (rect: BoundsRect) => void;
+  /** Fired after the Mac wakes from sleep or the screen unlocks; returns unsubscribe. */
+  onSystemResumed?: (callback: () => void) => () => void;
   /** Read your reviews and tasks through the codimango CLI login (main process). */
   fetchCodimango?: () => Promise<CodimangoFetchResult>;
   /** Open a Codimango (or Alacarte) page in the default browser. */
@@ -74,6 +76,12 @@ export function onSimulateNotification(callback: () => void): () => void {
   const b = bridge();
   if (!b) return () => {};
   return b.onSimulateNotification(callback);
+}
+
+export function onSystemResumed(callback: () => void): () => void {
+  const b = bridge();
+  if (!b?.onSystemResumed) return () => {};
+  return b.onSystemResumed(callback);
 }
 
 export function syncBounds(rect: BoundsRect): void {

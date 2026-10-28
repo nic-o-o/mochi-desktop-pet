@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
   getDisplayBounds: () => ipcRenderer.invoke('mochi:get-display-bounds'),
   onDisplayChanged: (callback) => subscribe('mochi:display-changed', callback),
   onSimulateNotification: (callback) => subscribe('mochi:simulate-notification', callback),
+  onSystemResumed: (callback) => subscribe('mochi:system-resumed', callback),
   syncBounds: (rect) => ipcRenderer.send('mochi:sync-bounds', rect),
   fetchCodimango: () => ipcRenderer.invoke('mochi:fetch-codimango'),
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
