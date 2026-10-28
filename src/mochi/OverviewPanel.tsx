@@ -27,7 +27,7 @@ interface OverviewPanelProps {
   onSectionsChange: (next: SectionPrefs) => void;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
   onCopyStats?: () => Promise<boolean>;
-  /** Copies diagnostics and opens the dogfood chat space (filter menu footer). */
+  /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
   onReportProblem?: () => Promise<boolean>;
   reviewsCompleted: number;
   submissionsCompleted: number;
@@ -318,10 +318,10 @@ function SectionFilter({
               type="button"
               className="section-menu-action"
               onClick={() => void onReportProblem().then((ok) => setReportState(ok ? 'sent' : 'failed'))}
-              title="Copies diagnostics and opens the Mochi dogfood chat"
+              title="Copies diagnostics and opens #mochi-dogfood-feedback in Slack"
             >
               {reportState === 'sent'
-                ? 'Diagnostics copied: paste them in the chat'
+                ? 'Diagnostics copied: paste them in Slack'
                 : reportState === 'failed'
                   ? "Couldn't open the report"
                   : 'Report a problem…'}

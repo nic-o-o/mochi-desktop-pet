@@ -32,6 +32,7 @@ describe('diagnostics', () => {
       nowMs: now,
     });
     expect(text.split('\n')).toEqual([
+      '```',
       '--- Mochi diagnostics (paste under your description) ---',
       'Mochi: build abc1234 · 2026-10-28, app 0.0.0',
       'macOS: 27.0 (arm64)',
@@ -40,6 +41,7 @@ describe('diagnostics', () => {
       'Recent log:',
       '[mochi] codimango offline: Could not reach Codimango',
       '--- end ---',
+      '```',
     ]);
   });
 

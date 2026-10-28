@@ -126,7 +126,7 @@ ipcMain.handle('mochi:open-link', (_event, url) => {
 });
 
 // Report a Problem: the renderer sends status and counts; we add version, OS
-// and the log tail, copy it, and open the dogfood chat space.
+// and the log tail, copy it, and open #mochi-dogfood-feedback in Slack.
 ipcMain.handle('mochi:report-problem', async (_event, state) => {
   const text = diagnostics({
     state,

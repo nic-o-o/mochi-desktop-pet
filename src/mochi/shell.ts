@@ -40,7 +40,7 @@ export interface MochiShell {
   onSystemResumed?: (callback: () => void) => () => void;
   /** Dock menu "Report a Problem…" asks the renderer to start a report; returns unsubscribe. */
   onReportRequest?: (callback: () => void) => () => void;
-  /** Copy diagnostics (plus version, OS, log tail) and open the dogfood chat space. */
+  /** Copy diagnostics (plus version, OS, log tail) and open #mochi-dogfood-feedback in Slack. */
   reportProblem?: (state: ProblemReportState) => Promise<boolean>;
   /** Read your reviews and tasks through the codimango CLI login (main process). */
   fetchCodimango?: () => Promise<CodimangoFetchResult>;
