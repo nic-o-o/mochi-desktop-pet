@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FreshnessState, GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
 import {
   PRIORITY_RANK,
@@ -25,6 +25,8 @@ interface OverviewPanelProps {
   /** Which sections show (header filter menu); saved by the caller. */
   sections: SectionPrefs;
   onSectionsChange: (next: SectionPrefs) => void;
+  /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
+  onCopyStats?: () => Promise<boolean>;
   reviewsCompleted: number;
   submissionsCompleted: number;
   goals: WeeklyGoals;
@@ -244,12 +246,20 @@ function SectionFilter({
   prefs,
   counts,
   onChange,
+  onCopyStats,
 }: {
   prefs: SectionPrefs;
   counts: Record<SectionKey, number>;
   onChange: (next: SectionPrefs) => void;
+  onCopyStats?: () => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => {
+    if (copyState === 'idle') return;
+    const id = window.setTimeout(() => setCopyState('idle'), 2000);
+    return () => window.clearTimeout(id);
+  }, [copyState]);
   const onCount = SECTIONS.filter(({ key }) => prefs[key]).length;
   return (
     <div className="section-filter">
@@ -283,6 +293,16 @@ function SectionFilter({
               </label>
             );
           })}
+          {onCopyStats && (
+            <button
+              type="button"
+              className="section-menu-action"
+              onClick={() => void onCopyStats().then((ok) => setCopyState(ok ? 'copied' : 'failed'))}
+              title="Copies your review speed before and since installing Mochi, to send to the Mochi team"
+            >
+              {copyState === 'copied' ? 'Copied ✓' : copyState === 'failed' ? "Couldn't copy" : 'Copy my review stats'}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -317,6 +337,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                 drafts: props.drafts.length,
               }}
               onChange={props.onSectionsChange}
+              onCopyStats={props.onCopyStats}
             />
           )}
           <button type="button" className="icon-btn" onClick={props.onClose} aria-label="Close task panel">
