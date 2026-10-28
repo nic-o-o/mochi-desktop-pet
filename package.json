@@ -11,13 +11,15 @@
     "preview": "vite preview",
     "test": "vitest run",
     "desktop": "node electron/dev.mjs",
-    "baseline": "node scripts/baseline.mjs"
+    "baseline": "node scripts/baseline.mjs",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 
 export type SetupKind = 'cli_missing' | 'login_required';
 
+/* Pre-filtered to Codimango. No device_key: that pins one specific laptop,
+   so Alacarte should pick the viewer's own device instead. */
 export const ALACARTE_URL =
-  'https://www.internalfb.com/alacarte?device_key=JRRQJ7M9NL%3A%3Aprod&q=%5B%7B%22field%22%3A%22keyword%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%7B%22type%22%3A%22string%22%2C%22value%22%3A%22devfeature_codimango%22%7D%7D%5D';
+  'https://www.internalfb.com/alacarte?q=%5B%7B%22field%22%3A%22keyword%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%7B%22type%22%3A%22string%22%2C%22value%22%3A%22devfeature_codimango%22%7D%7D%5D';
 export const AUTH_SETUP_COMMAND = 'codimango auth setup';
 const COPIED_MS = 2000;
 

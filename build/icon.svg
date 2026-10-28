@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Mochi app icon: Nicole's pet (happy face) inside its review/submission ring.
+       Source of truth for build/icon.icns; regenerate with scripts/make-icon.swift. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffaf1"/>
+      <stop offset="1" stop-color="#efe8fb"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="184.5" fill="none" stroke="#7f6cc4" stroke-opacity="0.18" stroke-width="3"/>
+  <g transform="translate(142 172) scale(5)">
+    <path d="M 26.26 64.98 A 48 48 0 0 1 121.74 64.98" stroke="#e8e2d4" stroke-width="7" fill="none"/>
+    <path d="M 121.74 75.02 A 48 48 0 0 1 26.26 75.02" stroke="#e8e2d4" stroke-width="7" fill="none"/>
+    <path d="M 26.26 64.98 A 48 48 0 0 1 121.74 64.98" stroke="#1e8e3e" stroke-opacity="0.7" stroke-width="7" fill="none" stroke-linecap="round"/>
+    <path d="M 121.74 75.02 A 48 48 0 0 1 26.26 75.02" stroke="#e8710a" stroke-opacity="0.7" stroke-width="7" fill="none" stroke-linecap="round" pathLength="100" stroke-dasharray="65 100"/>
+    <g transform="translate(74 70) scale(0.85) translate(-74 -70)">
+      <path d="M110 92 Q126 94 124 78 Q123 68 114 70" fill="none" stroke="#7f6cc4" stroke-width="9" stroke-linecap="round"/>
+      <path d="M52 54 L48 28 L68 46 Z" fill="#d3c8ed" stroke="#7f6cc4" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M96 54 L100 28 L80 46 Z" fill="#d3c8ed" stroke="#7f6cc4" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M54 48 L52 35 L61 42 Z" fill="#b3a1e1"/>
+      <path d="M94 48 L96 35 L87 42 Z" fill="#b3a1e1"/>
+      <ellipse cx="74" cy="74" rx="37" ry="35" fill="#d3c8ed" stroke="#7f6cc4" stroke-width="2.5"/>
+      <ellipse cx="58" cy="102" rx="10" ry="6" fill="#e7def9" stroke="#7f6cc4" stroke-width="2"/>
+      <ellipse cx="90" cy="102" rx="10" ry="6" fill="#e7def9" stroke="#7f6cc4" stroke-width="2"/>
+      <ellipse cx="52" cy="76" rx="6" ry="4" fill="#f6c9d4" opacity="0.8"/>
+      <ellipse cx="96" cy="76" rx="6" ry="4" fill="#f6c9d4" opacity="0.8"/>
+      <circle cx="62" cy="66" r="6" fill="#4a3f35"/>
+      <circle cx="86" cy="66" r="6" fill="#4a3f35"/>
+      <circle cx="64" cy="64" r="2" fill="#fff"/>
+      <circle cx="88" cy="64" r="2" fill="#fff"/>
+      <path d="M66 78 Q74 88 82 78 Q74 82 66 78 Z" fill="#8a4b3c"/>
+      <path d="M70 81 Q74 85 78 81 Q74 83 70 81 Z" fill="#e98d8d"/>
+    </g>
+  </g>
+</svg>
