@@ -24,10 +24,13 @@ import {
   isDesktopShell,
   isShellMode,
   onDisplayChanged,
+  onReportRequest,
   onSimulateNotification,
   openLink,
+  reportProblem,
   syncBounds,
 } from './mochi/shell.ts';
+import type { ProblemReportState } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
 import { ALACARTE_URL } from './mochi/SetupCard.tsx';
 import type { SetupKind } from './mochi/SetupCard.tsx';
@@ -196,6 +199,23 @@ export default function App() {
     }
     studyRef.current = next;
   }, [snapshot, status]);
+  /* Report a Problem (≡ menu, or the Dock menu via the shell): status and counts only. */
+  const reportState = useMemo<ProblemReportState>(
+    () => ({
+      build: __MOCHI_BUILD__,
+      status,
+      failureKind: failure?.kind ?? null,
+      fetchedAtMs,
+      counts: {
+        reviews: tasks.filter((t) => t.status === 'pending_review').length,
+        revisions: tasks.filter((t) => t.status === 'revision_required').length,
+        drafts: tasks.filter((t) => t.status === 'draft').length,
+      },
+    }),
+    [status, failure, fetchedAtMs, tasks],
+  );
+  const startProblemReport = useCallback(() => reportProblem(reportState), [reportState]);
+  useEffect(() => onReportRequest(() => void startProblemReport()), [startProblemReport]);
   const copyStats = useCallback(async () => {
     const study = studyRef.current ?? loadStudy();
     if (!study) return false;
@@ -661,6 +681,7 @@ export default function App() {
           revisions={revisions}
           drafts={drafts}
           onCopyStats={status === 'mock' ? undefined : copyStats}
+          onReportProblem={status === 'mock' ? undefined : startProblemReport}
           sections={sections}
           onSectionsChange={(next) => {
             touch();

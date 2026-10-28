@@ -27,6 +27,8 @@ interface OverviewPanelProps {
   onSectionsChange: (next: SectionPrefs) => void;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
   onCopyStats?: () => Promise<boolean>;
+  /** Copies diagnostics and opens the dogfood chat space (filter menu footer). */
+  onReportProblem?: () => Promise<boolean>;
   reviewsCompleted: number;
   submissionsCompleted: number;
   goals: WeeklyGoals;
@@ -247,13 +249,21 @@ function SectionFilter({
   counts,
   onChange,
   onCopyStats,
+  onReportProblem,
 }: {
   prefs: SectionPrefs;
   counts: Record<SectionKey, number>;
   onChange: (next: SectionPrefs) => void;
   onCopyStats?: () => Promise<boolean>;
+  onReportProblem?: () => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
+  const [reportState, setReportState] = useState<'idle' | 'sent' | 'failed'>('idle');
+  useEffect(() => {
+    if (reportState === 'idle') return;
+    const id = window.setTimeout(() => setReportState('idle'), 4000);
+    return () => window.clearTimeout(id);
+  }, [reportState]);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => {
     if (copyState === 'idle') return;
@@ -303,6 +313,20 @@ function SectionFilter({
               {copyState === 'copied' ? 'Copied ✓' : copyState === 'failed' ? "Couldn't copy" : 'Copy my review stats'}
             </button>
           )}
+          {onReportProblem && (
+            <button
+              type="button"
+              className="section-menu-action"
+              onClick={() => void onReportProblem().then((ok) => setReportState(ok ? 'sent' : 'failed'))}
+              title="Copies diagnostics and opens the Mochi dogfood chat"
+            >
+              {reportState === 'sent'
+                ? 'Diagnostics copied: paste them in the chat'
+                : reportState === 'failed'
+                  ? "Couldn't open the report"
+                  : 'Report a problem…'}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -338,6 +362,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
               }}
               onChange={props.onSectionsChange}
               onCopyStats={props.onCopyStats}
+              onReportProblem={props.onReportProblem}
             />
           )}
           <button type="button" className="icon-btn" onClick={props.onClose} aria-label="Close task panel">

@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('mochiShell', {
   onDisplayChanged: (callback) => subscribe('mochi:display-changed', callback),
   onSimulateNotification: (callback) => subscribe('mochi:simulate-notification', callback),
   onSystemResumed: (callback) => subscribe('mochi:system-resumed', callback),
+  onReportRequest: (callback) => subscribe('mochi:report-request', callback),
+  reportProblem: (state) => ipcRenderer.invoke('mochi:report-problem', state),
   syncBounds: (rect) => ipcRenderer.send('mochi:sync-bounds', rect),
   fetchCodimango: () => ipcRenderer.invoke('mochi:fetch-codimango'),
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
