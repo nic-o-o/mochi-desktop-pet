@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  IDLE_SLEEPY_SECONDS,
   clampPetPosition,
   formatSla,
+  freshnessLabel,
+  IDLE_SLEEPY_SECONDS,
   parseGoalInput,
   pendingRank,
   pendingRowFlag,
@@ -341,5 +342,24 @@ describe('geometry — pet stays visible, floats flip at edges', () => {
     const plain = placeFloating(pet, { w: 264, h: 132 }, viewport, 8);
     const far = placeFloating(pet, { w: 264, h: 132 }, viewport, 8, [{ x: 900, y: 600, w: 10, h: 10 }]);
     expect(far).toEqual(plain);
+  });
+});
+
+describe('freshnessLabel', () => {
+  const NOW = 1_800_000_000_000;
+  const MIN = 60_000;
+  it('says how old the data is', () => {
+    expect(freshnessLabel(NOW - 20_000, NOW, 'idle')).toBe('Updated just now');
+    expect(freshnessLabel(NOW - 2 * MIN, NOW, 'idle')).toBe('Updated 2 min ago');
+    expect(freshnessLabel(NOW - 3 * 60 * MIN, NOW, 'idle')).toBe('Updated 3h ago');
+    expect(freshnessLabel(NOW - 2 * 24 * 60 * MIN, NOW, 'idle')).toBe('Updated 2d ago');
+    expect(freshnessLabel(null, NOW, 'idle')).toBe('Not updated yet');
+  });
+
+  it('explains stale data when offline or failing, and shows refreshing', () => {
+    expect(freshnessLabel(NOW - 2 * 60 * MIN, NOW, 'offline')).toBe('Offline · showing data from 2h ago');
+    expect(freshnessLabel(NOW - 5 * MIN, NOW, 'error')).toBe("Couldn't refresh · showing data from 5 min ago");
+    expect(freshnessLabel(null, NOW, 'offline')).toBe('Offline');
+    expect(freshnessLabel(NOW, NOW, 'refreshing')).toBe('Refreshing…');
   });
 });

@@ -666,6 +666,25 @@ export default function App() {
               : undefined
           }
           connecting={!setupKind && status === 'loading' && fetchedAtMs === null}
+          freshness={
+            status === 'mock'
+              ? undefined
+              : {
+                  fetchedAtMs,
+                  state:
+                    status === 'loading'
+                      ? 'refreshing'
+                      : failure?.kind === 'offline'
+                        ? 'offline'
+                        : failure?.kind === 'error'
+                          ? 'error'
+                          : 'idle',
+                  onRefresh: () => {
+                    touch();
+                    refresh();
+                  },
+                }
+          }
         />
         </div>
       )}

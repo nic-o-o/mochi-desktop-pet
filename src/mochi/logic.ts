@@ -155,6 +155,28 @@ export function pendingRank(slaDueMs: number, nowMs: number): number {
   return 1 + Math.floor(diff / DAY_MS);
 }
 
+/* -------------------------------------------------------------- freshness -- */
+
+export type FreshnessState = 'idle' | 'refreshing' | 'offline' | 'error';
+
+function sinceLabel(fromMs: number, nowMs: number): string {
+  const mins = Math.floor(Math.max(0, nowMs - fromMs) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** Panel line under the header: how old the data is, or why it isn't fresh. */
+export function freshnessLabel(fetchedAtMs: number | null, nowMs: number, state: FreshnessState): string {
+  if (state === 'refreshing') return 'Refreshing…';
+  const since = fetchedAtMs === null ? null : sinceLabel(fetchedAtMs, nowMs);
+  if (state === 'offline') return since ? `Offline · showing data from ${since}` : 'Offline';
+  if (state === 'error') return since ? `Couldn't refresh · showing data from ${since}` : "Couldn't refresh";
+  return since ? `Updated ${since}` : 'Not updated yet';
+}
+
 /* ------------------------------------------------------------------ goals -- */
 
 export interface WeeklyGoals {

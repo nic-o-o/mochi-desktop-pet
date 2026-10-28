@@ -1,9 +1,9 @@
 /* Codimango data source for the desktop shell (main process only).
  *
  * Auth = the user's existing `codimango` CLI login: we run the CLI and never
- * read or forward its token. Each refresh is two sequential reads —
+ * read or forward its token. Each refresh is two reads run in parallel —
  * `task list --filter reviewing` (reviews assigned to you) and
- * `task list --filter mine` (your tasks) — about 3–4 s each today. Rows are
+ * `task list --filter mine` (your tasks) — about 3 s together today. Rows are
  * picked down to the fields src/mochi/codimango.ts maps, so the renderer gets
  * a few KB instead of ~4 MB.
  *
@@ -14,7 +14,9 @@ import { execFile } from 'node:child_process';
 
 /* GUI apps on macOS don't inherit the shell PATH, so use the absolute path. */
 export const CODIMANGO_BIN = process.env.MOCHI_CODIMANGO_BIN ?? '/usr/local/bin/codimango';
-const LIST_LIMIT = '100';
+/* `--limit` walks the server's pages, so heavy reviewers aren't cut off at 100
+   (the reviewing feed also lists every review you've delivered). */
+const LIST_LIMIT = '500';
 const TIMEOUT_MS = 60_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 /* Classified CLI exit codes (see `codimango` skill: auth vs network). */
@@ -101,7 +103,7 @@ export function listTasks(filter) {
           return resolve({ ok: false, error: { kind: 'error', message: 'Unexpected codimango output.' } });
         }
         if (parsed.hasMore) {
-          console.warn(`[mochi] codimango ${filter}: more than ${LIST_LIMIT} tasks, showing the first page`);
+          console.warn(`[mochi] codimango ${filter}: more than ${LIST_LIMIT} tasks, showing the first ${LIST_LIMIT}`);
         }
         resolve({ ok: true, rows: parsed.tasks.map(pickRow) });
       },
@@ -115,9 +117,8 @@ let inFlight = null;
 export function fetchCodimango() {
   inFlight ??= (async () => {
     const started = Date.now();
-    const reviewing = await listTasks('reviewing');
+    const [reviewing, mine] = await Promise.all([listTasks('reviewing'), listTasks('mine')]);
     if (!reviewing.ok) return reviewing;
-    const mine = await listTasks('mine');
     if (!mine.ok) return mine;
     console.log(
       `[mochi] codimango refresh: ${reviewing.rows.length} reviewing, ${mine.rows.length} mine in ${Date.now() - started}ms`,

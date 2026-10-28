@@ -19,7 +19,7 @@
  * instead of the Vite server, logs to ~/Library/Logs/Mochi/main.log, and the
  * Dock icon's menu offers "Open at Login".
  */
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
@@ -172,6 +172,10 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', () => {
     win?.webContents.send('mochi:display-changed');
   });
+  // After sleep or a locked screen the snapshot is stale: ask the renderer to refresh.
+  for (const event of ['resume', 'unlock-screen']) {
+    powerMonitor.on(event, () => win?.webContents.send('mochi:system-resumed'));
+  }
   const ok = globalShortcut.register(SIMULATE_ACCELERATOR, () => {
     win?.webContents.send('mochi:simulate-notification');
   });

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import type { GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
+import type { FreshnessState, GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
 import {
   PRIORITY_RANK,
   draftRowFlag,
   formatSla,
+  freshnessLabel,
   pendingRank,
   pendingRowFlag,
   revisionRank,
@@ -35,6 +36,8 @@ interface OverviewPanelProps {
   setup?: { kind: SetupKind; checking: boolean; hint: boolean; onCheck: () => void; onOpenAlacarte: () => void };
   /** First Codimango read still running (nothing cached yet). */
   connecting?: boolean;
+  /** Data age line under the header with a refresh button (desktop shell only). */
+  freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
 }
 
 /** Small full-circle progress ring with a centered "done / goal" label. */
@@ -321,6 +324,21 @@ export function OverviewPanel(props: OverviewPanelProps) {
           </button>
         </div>
       </header>
+      {props.freshness && !props.setup && !props.connecting && (
+        <p className={`glance-freshness${props.freshness.state === 'offline' || props.freshness.state === 'error' ? ' is-stale' : ''}`}>
+          <span aria-live="polite">{freshnessLabel(props.freshness.fetchedAtMs, props.nowMs, props.freshness.state)}</span>
+          <button
+            type="button"
+            className={`freshness-refresh${props.freshness.state === 'refreshing' ? ' is-spinning' : ''}`}
+            onClick={props.freshness.onRefresh}
+            disabled={props.freshness.state === 'refreshing'}
+            aria-label="Refresh now"
+            title="Refresh now"
+          >
+            ↻
+          </button>
+        </p>
+      )}
 
       {props.setup ? (
         <SetupCard {...props.setup} />

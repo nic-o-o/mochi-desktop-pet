@@ -1423,3 +1423,53 @@ html.mochi-shell .expanded-view {
   display: grid;
   place-items: center;
 }
+
+/* ---- Data freshness line (glance panel) ---- */
+.glance-freshness {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 -8px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.glance-freshness.is-stale {
+  color: var(--orange);
+}
+
+.freshness-refresh {
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.freshness-refresh:hover:not(:disabled) {
+  background: #f0ebe0;
+  color: var(--ink);
+}
+
+.freshness-refresh:disabled {
+  cursor: progress;
+}
+
+.freshness-refresh.is-spinning {
+  animation: freshness-spin 0.9s linear infinite;
+}
+
+@keyframes freshness-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .freshness-refresh.is-spinning {
+    animation: none;
+  }
+}
