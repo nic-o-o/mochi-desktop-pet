@@ -1358,3 +1358,68 @@ html.mochi-shell .expanded-view {
 .glance-connecting {
   padding: 16px 0 8px;
 }
+
+/* ---- Section filter (glance panel header) ---- */
+.glance-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.section-filter {
+  position: relative;
+}
+
+.section-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.section-menu-title {
+  margin: 2px 6px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.section-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.section-option:hover {
+  background: var(--accent-soft);
+}
+
+.section-option input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.section-option input:disabled + span {
+  color: var(--ink-soft);
+}
+
+.section-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.section-filter .icon-btn {
+  display: grid;
+  place-items: center;
+}

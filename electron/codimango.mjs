@@ -29,6 +29,7 @@ const ROW_FIELDS = [
   'reviewSlaDeadline',
   'enteredPoolAt',
   'claimedAt',
+  'updatedAt',
   'reviewedAt',
   'escalationLevel',
   'validationStatus',

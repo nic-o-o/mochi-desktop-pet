@@ -23,10 +23,16 @@ interface ExpandedViewProps {
 const STATUS_LABEL: Record<TaskItem['status'], string> = {
   pending_review: 'Pending review',
   revision_required: 'Revision needed',
+  draft: 'Draft',
 };
 
+/** Drafts have no deadline, so show the validation state instead of an SLA. */
+function slaLabel(task: TaskItem, nowMs: number): string {
+  return task.status === 'draft' ? (task.subtitle ?? 'Draft') : formatSla(task.slaDueMs, nowMs);
+}
+
 function isHot(task: TaskItem, nowMs: number): boolean {
-  return task.slaDueMs - nowMs < 60 * 60 * 1000;
+  return task.status !== 'draft' && task.slaDueMs - nowMs < 60 * 60 * 1000;
 }
 
 /** Full task list, sorted by priority then nearest SLA. Footer actions stay visible. */
@@ -70,7 +76,7 @@ export function ExpandedView(props: ExpandedViewProps) {
                 <dd>{STATUS_LABEL[selected.status]}</dd>
                 <dt>SLA</dt>
                 <dd className={isHot(selected, props.nowMs) ? 'sla-hot' : undefined}>
-                  {formatSla(selected.slaDueMs, props.nowMs)}
+                  {slaLabel(selected, props.nowMs)}
                 </dd>
                 <dt>Requester</dt>
                 <dd>{selected.requester}</dd>
@@ -120,7 +126,7 @@ export function ExpandedView(props: ExpandedViewProps) {
                         <span className={`badge badge-${t.priority}`}>{t.priority}</span>
                         <span className={`badge badge-status-${t.status}`}>{STATUS_LABEL[t.status]}</span>
                         <span className={isHot(t, props.nowMs) ? 'sla-hot' : 'muted'}>
-                          {formatSla(t.slaDueMs, props.nowMs)}
+                          {slaLabel(t, props.nowMs)}
                         </span>
                       </div>
                     </li>
