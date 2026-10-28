@@ -18,6 +18,15 @@ export interface BoundsRect {
   height: number;
 }
 
+/** What the renderer contributes to a problem report: status and counts only. */
+export interface ProblemReportState {
+  build: string;
+  status: string;
+  failureKind: string | null;
+  fetchedAtMs: number | null;
+  counts: { reviews: number; revisions: number; drafts: number };
+}
+
 export interface MochiShell {
   /** Primary display bounds in screen coordinates (async: main process). */
   getDisplayBounds: () => Promise<DisplayBounds>;
@@ -29,6 +38,10 @@ export interface MochiShell {
   syncBounds: (rect: BoundsRect) => void;
   /** Fired after the Mac wakes from sleep or the screen unlocks; returns unsubscribe. */
   onSystemResumed?: (callback: () => void) => () => void;
+  /** Dock menu "Report a Problem…" asks the renderer to start a report; returns unsubscribe. */
+  onReportRequest?: (callback: () => void) => () => void;
+  /** Copy diagnostics (plus version, OS, log tail) and open #mochi-dogfood-feedback in Slack. */
+  reportProblem?: (state: ProblemReportState) => Promise<boolean>;
   /** Read your reviews and tasks through the codimango CLI login (main process). */
   fetchCodimango?: () => Promise<CodimangoFetchResult>;
   /** Open a Codimango (or Alacarte) page in the default browser. */
@@ -82,6 +95,19 @@ export function onSystemResumed(callback: () => void): () => void {
   const b = bridge();
   if (!b?.onSystemResumed) return () => {};
   return b.onSystemResumed(callback);
+}
+
+export function onReportRequest(callback: () => void): () => void {
+  const b = bridge();
+  if (!b?.onReportRequest) return () => {};
+  return b.onReportRequest(callback);
+}
+
+/** False outside the desktop shell (or an older preload). */
+export function reportProblem(state: ProblemReportState): Promise<boolean> {
+  const b = bridge();
+  if (!b?.reportProblem) return Promise.resolve(false);
+  return b.reportProblem(state).catch(() => false);
 }
 
 export function syncBounds(rect: BoundsRect): void {

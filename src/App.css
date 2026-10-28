@@ -1473,3 +1473,23 @@ html.mochi-shell .expanded-view {
     animation: none;
   }
 }
+
+.section-menu-action {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 6px;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.section-menu-action:hover {
+  background: var(--accent-soft);
+}

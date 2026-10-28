@@ -19,11 +19,12 @@
  * instead of the Vite server, logs to ~/Library/Logs/Mochi/main.log, and the
  * Dock icon's menu offers "Open at Login".
  */
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
 import { installFileLog } from './logfile.mjs';
+import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -124,6 +125,21 @@ ipcMain.handle('mochi:open-link', (_event, url) => {
   return shell.openExternal(url).then(() => true);
 });
 
+// Report a Problem: the renderer sends status and counts; we add version, OS
+// and the log tail, copy it, and open #mochi-dogfood-feedback in Slack.
+ipcMain.handle('mochi:report-problem', async (_event, state) => {
+  const text = diagnostics({
+    state,
+    appVersion: app.getVersion(),
+    osVersion: process.getSystemVersion(),
+    arch: process.arch,
+    log: logTail(path.join(app.getPath('logs'), 'main.log')),
+  });
+  clipboard.writeText(text);
+  await shell.openExternal(REPORT_URL);
+  return true;
+});
+
 ipcMain.on('mochi:sync-bounds', (event, rect) => {
   const target = BrowserWindow.fromWebContents(event.sender);
   if (!target || target.isDestroyed()) return;
@@ -156,6 +172,12 @@ function setDockMenu() {
         type: 'checkbox',
         checked: openAtLogin,
         click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+      },
+      { type: 'separator' },
+      {
+        // The renderer holds status and counts, so ask it to start the report.
+        label: 'Report a Problem…',
+        click: () => win?.webContents.send('mochi:report-request'),
       },
     ]),
   );

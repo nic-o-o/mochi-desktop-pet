@@ -12,6 +12,8 @@ import {
 import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
 import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
+import { advanceStudy, loadStudy, saveStudy, studyReport } from './mochi/study.ts';
+import type { StudyRecord } from './mochi/study.ts';
 import { loadSectionPrefs, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
 import type { SectionPrefs } from './mochi/sections.ts';
 import type { Notice } from './mochi/notifications.ts';
@@ -22,10 +24,13 @@ import {
   isDesktopShell,
   isShellMode,
   onDisplayChanged,
+  onReportRequest,
   onSimulateNotification,
   openLink,
+  reportProblem,
   syncBounds,
 } from './mochi/shell.ts';
+import type { ProblemReportState } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
 import { ALACARTE_URL } from './mochi/SetupCard.tsx';
 import type { SetupKind } from './mochi/SetupCard.tsx';
@@ -180,6 +185,47 @@ export default function App() {
 
   /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
   const { tasks, weekly, snapshot, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
+  /* Review-turnaround study: install time + "before" stats, kept locally (study.ts). */
+  const studyRef = useRef<StudyRecord | null>(null);
+  useEffect(() => {
+    if (status === 'mock') return;
+    const prev = studyRef.current ?? loadStudy();
+    const next = advanceStudy(prev, snapshot, Date.now());
+    if (next !== prev) {
+      saveStudy(next);
+      if (next.before && !prev?.before) {
+        console.log(`[mochi] study baseline: ${next.before.count} reviews in the 30 days before install`);
+      }
+    }
+    studyRef.current = next;
+  }, [snapshot, status]);
+  /* Report a Problem (≡ menu, or the Dock menu via the shell): status and counts only. */
+  const reportState = useMemo<ProblemReportState>(
+    () => ({
+      build: __MOCHI_BUILD__,
+      status,
+      failureKind: failure?.kind ?? null,
+      fetchedAtMs,
+      counts: {
+        reviews: tasks.filter((t) => t.status === 'pending_review').length,
+        revisions: tasks.filter((t) => t.status === 'revision_required').length,
+        drafts: tasks.filter((t) => t.status === 'draft').length,
+      },
+    }),
+    [status, failure, fetchedAtMs, tasks],
+  );
+  const startProblemReport = useCallback(() => reportProblem(reportState), [reportState]);
+  useEffect(() => onReportRequest(() => void startProblemReport()), [startProblemReport]);
+  const copyStats = useCallback(async () => {
+    const study = studyRef.current ?? loadStudy();
+    if (!study) return false;
+    try {
+      await navigator.clipboard.writeText(studyReport(study, snapshot, Date.now()));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [snapshot]);
   /* Missing CLI or sign-in: the panel shows setup steps. The last failure stays
      up while "Check connection" runs, and clears only on a successful read. */
   const setupKind =
@@ -634,6 +680,8 @@ export default function App() {
           pending={pending}
           revisions={revisions}
           drafts={drafts}
+          onCopyStats={status === 'mock' ? undefined : copyStats}
+          onReportProblem={status === 'mock' ? undefined : startProblemReport}
           sections={sections}
           onSectionsChange={(next) => {
             touch();
