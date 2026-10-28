@@ -235,12 +235,37 @@ export function clampPetPosition(pos: XY, viewport: Size, petSize: number): XY {
 
 export interface Rect extends XY, Size {}
 
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+function clampSpot(x: number, y: number, float: Size, viewport: Size): XY {
+  x = Math.max(8, x);
+  const maxX = viewport.w - float.w - 8;
+  if (maxX >= 8) x = Math.min(x, maxX);
+  y = Math.max(8, y);
+  const maxY = viewport.h - float.h - 8;
+  if (maxY >= 8) y = Math.min(y, maxY);
+  return { x, y };
+}
+
 /**
  * Edge-aware placement for the bubble/panel near the pet.
  * Prefers the right side of the pet; flips to the left near the right edge,
  * shifts up near the bottom edge, and clamps to an 8px margin.
+ * Rects in `avoid` (e.g. the open panel for the bubble) are sidestepped: above
+ * the obstacle first (`aboveGap`), then hugging the pet above and below it,
+ * then left of the pet and below the obstacle. The preferred spot is kept
+ * when nothing fits.
  */
-export function placeFloating(pet: Rect, float: Size, viewport: Size, gap = 12): XY {
+export function placeFloating(
+  pet: Rect,
+  float: Size,
+  viewport: Size,
+  gap = 12,
+  avoid: Rect[] = [],
+  aboveGap = gap,
+): XY {
   const fitsRight = pet.x + pet.w + gap + float.w <= viewport.w;
   let x = fitsRight ? pet.x + pet.w + gap : pet.x - gap - float.w;
   x = Math.max(8, x);
@@ -249,5 +274,21 @@ export function placeFloating(pet: Rect, float: Size, viewport: Size, gap = 12):
 
   let y = Math.min(pet.y, Math.max(8, viewport.h - float.h - 8));
   y = Math.max(8, y);
+  if (!avoid.some((r) => rectsOverlap({ x, y, ...float }, r))) return { x, y };
+
+  /* Above the obstacle (bubble over the panel), then hugging the pet above and
+     below it. */
+  const spots: XY[] = [];
+  for (const r of avoid) spots.push({ x: r.x, y: r.y - aboveGap - float.h });
+  spots.push(
+    { x: pet.x, y: pet.y - aboveGap - float.h },
+    { x: pet.x, y: pet.y + pet.h + aboveGap },
+  );
+  spots.push({ x: pet.x - gap - float.w, y });
+  for (const r of avoid) spots.push({ x: r.x, y: r.y + r.h + gap });
+  for (const s of spots) {
+    const c = clampSpot(s.x, s.y, float, viewport);
+    if (!avoid.some((r) => rectsOverlap({ ...c, ...float }, r))) return c;
+  }
   return { x, y };
 }
