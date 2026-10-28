@@ -319,13 +319,14 @@ function mergeSeeded(history: Notice[], seeded: Notice[]): Notice[] {
 export function useNotificationHistory(
   snapshot: CodimangoSnapshot | null,
   nowMs: number,
-  onArrive: (notice: Notice) => void,
+  onArrive: (notice: Notice, source: 'arrival' | 'replay') => void,
 ) {
   const [history, setHistory] = useState<Notice[]>(loadNotificationHistory);
   const [prevSnapshot, setPrevSnapshot] = useState<CodimangoSnapshot | null>(null);
   const [pendingArrival, setPendingArrival] = useState<Notice | null>(null);
   const historyRef = useRef<Notice[]>(history);
-  const cursorRef = useRef(0);
+  /* Index currently shown (-1: walk not started); newest is 0. */
+  const posRef = useRef(-1);
   const onArriveRef = useRef(onArrive);
   const arrivedRef = useRef<Notice | null>(null);
 
@@ -355,26 +356,34 @@ export function useNotificationHistory(
   useEffect(() => {
     if (pendingArrival && arrivedRef.current !== pendingArrival) {
       arrivedRef.current = pendingArrival;
-      cursorRef.current = 0;
-      onArriveRef.current(pendingArrival);
+      posRef.current = 0;
+      onArriveRef.current(pendingArrival, 'arrival');
     }
   }, [pendingArrival]);
 
-  const showNext = useCallback(() => {
+  const showAt = useCallback((pos: number) => {
     const h = historyRef.current;
     if (h.length === 0) {
-      onArriveRef.current({ ...EMPTY_NOTICE, raisedAtMs: Date.now() });
+      onArriveRef.current({ ...EMPTY_NOTICE, raisedAtMs: Date.now() }, 'replay');
       return;
     }
-    const notice = h[cursorRef.current % h.length];
-    cursorRef.current += 1;
-    onArriveRef.current(notice);
+    posRef.current = ((pos % h.length) + h.length) % h.length;
+    onArriveRef.current(h[posRef.current], 'replay');
   }, []);
+
+  /* Newest first: next steps older, prev steps back newer. */
+  const showNext = useCallback(() => {
+    showAt(posRef.current + 1);
+  }, [showAt]);
+  const showPrev = useCallback(() => {
+    /* Nothing shown yet: prev lands on the latest instead of wrapping. */
+    showAt(posRef.current < 0 ? 0 : posRef.current - 1);
+  }, [showAt]);
 
   /* Closing the bubble restarts the next walk at the latest notice. */
   const resetCycle = useCallback(() => {
-    cursorRef.current = 0;
+    posRef.current = -1;
   }, []);
 
-  return { history, showNext, resetCycle };
+  return { history, showNext, showPrev, resetCycle };
 }

@@ -33,6 +33,7 @@ import './App.css';
 export const PET_BOX = 144;
 const PANEL_SIZE = { w: 352, h: 470 };
 const BUBBLE_SIZE = { w: 264, h: 132 };
+const EXPANDED_SIZE = { w: 592, h: 660 };
 /* desktop shell union rects (outer sizes + shadow margin, generous on purpose) */
 const UNION_PAD = 16;
 const PET_UNION_H = 212;
@@ -201,14 +202,17 @@ export default function App() {
     [petRenderPos],
   );
   const panelPos = useMemo(() => placeFloating(petRect, PANEL_SIZE, viewport), [petRect, viewport]);
-  const bubblePos = useMemo(
-    () => placeFloating(petRect, BUBBLE_SIZE, viewport, 16),
-    [petRect, viewport],
-  );
   const expandedPos = useMemo(
-    () => placeFloating(petRect, { w: 592, h: 660 }, viewport),
+    () => placeFloating(petRect, EXPANDED_SIZE, viewport),
     [petRect, viewport],
   );
+  const bubblePos = useMemo(() => {
+    /* With the panel open the bubble sits below the pet even over panel
+       content; otherwise it steers clear of the full view. */
+    const avoid: { x: number; y: number; w: number; h: number }[] = [];
+    if (expandedOpen) avoid.push({ x: expandedPos.x, y: expandedPos.y, ...EXPANDED_SIZE });
+    return placeFloating(petRect, BUBBLE_SIZE, viewport, 4, avoid);
+  }, [petRect, viewport, panelOpen, hidden, expandedOpen, expandedPos]);
 
   /* desktop shell: union of visible UI in screen-local coords. The container
      is shifted by -union so screen coords render at the right window offset
@@ -235,10 +239,16 @@ export default function App() {
   const reviewFrac = ringFraction(weekly.reviewsCompleted, goals.reviewGoal);
   const subFrac = ringFraction(weekly.submissionsCompleted, goals.submissionGoal);
 
-  /* Real notifications: arrivals pop the bubble; the shortcut replays history. */
-  const { showNext, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice) => {
+  /* Real notifications: arrivals pop the bubble and raise the unread badge; the
+     shortcut and the panel bell replay history newest first and clear it. */
+  const [unread, setUnread] = useState(0);
+  const { showNext, showPrev, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice, source) => {
     touch();
     setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined });
+    if (source === 'arrival') setUnread((u) => u + 1);
+    else setUnread(0);
+    /* The bubble gets the stage: hide the panel whenever one is up. */
+    setPanelOpen(false);
   });
 
   const togglePanel = useCallback(() => {
@@ -246,6 +256,7 @@ export default function App() {
     /* Clicking the pet also clears a lingering bubble. */
     setBubble(null);
     resetCycle();
+    setUnread(0);
     setEditingIn(null);
     setPanelOpen((v) => !v);
   }, [touch, resetCycle]);
@@ -334,7 +345,7 @@ export default function App() {
     showNext();
   }, [touch, showNext]);
 
-  /* desktop shell: the global shortcut replays past notifications (no on-screen button there) */
+  /* desktop shell: the global shortcut and the panel bell replay past notifications */
   useEffect(() => {
     if (!isDesktopShell()) return;
     return onSimulateNotification(() => cycleNotification());
@@ -358,12 +369,21 @@ export default function App() {
     });
   });
 
+  /* The × dismisses the bubble without opening anything. */
+  function dismissBubble() {
+    touch();
+    setBubble(null);
+    resetCycle();
+    setUnread(0);
+  }
+
   /* Bubbles never auto-dismiss: a click opens the task (or panel) and clears it. */
   function openBubble() {
     touch();
     const url = bubble?.url;
     setBubble(null);
     resetCycle();
+    setUnread(0);
     /* Real notifications open their task page; the placeholder opens the panel. */
     if (url) {
       openLink(url);
@@ -487,31 +507,42 @@ export default function App() {
       </button>
 
       {bubble && !hidden && (
-        <button
-          type="button"
-          className="notif-bubble"
-          style={{ left: bubblePos.x, top: bubblePos.y }}
-          onClick={openBubble}
-          aria-live="polite"
-          aria-label={`${bubble.title}: ${bubble.taskName} ${bubble.detail} Activate to open the task panel.`}
-        >
-          <strong className="bubble-title">
-            <span className="bubble-icon" aria-hidden="true">
-              {bubble.kind ? NOTICE_ICONS[bubble.kind] ?? '🔔' : '🔔'}
+        <div className="notif-bubble" style={{ left: bubblePos.x, top: bubblePos.y }} aria-live="polite">
+          <button
+            type="button"
+            className="bubble-main"
+            onClick={openBubble}
+            aria-label={`${bubble.title}: ${bubble.taskName} ${bubble.detail} Activate to open the task panel.`}
+          >
+            <strong className="bubble-title">
+              <span className="bubble-icon" aria-hidden="true">
+                {bubble.kind ? NOTICE_ICONS[bubble.kind] ?? '🔔' : '🔔'}
+              </span>
+              {bubble.title}
+            </strong>
+            <span className="bubble-body">
+              {bubble.taskName ? (
+                <>
+                  <span className="bubble-task">{bubble.taskName}</span> {bubble.detail}
+                </>
+              ) : (
+                bubble.detail
+              )}
             </span>
-            {bubble.title}
-          </strong>
-          <span className="bubble-body">
-            {bubble.taskName ? (
-              <>
-                <span className="bubble-task">{bubble.taskName}</span> {bubble.detail}
-              </>
-            ) : (
-              bubble.detail
-            )}
+          </button>
+          <span className="bubble-foot">
+            <button type="button" className="bubble-nav-btn" onClick={showPrev} aria-label="Show newer notification">
+              ‹
+            </button>
+            <button type="button" className="bubble-nav-btn" onClick={showNext} aria-label="Show older notification">
+              ›
+            </button>
+            <span className="bubble-time">{noticeAge(bubble.raisedAtMs, nowMs)}</span>
           </span>
-          <span className="bubble-time">{noticeAge(bubble.raisedAtMs, nowMs)}</span>
-        </button>
+          <button type="button" className="bubble-close" onClick={dismissBubble} aria-label="Dismiss notification">
+            ×
+          </button>
+        </div>
       )}
 
       {!hidden ? (
@@ -546,6 +577,30 @@ export default function App() {
             title="Hide Mochi"
           >
             −
+          </button>
+          <button
+            type="button"
+            data-nodrag
+            className="pet-bell"
+            onClick={cycleNotification}
+            aria-label={
+              unread > 0
+                ? `Notifications, ${unread} unread. Activate to read the latest.`
+                : 'Notifications. Activate to read past notifications.'
+            }
+            title="Notifications"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path
+                d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.2 4.2-1.9 4.9-.3.3 0 .6.4.6h11.9c.5 0 .8-.3.5-.6-.7-.7-1.9-1.9-1.9-4.9A4.5 4.5 0 0 0 8 1.5ZM6.6 13.5a1.5 1.5 0 0 0 2.8 0H6.6Z"
+                fill="currentColor"
+              />
+            </svg>
+            {unread > 0 && (
+              <span className="bell-badge" aria-hidden="true">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </button>
         </div>
       ) : (

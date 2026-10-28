@@ -289,4 +289,57 @@ describe('geometry — pet stays visible, floats flip at edges', () => {
     expect(pos.y).toBeGreaterThanOrEqual(8);
     expect(pos.x).toBeGreaterThanOrEqual(8);
   });
+
+  it('sits above the obstacle when the preferred spot is blocked', () => {
+    const viewport = { w: 1000, h: 700 };
+    const pet = { x: 60, y: 200, w: 168, h: 168 };
+    const bubble = { w: 264, h: 132 };
+    /* Narrow obstacle covering only the preferred right-of-pet band. */
+    const obstacle = { x: 60 + 168 + 8, y: 200, w: 64, h: 132 };
+    const pos = placeFloating(pet, bubble, viewport, 8, [obstacle], 4);
+    expect(pos.x).toBe(obstacle.x);
+    expect(pos.y).toBe(obstacle.y - 4 - bubble.h);
+  });
+
+  it('hugs above the pet when above the obstacle is blocked', () => {
+    const viewport = { w: 1000, h: 700 };
+    const pet = { x: 60, y: 200, w: 168, h: 168 };
+    const bubble = { w: 264, h: 132 };
+    /* Tall block right of the bubble's above-obstacle slot. */
+    const obstacle = { x: 330, y: 0, w: 200, h: 400 };
+    const pos = placeFloating(pet, bubble, viewport, 8, [obstacle], 4);
+    expect(pos.x).toBe(pet.x);
+    expect(pos.y).toBe(pet.y - 4 - bubble.h);
+  });
+
+  it('hugs below the pet when above it is blocked', () => {
+    const viewport = { w: 1000, h: 700 };
+    const pet = { x: 60, y: 200, w: 168, h: 168 };
+    const bubble = { w: 264, h: 132 };
+    const prefBlock = { x: 60 + 168 + 8, y: 200, w: 64, h: 132 };
+    const cap = { x: 0, y: 0, w: 400, h: 100 };
+    const pos = placeFloating(pet, bubble, viewport, 8, [prefBlock, cap], 4);
+    expect(pos.x).toBe(pet.x);
+    expect(pos.y).toBe(pet.y + pet.h + 4);
+  });
+
+  it('goes above the obstacle when both pet hugs are blocked', () => {
+    const viewport = { w: 1000, h: 700 };
+    const pet = { x: 60, y: 200, w: 168, h: 168 };
+    const bubble = { w: 264, h: 132 };
+    const prefBlock = { x: 60 + 168 + 8, y: 200, w: 64, h: 132 };
+    const cap = { x: 0, y: 0, w: 200, h: 100 };
+    const belowBlock = { x: 0, y: 350, w: 400, h: 100 };
+    const pos = placeFloating(pet, bubble, viewport, 8, [prefBlock, cap, belowBlock], 4);
+    expect(pos.x).toBe(prefBlock.x);
+    expect(pos.y).toBe(prefBlock.y - 4 - bubble.h);
+  });
+
+  it('keeps the preferred spot when nothing is avoided', () => {
+    const viewport = { w: 1000, h: 700 };
+    const pet = { x: 60, y: 100, w: 168, h: 168 };
+    const plain = placeFloating(pet, { w: 264, h: 132 }, viewport, 8);
+    const far = placeFloating(pet, { w: 264, h: 132 }, viewport, 8, [{ x: 900, y: 600, w: 10, h: 10 }]);
+    expect(far).toEqual(plain);
+  });
 });
