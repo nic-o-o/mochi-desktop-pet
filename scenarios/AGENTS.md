@@ -7,8 +7,8 @@ You keep `scenarios/*.yaml` in step with how Mochi behaves. Format: `README.md`.
 1. Read the PR description and diff. List each interaction it adds or changes, in
    the form "when <data / action>, the person sees <result>".
 2. For each, find the scenario that covers it (`grep -n` the ids and titles). Update
-   it, or add one to the file for that area: `notifications`, `panel`,
-   `setup-and-report`, or a new file for a new surface.
+   it, or add one to the file for that area (`ls scenarios/*.yaml`), or a new file
+   for a new surface.
 3. Use the copy the person actually sees (titles, button text, badges). Don't
    assert on class names, colours or layout; those belong in unit tests.
 4. Add `events:` for each interaction the logging plan says should be logged.
