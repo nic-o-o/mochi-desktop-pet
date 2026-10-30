@@ -1,0 +1,115 @@
+# The task panel: rows, ranking, the ≡ section filter and the freshness line.
+# Format: scenarios/README.md.
+
+fixtures:
+  busy_week:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 60, claimed_ago_h: 10 }
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40 }
+      - { id: r3, name: ember-old-review, review: accepted, reviewed_ago_h: 30 }
+    mine:
+      - id: v1
+        name: ember-results-sync
+        status: needs_revision
+        validation: failed
+        failed_checks: [Oracle validation]
+        oracle: 1/3
+        failing_since_d: 2
+      - { id: d1, name: ember-draft-running, status: draft, validation: pending, updated_ago_h: 1 }
+      - { id: d2, name: ember-draft-ready, status: draft, validation: passing, updated_ago_h: 5 }
+      - { id: d3, name: ember-draft-failing, status: draft, validation: failed, failed_checks: [AI assessment], updated_ago_h: 2 }
+
+scenarios:
+  - id: panel-rows
+    title: Clicking the pet opens the panel with revisions and reviews, most urgent review first
+    given: { live: busy_week }
+    steps:
+      - start
+      - expect: { panel: closed }
+      - click_pet
+      - expect: { panel: open, see: [ember-turn-timer, View 1 more], not_see: [ember-lobby-seat] }
+      - click: View 1 more
+      - expect:
+          see: [Needs revision, ember-results-sync, "Validation failed · Oracle 1/3", Waiting for your review, 0d left, 2d left]
+          in_order: [ember-turn-timer, ember-lobby-seat]
+          not_see: [ember-old-review, ember-draft-ready]
+          events:
+            - { event: mochi_vpv, surface: panel, component: task_panel }
+
+  - id: panel-row-opens-codimango
+    title: Clicking a row opens its Codimango page, not an in-app view
+    given: { live: busy_week }
+    steps:
+      - start
+      - click_pet
+      - click: ember-turn-timer
+      - expect:
+          opened: [/reviews/r2]
+          events:
+            - { event: mochi_click, surface: panel, component: task_row, section: reviews }
+      - click: ember-results-sync
+      - expect: { opened: [/reviews/r2, /submissions/v1] }
+
+  - id: panel-drafts-filter
+    title: Drafts are off by default; turning them on lists READY first, and the choice is kept
+    given: { live: busy_week }
+    steps:
+      - start
+      - click_pet
+      - expect: { not_see: [ember-draft-ready] }
+      - open_menu
+      - toggle_section: Drafts
+      - click: View 2 more
+      - expect:
+          see: [Drafts, READY, RUNNING, FAILING, Validation passing · ready to submit]
+          in_order: [ember-draft-ready, ember-draft-failing, ember-draft-running]
+          events:
+            - { event: mochi_click, surface: panel, component: section_toggle, section: drafts, on: true }
+
+  - id: panel-saved-sections
+    title: Sections chosen earlier are restored on launch
+    given:
+      live: busy_week
+      sections: { revisions: false, reviews: true, drafts: true }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: [Waiting for your review, ember-draft-ready]
+          not_see: [Needs revision, ember-results-sync]
+
+  - id: panel-last-section-locked
+    title: The last section left on cannot be turned off
+    given:
+      live: busy_week
+      sections: { revisions: false, reviews: true, drafts: false }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - expect: { disabled: [Waiting for your review] }
+
+  - id: panel-freshness
+    title: The freshness line says when data was read, and ↻ refreshes
+    given: { live: busy_week }
+    steps:
+      - start
+      - click_pet
+      - expect: { see: [Updated just now] }
+      - refresh_now
+      - expect:
+          see: [Updated just now]
+          events:
+            - { event: mochi_click, surface: panel, component: refresh }
+
+  - id: panel-offline
+    title: Offline keeps the saved rows and says how old they are
+    given:
+      saved: { age_min: 90, reviewing: [{ id: r1, name: ember-lobby-seat, review: open, due_in_h: 60 }] }
+      live: { error: offline }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: [ember-lobby-seat, Offline · showing data from]
+          not_see: [Codimango is not connected]
