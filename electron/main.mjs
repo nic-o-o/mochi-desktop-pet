@@ -31,8 +31,9 @@ import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-/* null in the packaged app: load the built files instead of the Vite server. */
-const DEV_URL = process.env.MOCHI_DEV_URL ?? (app.isPackaged ? null : 'http://localhost:5173/');
+/* null in the packaged app (or MOCHI_LOAD_DIST=1, the end-to-end tests): load the built files instead of the Vite server. */
+const DEV_URL =
+  process.env.MOCHI_LOAD_DIST === '1' ? null : (process.env.MOCHI_DEV_URL ?? (app.isPackaged ? null : 'http://localhost:5173/'));
 const SYNC_WARN_MS = 5000;
 const SIMULATE_ACCELERATOR = 'CommandOrControl+Shift+M';
 const RESOURCE_SAMPLE_MS = 60 * 60_000;
@@ -106,6 +107,13 @@ function createWindow() {
 }
 
 app.setName('Mochi');
+
+/* End-to-end tests (e2e/) run Mochi with its own profile and logs, so they never
+   read your data or get blocked by the single-instance lock of the Mochi you have open. */
+if (process.env.MOCHI_USER_DATA_DIR) {
+  app.setPath('userData', process.env.MOCHI_USER_DATA_DIR);
+  app.setPath('logs', path.join(process.env.MOCHI_USER_DATA_DIR, 'logs'));
+}
 
 // One pet at a time: a second launch quits and brings the running pet forward.
 const isPrimary = app.requestSingleInstanceLock();

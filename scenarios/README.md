@@ -12,6 +12,9 @@ npm test                 # everything
 
 A failure names the scenario, the step and what was on screen instead.
 
+The same files also run against the real Electron app (`npm run e2e`, Mac only);
+see `e2e/README.md`.
+
 ## A scenario
 
 ```yaml
