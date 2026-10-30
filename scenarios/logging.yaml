@@ -13,7 +13,7 @@ fixtures:
     reviewing:
       - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 60, claimed_ago_h: 10 }
       - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40 }
-      - { id: r3, name: ember-seat-reuse, review: open, due_in_h: 47, claimed_ago_h: 0.1 }
+      - { id: r3, name: ember-seat-reuse, review: open, due_in_h: 47, claimed_ago_h: 0.01 }
     mine: []
 
 scenarios:
