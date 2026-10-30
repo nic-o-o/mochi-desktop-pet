@@ -20,6 +20,13 @@ contextBridge.exposeInMainWorld('mochiShell', {
   syncBounds: (rect) => ipcRenderer.send('mochi:sync-bounds', rect),
   fetchCodimango: () => ipcRenderer.invoke('mochi:fetch-codimango'),
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
+  logEvent: (event) => ipcRenderer.send('mochi:log-event', event),
+  usageSummary: () => ipcRenderer.invoke('mochi:usage-summary'),
+  onScreenLock: (callback) => {
+    const listener = (_event, locked) => callback(locked);
+    ipcRenderer.on('mochi:screen-lock', listener);
+    return () => ipcRenderer.removeListener('mochi:screen-lock', listener);
+  },
 });
 
 // Boot log: the only proof the bridge loaded (forwarded to the terminal).

@@ -14,7 +14,7 @@ import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
 import { advanceStudy, loadStudy, saveStudy, studyReport } from './mochi/study.ts';
 import type { StudyRecord } from './mochi/study.ts';
-import { loadSectionPrefs, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
+import { SECTIONS, loadSectionPrefs, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
 import type { SectionPrefs } from './mochi/sections.ts';
 import type { Notice } from './mochi/notifications.ts';
 import { NOTICE_ICONS, noticeAge, useNotificationHistory } from './mochi/notifications.ts';
@@ -29,12 +29,15 @@ import {
   openLink,
   reportProblem,
   syncBounds,
+  usageSummary,
 } from './mochi/shell.ts';
 import type { ProblemReportState } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
 import { ALACARTE_URL } from './mochi/SetupCard.tsx';
 import type { SetupKind } from './mochi/SetupCard.tsx';
 import { ExpandedView } from './mochi/ExpandedView.tsx';
+import { elapsedMs, endPanelSession, logClick, logClose, logVpv, mark, startPanelSession, useVpv } from './mochi/usage.ts';
+import type { Mark } from './mochi/usage.ts';
 import './App.css';
 
 export const PET_BOX = 144;
@@ -58,6 +61,18 @@ interface Bubble {
   kind: Notice['kind'];
   /** Codimango page to open instead of the panel (real notifications). */
   url?: string;
+  /* Usage logging: which task, arrival or replay, and when it appeared. */
+  taskId?: string;
+  source: 'arrival' | 'replay';
+  shownAt: Mark;
+}
+
+/* Usage logging: why the panel opened or closed (logging plan). */
+type PanelTrigger = 'pet_click' | 'keyboard' | 'bubble_click' | 'back';
+type PanelCloseReason = 'close_button' | 'pet_click' | 'keyboard' | 'bubble_arrived' | 'hide' | 'expanded_view' | 'other';
+
+function bubbleFields(b: Bubble) {
+  return { notif_kind: b.kind ?? 'placeholder', task_id: b.taskId, source: b.source, time_on_screen_ms: elapsedMs(b.shownAt) };
 }
 
 function defaultPetPos(): XY {
@@ -220,7 +235,8 @@ export default function App() {
     const study = studyRef.current ?? loadStudy();
     if (!study) return false;
     try {
-      await navigator.clipboard.writeText(studyReport(study, snapshot, Date.now()));
+      const usage = await usageSummary();
+      await navigator.clipboard.writeText(studyReport(study, snapshot, Date.now()) + (usage ? `\n\n${usage}` : ''));
       return true;
     } catch {
       return false;
@@ -297,24 +313,68 @@ export default function App() {
   /* Real notifications: arrivals pop the bubble and raise the unread badge; the
      shortcut and the panel bell replay history newest first and clear it. */
   const [unread, setUnread] = useState(0);
+  /* Usage logging (src/mochi/usage.ts): one panel session per opening, closed with a reason. */
+  const panelTrigger = useRef<PanelTrigger>('pet_click');
+  const panelCloseReason = useRef<PanelCloseReason>('other');
+  const hiddenAt = useRef<Mark | null>(null);
+  const bubbleEl = useRef<HTMLDivElement>(null);
+  const sectionsOn = SECTIONS.filter(({ key }) => sections[key]).map(({ key }) => key).join(',');
+  const sectionsOnRef = useRef(sectionsOn);
+  useEffect(() => {
+    sectionsOnRef.current = sectionsOn;
+  });
+  const panelVisible = panelOpen && !hidden;
+  useEffect(() => {
+    if (!panelVisible) return;
+    startPanelSession();
+    logVpv('glance_panel', 'panel', { trigger: panelTrigger.current, sections_on: sectionsOnRef.current });
+    return () => {
+      const spent = endPanelSession();
+      if (spent !== null) logClose('glance_panel', 'panel', { time_spent_ms: spent, reason: panelCloseReason.current });
+      panelCloseReason.current = 'other';
+      panelTrigger.current = 'pet_click';
+    };
+  }, [panelVisible]);
+  /* Quitting with the panel open still records how long it was up. */
+  useEffect(() => {
+    const onQuit = () => {
+      const spent = endPanelSession();
+      if (spent !== null) logClose('glance_panel', 'panel', { time_spent_ms: spent, reason: 'quit' });
+    };
+    window.addEventListener('pagehide', onQuit);
+    return () => window.removeEventListener('pagehide', onQuit);
+  }, []);
+  useVpv(
+    bubbleEl,
+    bubble && !hidden ? String(bubble.id) : null,
+    () => {
+      if (bubble) logVpv('bubble', 'bubble', { notif_kind: bubble.kind ?? 'placeholder', task_id: bubble.taskId, source: bubble.source });
+    },
+    false,
+  );
   const { showNext, showPrev, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice, source) => {
     touch();
-    setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined });
+    setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined, taskId: n.taskId || undefined, source, shownAt: mark() });
     if (source === 'arrival') setUnread((u) => u + 1);
     else setUnread(0);
     /* The bubble gets the stage: hide the panel whenever one is up. */
+    panelCloseReason.current = 'bubble_arrived';
     setPanelOpen(false);
   });
 
-  const togglePanel = useCallback(() => {
+  const togglePanel = useCallback((via: 'pet_click' | 'keyboard') => {
     touch();
+    logClick('pet', 'pet', { action: panelOpen ? 'close_panel' : 'open_panel' });
+    if (panelOpen) panelCloseReason.current = via;
+    else panelTrigger.current = via;
     /* Clicking the pet also clears a lingering bubble. */
+    if (bubble) logClose('bubble', 'bubble', { reason: 'pet_click', ...bubbleFields(bubble) });
     setBubble(null);
     resetCycle();
     setUnread(0);
     setEditingIn(null);
     setPanelOpen((v) => !v);
-  }, [touch, resetCycle]);
+  }, [touch, resetCycle, panelOpen, bubble]);
 
   function handlePetPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if ((e.target as HTMLElement).closest('[data-nodrag]')) return;
@@ -364,13 +424,13 @@ export default function App() {
     const d = dragRef.current;
     dragRef.current = null;
     setDragging(false);
-    if (d && !d.moved) togglePanel();
+    if (d && !d.moved) togglePanel('pet_click');
   }
 
   function handlePetKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      togglePanel();
+      togglePanel('keyboard');
     }
   }
 
@@ -379,10 +439,17 @@ export default function App() {
     if (editingIn) setEditingIn(null);
     else if (selectedId) setSelectedId(null);
     else if (expandedOpen) setExpandedOpen(false);
-    else if (panelOpen) setPanelOpen(false);
+    else if (panelOpen) {
+      panelCloseReason.current = 'keyboard';
+      setPanelOpen(false);
+    }
   }
 
   function hidePet() {
+    logClose('pet', 'hide');
+    if (bubble) logClose('bubble', 'bubble', { reason: 'hide', ...bubbleFields(bubble) });
+    hiddenAt.current = mark();
+    panelCloseReason.current = 'hide';
     setHidden(true);
     setPanelOpen(false);
     setBubble(null);
@@ -392,6 +459,7 @@ export default function App() {
 
   function restorePet() {
     touch();
+    logClick('pet', 'paw', { time_hidden_ms: hiddenAt.current ? elapsedMs(hiddenAt.current) : undefined });
     setHidden(false);
   }
 
@@ -427,6 +495,7 @@ export default function App() {
   /* The × dismisses the bubble without opening anything. */
   function dismissBubble() {
     touch();
+    if (bubble) logClose('bubble', 'bubble', { reason: 'close_button', ...bubbleFields(bubble) });
     setBubble(null);
     resetCycle();
     setUnread(0);
@@ -435,6 +504,7 @@ export default function App() {
   /* Bubbles never auto-dismiss: a click opens the task (or panel) and clears it. */
   function openBubble() {
     touch();
+    if (bubble) logClick('bubble', 'bubble', bubbleFields(bubble));
     const url = bubble?.url;
     setBubble(null);
     resetCycle();
@@ -447,6 +517,7 @@ export default function App() {
     setExpandedOpen(false);
     setSelectedId(null);
     setEditingIn(null);
+    panelTrigger.current = 'bubble_click';
     setPanelOpen(true);
   }
 
@@ -465,6 +536,7 @@ export default function App() {
       openLink(url);
       return;
     }
+    panelCloseReason.current = 'expanded_view';
     setPanelOpen(false);
     setSelectedId(id);
     setExpandedOpen(true);
@@ -475,6 +547,7 @@ export default function App() {
     setExpandedOpen(false);
     setSelectedId(null);
     setEditingIn(null);
+    panelTrigger.current = 'back';
     setPanelOpen(true);
   }
 
@@ -562,7 +635,7 @@ export default function App() {
       </button>
 
       {bubble && !hidden && (
-        <div className="notif-bubble" style={{ left: bubblePos.x, top: bubblePos.y }} aria-live="polite">
+        <div ref={bubbleEl} className="notif-bubble" style={{ left: bubblePos.x, top: bubblePos.y }} aria-live="polite">
           <button
             type="button"
             className="bubble-main"
@@ -586,10 +659,26 @@ export default function App() {
             </span>
           </button>
           <span className="bubble-foot">
-            <button type="button" className="bubble-nav-btn" onClick={showPrev} aria-label="Show newer notification">
+            <button
+              type="button"
+              className="bubble-nav-btn"
+              onClick={() => {
+                logClick('bubble', 'newer');
+                showPrev();
+              }}
+              aria-label="Show newer notification"
+            >
               ‹
             </button>
-            <button type="button" className="bubble-nav-btn" onClick={showNext} aria-label="Show older notification">
+            <button
+              type="button"
+              className="bubble-nav-btn"
+              onClick={() => {
+                logClick('bubble', 'older');
+                showNext();
+              }}
+              aria-label="Show older notification"
+            >
               ›
             </button>
             <span className="bubble-time">{noticeAge(bubble.raisedAtMs, nowMs)}</span>
@@ -637,7 +726,10 @@ export default function App() {
             type="button"
             data-nodrag
             className="pet-bell"
-            onClick={cycleNotification}
+            onClick={() => {
+              logClick('pet', 'bell', { unread_count: unread });
+              cycleNotification();
+            }}
             aria-label={
               unread > 0
                 ? `Notifications, ${unread} unread. Activate to read the latest.`
@@ -694,6 +786,7 @@ export default function App() {
           nowMs={nowMs}
           onSaveGoals={handleSaveGoals}
           onClose={() => {
+            panelCloseReason.current = 'close_button';
             setPanelOpen(false);
             setEditingIn(null);
           }}
@@ -707,9 +800,14 @@ export default function App() {
                   onCheck: () => {
                     touch();
                     setCheckEpoch((e) => e + 1);
-                    refresh();
+                    void refresh('check_connection').then((result) =>
+                      logClick('setup_card', 'check_connection', { result: result ?? 'skipped' }),
+                    );
                   },
-                  onOpenAlacarte: () => openLink(ALACARTE_URL),
+                  onOpenAlacarte: () => {
+                    logClick('setup_card', 'open_alacarte');
+                    openLink(ALACARTE_URL);
+                  },
                 }
               : undefined
           }
@@ -729,7 +827,11 @@ export default function App() {
                           : 'idle',
                   onRefresh: () => {
                     touch();
-                    refresh();
+                    logClick('glance_panel', 'refresh', {
+                      freshness_state: failure?.kind === 'offline' ? 'offline' : failure ? 'error' : 'idle',
+                      data_age_ms: fetchedAtMs === null ? undefined : Date.now() - fetchedAtMs,
+                    });
+                    void refresh('refresh_button');
                   },
                 }
           }

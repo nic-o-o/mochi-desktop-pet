@@ -7,7 +7,8 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { expect } from 'vitest';
 import App from '../../App.tsx';
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
-import type { ProblemReportState } from '../../mochi/shell.ts';
+import type { ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
+import { resetUsageForTests } from '../../mochi/usage.ts';
 import { toSnapshot } from './fixtures.ts';
 import type { ShorthandSnapshot } from './fixtures.ts';
 
@@ -32,9 +33,15 @@ export interface Expectation {
   report?: Partial<ProblemReportState> & { counts?: Partial<ProblemReportState['counts']> };
   /** Checkbox labels in the ≡ menu that are disabled. */
   disabled?: string[];
-  /** Expected usage events. Pending until usage logging exists (logging plan). */
-  events?: unknown[];
+  /** Usage events logged so far, each matched partially; `event` is the event name. */
+  events?: ExpectedEvent[];
+  /** Events that must not have been logged (same matching). */
+  not_events?: ExpectedEvent[];
+  /** Exactly this many logged events match, e.g. `{ match: { component: row }, count: 1 }`. */
+  event_count?: { match: ExpectedEvent; count: number };
 }
+
+export type ExpectedEvent = { event?: string } & Record<string, string | number | boolean>;
 
 export type Step = string | Record<string, unknown>;
 
@@ -60,6 +67,7 @@ interface Harness {
   opened: string[];
   clipboard: string[];
   reports: ProblemReportState[];
+  events: UsageEvent[];
   fetchCalls: number;
   queue: CodimangoFetchResult[];
   resume?: () => void;
@@ -90,6 +98,37 @@ function resolveLive(spec: LiveSpec, fixtures: ScenarioFile['fixtures'], now: nu
 }
 
 /* Mochi's own UI only: the mock backdrop page (.page) is not part of the product. */
+function taskNames(file: ScenarioFile, sc: Scenario): string[] {
+  const snaps = [...Object.values(file.fixtures ?? {}), sc.given?.saved, ...[sc.given?.live ?? []].flat()];
+  return snaps.flatMap((x) =>
+    x && typeof x === 'object' && !('error' in x) ? [...(x.reviewing ?? []), ...(x.mine ?? [])].flatMap((r) => (r.name ? [r.name] : [])) : [],
+  );
+}
+
+function matches(e: UsageEvent, want: ExpectedEvent): boolean {
+  return Object.entries(want).every(([k, v]) => (k === 'event' ? e.event_name === v : e[k] === v));
+}
+
+const describeEvents = (events: UsageEvent[]) =>
+  events.map((e) => [e.event_name, e.surface, e.component, e.section ?? e.reason ?? e.trigger ?? ''].filter(Boolean).join(' ')).join('; ');
+
+/* jsdom has no layout: everything observed counts as fully on screen. Rows behind
+   "View N more" aren't rendered, so they still never log a VPV. */
+class VisibleIntersectionObserver {
+  private readonly cb: IntersectionObserverCallback;
+  constructor(cb: IntersectionObserverCallback) {
+    this.cb = cb;
+  }
+  observe(target: Element) {
+    queueMicrotask(() => this.cb([{ target, intersectionRatio: 1, isIntersecting: true } as IntersectionObserverEntry], this as never));
+  }
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+}
+
 const text = () => {
   const body = document.body.cloneNode(true) as HTMLElement;
   body.querySelectorAll('.page').forEach((el) => el.remove());
@@ -114,11 +153,13 @@ function findByText(label: string): HTMLElement {
 /** Run one scenario; throws on the first step or expectation that fails. */
 export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<void> {
   const now = Date.now();
-  const h: Harness = { opened: [], clipboard: [], reports: [], fetchCalls: 0, queue: [] };
+  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [] };
   const lives = sc.given?.live === undefined ? [] : Array.isArray(sc.given.live) ? sc.given.live : [sc.given.live];
   h.queue = lives.map((l) => resolveLive(l, file.fixtures, now));
 
   localStorage.clear();
+  resetUsageForTests();
+  window.IntersectionObserver = VisibleIntersectionObserver as unknown as typeof IntersectionObserver;
   if (sc.given?.saved) {
     localStorage.setItem('mochi.codimango.v1', JSON.stringify(resolveSnapshot(sc.given.saved, file.fixtures, now - 1)));
   }
@@ -138,6 +179,8 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     },
     openLink: (url) => (h.opened.push(url), Promise.resolve(true)),
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
+    logEvent: (event) => void h.events.push(event),
+    usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -193,6 +236,18 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'click':
           fireEvent.click(findByText(String(arg)));
           break;
+        case 'press':
+          fireEvent.click(mustFind(`[aria-label="${String(arg)}"]`, `"${String(arg)}"`));
+          break;
+        case 'hide_pet':
+          fireEvent.click(mustFind('[aria-label="Hide Mochi"]', 'the hide button'));
+          break;
+        case 'restore_pet':
+          fireEvent.click(mustFind('[aria-label="Show Mochi"]', 'the paw'));
+          break;
+        case 'close_panel':
+          fireEvent.click(mustFind('[aria-label="Close task panel"]', 'the panel ×'));
+          break;
         case 'wake':
           h.resume?.();
           break;
@@ -210,6 +265,15 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
           throw new Error(`Unknown step "${action}" (see scenarios/README.md)`);
       }
       await flush();
+    }
+    /* Privacy: events carry IDs and enums, never task names (logging plan). */
+    const names = taskNames(file, sc);
+    for (const ev of h.events) {
+      for (const value of Object.values(ev)) {
+        if (typeof value !== 'string') continue;
+        const leaked = names.find((n) => value.includes(n));
+        expect(leaked, `event ${ev.event_name} carries task name "${leaked}"`).toBeUndefined();
+      }
     }
   } finally {
     cleanup();
@@ -244,6 +308,16 @@ async function checkExpectation(e: Expectation, h: Harness) {
         const last = h.reports.at(-1);
         expect(last, 'a problem report was sent').toBeDefined();
         expect(last).toMatchObject(e.report);
+      }
+      for (const want of e.events ?? []) {
+        expect(h.events.some((ev) => matches(ev, want)), `expected event ${JSON.stringify(want)}; logged: ${describeEvents(h.events)}`).toBe(true);
+      }
+      for (const want of e.not_events ?? []) {
+        expect(h.events.some((ev) => matches(ev, want)), `expected no event ${JSON.stringify(want)}`).toBe(false);
+      }
+      if (e.event_count) {
+        const n = h.events.filter((ev) => matches(ev, e.event_count!.match)).length;
+        expect(n, `events matching ${JSON.stringify(e.event_count.match)}`).toBe(e.event_count.count);
       }
       for (const label of e.disabled ?? []) {
         const box = findByText(label).querySelector('input');

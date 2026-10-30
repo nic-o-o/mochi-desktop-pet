@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-/* Runs every scenario in scenarios/*.yaml against the real App (see scenarios/README.md).
- * A scenario's `events:` expectations show as todo until usage logging exists. */
+/* Runs every scenario in scenarios/*.yaml against the real App (see scenarios/README.md). */
 import { describe, it } from 'vitest';
 import { parse } from 'yaml';
 import { runScenario } from './scenarios/runner.tsx';
@@ -16,7 +15,6 @@ for (const [path, raw] of Object.entries(files)) {
   describe(path.split('/').pop() ?? path, () => {
     for (const sc of file.scenarios) {
       it(`${sc.id}: ${sc.title}`, () => runScenario(file, sc));
-      if (JSON.stringify(sc.steps).includes('"events"')) it.todo(`${sc.id}: usage events (pending usage logging)`);
     }
   });
 }

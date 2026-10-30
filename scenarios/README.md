@@ -55,10 +55,12 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 | `start` | Launch Mochi and wait for the first fetch |
 | `click_pet` | Click the pet (toggles the panel) |
 | `click_bell`, `click_bubble`, `close_bubble` | Bell, bubble body, bubble × |
+| `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
 | `open_menu`, `toggle_section: Drafts` | ≡ menu; tick or untick a section |
 | `refresh_now` | ↻ on the freshness line |
 | `click: <text>` | Any button or link showing that text |
+| `press: <aria-label>` | A control by its accessible label, e.g. `Increase reviewed goal` |
 | `next_fetch: <live>` | Change what the following fetches return |
 | `wake`, `dock_report` | Mac woke up; Dock → Report a Problem |
 | `wait: <ms>` | Let time pass |
@@ -77,15 +79,30 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 | `clipboard` | The last clipboard write contains each string |
 | `report` | The last problem report matches (partial), e.g. `{ status: offline, counts: { reviews: 1 } }` |
 | `disabled` | These ≡ menu checkboxes are disabled |
-| `events` | Usage events that should fire (see below) |
+| `events` | Each listed usage event was logged (see below) |
+| `not_events` | None of these were logged |
+| `event_count` | Exactly `count` logged events match `match` |
 
 ## Events
 
-`events:` lists the usage events a step should log, using the names in the
-[logging plan](https://docs.google.com/document/d/1bVqcRBZaEfgywid8Q6Y_NgMZvAo47KTFpiCXyHo-4Q8/edit):
-`{ event: mochi_click, surface: panel, component: task_row, section: reviews }`.
-Until the app logs them, each scenario with events shows one `todo` in the test
-output; once logging lands, the runner checks them like any other expectation.
+Usage events follow the
+[logging plan](https://docs.google.com/document/d/1bVqcRBZaEfgywid8Q6Y_NgMZvAo47KTFpiCXyHo-4Q8/edit)
+(`src/mochi/usage.ts`, written by `electron/events.mjs`). An expected event
+matches a logged one when every listed field is equal; `event` is the event name:
+
+```yaml
+events:
+  - { event: mochi_click, surface: glance_panel, component: row, section: waiting_review, task_id: r2 }
+```
+
+jsdom has no layout, so everything rendered counts as fully visible, and a VPV
+fires 250 ms after it appears. Rows behind "View N more" aren't rendered and
+never log one. Click through a surface faster than 250 ms and its VPV won't
+fire; add `wait: 300` when that matters.
+
+Every scenario also fails if any logged event contains a task name from its
+fixtures, because events carry IDs and enums only. `logging.yaml` covers the
+plan's validation list.
 
 ## Adding a scenario
 
