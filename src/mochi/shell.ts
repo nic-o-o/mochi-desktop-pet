@@ -46,7 +46,16 @@ export interface MochiShell {
   fetchCodimango?: () => Promise<CodimangoFetchResult>;
   /** Open a Codimango (or Alacarte) page in the default browser. */
   openLink?: (url: string) => Promise<boolean>;
+  /** Append a usage event to events.jsonl (main adds the common columns). */
+  logEvent?: (event: UsageEvent) => void;
+  /** Last 7 days of usage as paste-able counts; null if nothing is logged. */
+  usageSummary?: () => Promise<string | null>;
+  /** Screen locked (true) or unlocked (false); returns unsubscribe. */
+  onScreenLock?: (callback: (locked: boolean) => void) => () => void;
 }
+
+/** One usage event: a name from the logging plan plus ID/enum/number fields. */
+export type UsageEvent = { event_name: string } & Record<string, string | number | boolean | undefined>;
 
 declare global {
   interface Window {
@@ -108,6 +117,22 @@ export function reportProblem(state: ProblemReportState): Promise<boolean> {
   const b = bridge();
   if (!b?.reportProblem) return Promise.resolve(false);
   return b.reportProblem(state).catch(() => false);
+}
+
+export function logEvent(event: UsageEvent): void {
+  bridge()?.logEvent?.(event);
+}
+
+export function usageSummary(): Promise<string | null> {
+  const b = bridge();
+  if (!b?.usageSummary) return Promise.resolve(null);
+  return b.usageSummary().catch(() => null);
+}
+
+export function onScreenLock(callback: (locked: boolean) => void): () => void {
+  const b = bridge();
+  if (!b?.onScreenLock) return () => {};
+  return b.onScreenLock(callback);
 }
 
 export function syncBounds(rect: BoundsRect): void {

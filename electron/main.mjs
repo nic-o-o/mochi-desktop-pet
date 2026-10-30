@@ -17,12 +17,16 @@
  *
  * Packaged (`npm run package` → Mochi.app) it loads the built `dist/` files
  * instead of the Vite server, logs to ~/Library/Logs/Mochi/main.log, and the
- * Dock icon's menu offers "Open at Login".
+ * Dock icon's menu offers "Open at Login". Usage events (dev and packaged) go
+ * to events.jsonl in the same folder (electron/events.mjs).
  */
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
+import { createEventLog, readEvents, usageSummary } from './events.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 
@@ -31,10 +35,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.MOCHI_DEV_URL ?? (app.isPackaged ? null : 'http://localhost:5173/');
 const SYNC_WARN_MS = 5000;
 const SIMULATE_ACCELERATOR = 'CommandOrControl+Shift+M';
+const RESOURCE_SAMPLE_MS = 60 * 60_000;
 
 let win = null;
 let lastBoundsKey = '';
 let syncedOnce = false;
+/* Usage events (electron/events.mjs); created once the app is ready. */
+let events = null;
 
 function defaultBounds() {
   const b = screen.getPrimaryDisplay().bounds;
@@ -140,6 +147,20 @@ ipcMain.handle('mochi:report-problem', async (_event, state) => {
   return true;
 });
 
+ipcMain.on('mochi:log-event', (_event, raw) => {
+  events?.log(raw);
+});
+
+ipcMain.handle('mochi:usage-summary', () => (events ? usageSummary(readEvents(events.file, Date.now())) : null));
+
+/** Hourly CPU and memory across Mochi's processes (logging plan: mochi_resource). */
+function sampleResources() {
+  const metrics = app.getAppMetrics();
+  const cpu = metrics.reduce((sum, m) => sum + m.cpu.percentCPUUsage, 0);
+  const memoryKb = metrics.reduce((sum, m) => sum + m.memory.workingSetSize, 0);
+  events?.log({ event_name: 'mochi_resource', cpu_percent: Math.round(cpu * 10) / 10, memory_mb: Math.round(memoryKb / 1024) });
+}
+
 ipcMain.on('mochi:sync-bounds', (event, rect) => {
   const target = BrowserWindow.fromWebContents(event.sender);
   if (!target || target.isDestroyed()) return;
@@ -171,13 +192,19 @@ function setDockMenu() {
         label: 'Open at Login',
         type: 'checkbox',
         checked: openAtLogin,
-        click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+        click: (item) => {
+          app.setLoginItemSettings({ openAtLogin: item.checked });
+          events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'open_at_login', enabled: item.checked });
+        },
       },
       { type: 'separator' },
       {
         // The renderer holds status and counts, so ask it to start the report.
         label: 'Report a Problem…',
-        click: () => win?.webContents.send('mochi:report-request'),
+        click: () => {
+          events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'report_problem' });
+          win?.webContents.send('mochi:report-request');
+        },
       },
     ]),
   );
@@ -189,6 +216,14 @@ app.whenReady().then(() => {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);
     setDockMenu();
   }
+  events = createEventLog(app.getPath('logs'), {
+    app_session_id: randomUUID(),
+    app_version: app.getVersion(),
+    os_version: process.getSystemVersion(),
+    unixname: os.userInfo().username,
+  });
+  events.log({ event_name: 'mochi_app_start', launched_at_login: app.getLoginItemSettings().wasOpenedAtLogin === true });
+  setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
   screen.on('display-metrics-changed', () => {
@@ -198,6 +233,9 @@ app.whenReady().then(() => {
   for (const event of ['resume', 'unlock-screen']) {
     powerMonitor.on(event, () => win?.webContents.send('mochi:system-resumed'));
   }
+  // Panel and bubble time on screen excludes a locked screen (sleep already pauses the renderer clock).
+  powerMonitor.on('lock-screen', () => win?.webContents.send('mochi:screen-lock', true));
+  powerMonitor.on('unlock-screen', () => win?.webContents.send('mochi:screen-lock', false));
   const ok = globalShortcut.register(SIMULATE_ACCELERATOR, () => {
     win?.webContents.send('mochi:simulate-notification');
   });
@@ -212,6 +250,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  void events?.close();
 });
 
 app.on('window-all-closed', () => {

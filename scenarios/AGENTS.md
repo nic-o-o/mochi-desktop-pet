@@ -11,7 +11,9 @@ You keep `scenarios/*.yaml` in step with how Mochi behaves. Format: `README.md`.
    for a new surface.
 3. Use the copy the person actually sees (titles, button text, badges). Don't
    assert on class names, colours or layout; those belong in unit tests.
-4. Add `events:` for each interaction the logging plan says should be logged.
+4. Add `events:` for each interaction the logging plan says should be logged. A new
+   interaction with no event in the plan is a question for the plan, not a reason
+   to invent an event name.
 5. Run `npm run scenarios`. A new scenario must fail if you break the behaviour it
    describes: change one expected string and confirm it fails, then change it back.
 
