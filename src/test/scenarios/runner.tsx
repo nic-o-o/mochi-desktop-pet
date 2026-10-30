@@ -84,7 +84,9 @@ function resolveLive(spec: LiveSpec, fixtures: ScenarioFile['fixtures'], now: nu
     const kind = spec.error;
     return { ok: false, error: { kind, message: FAILURE_MESSAGES[kind], ...(kind === 'login_required' ? { fix: 'codimango auth setup' } : {}) } };
   }
-  return { ok: true, snapshot: resolveSnapshot(spec as string | ShorthandSnapshot, fixtures, now) };
+  /* A live fetch happens now: age_min only describes what Mochi saved earlier. */
+  const live = resolveSnapshot(spec as string | ShorthandSnapshot, fixtures, now);
+  return { ok: true, snapshot: { ...live, fetchedAtMs: now } };
 }
 
 /* Mochi's own UI only: the mock backdrop page (.page) is not part of the product. */
