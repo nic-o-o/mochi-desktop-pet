@@ -39,11 +39,14 @@ const binPath = () => path.join(work, 'bin', 'codimango');
 
 function resolveLive(spec: LiveSpec, fixtures: ScenarioFile['fixtures'], now: number) {
   if (typeof spec === 'object' && 'error' in spec) return { error: spec.error };
+  /* Mochi stamps the fetch time itself, so a live snapshot's age_min doesn't apply. */
   const short = typeof spec === 'string' ? fixtures?.[spec] : spec;
   if (!short) throw new Error(`Unknown fixture "${String(spec)}"`);
   const snap = toSnapshot(short as ShorthandSnapshot, now);
   return { reviewing: snap.reviewing, mine: snap.mine };
 }
+
+let generation = 0;
 
 /** What the next refreshes return. "CLI missing" removes the program from Mochi's path. */
 function setLive(specs: LiveSpec[], fixtures: ScenarioFile['fixtures']) {
@@ -52,8 +55,10 @@ function setLive(specs: LiveSpec[], fixtures: ScenarioFile['fixtures']) {
   if (queue.slice(1).some((q) => 'error' in q && q.error === 'cli_missing')) {
     throw new Error('cli_missing is only supported as the first fetch or via next_fetch');
   }
-  fs.writeFileSync(path.join(work, 'queue.json'), JSON.stringify(queue.length ? queue : [{ error: 'error' }]));
-  for (const f of ['count-reviewing', 'count-mine']) fs.rmSync(path.join(work, f), { force: true });
+  const data = path.join(work, `data-${++generation}`);
+  fs.mkdirSync(data);
+  fs.writeFileSync(path.join(data, 'queue.json'), JSON.stringify(queue.length ? queue : [{ error: 'error' }]));
+  fs.writeFileSync(path.join(work, 'current'), data);
   fs.rmSync(binPath(), { force: true });
   if (!(queue[0] && 'error' in queue[0] && queue[0].error === 'cli_missing')) fs.symlinkSync(FAKE_CLI, binPath());
 }
@@ -111,6 +116,21 @@ test.afterEach(async ({}, info) => {
 /* -------------------------------------------------------------- reading -- */
 
 let eventsOffset = 0;
+
+const lines = (f: string) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).length : 0);
+
+/**
+ * Wait until no fake-CLI call is running and the renderer has had time to show
+ * the result. In jsdom fetches finish instantly; here a refresh takes a moment,
+ * and a check made before it lands would pass without testing anything.
+ */
+async function settle() {
+  await page.waitForTimeout(50); // a click's fetch may not have started yet
+  await expect
+    .poll(() => lines(path.join(work, 'started.log')) === lines(path.join(work, 'finished.log')), { timeout: 15_000 })
+    .toBe(true);
+  await page.waitForTimeout(150);
+}
 
 function eventsSince(offset: number): UsageEvent[] {
   if (!fs.existsSync(eventsFile)) return [];
@@ -195,7 +215,6 @@ const clickable = (text: string) => page.locator('button, a, label, [role="butto
 
 async function runScenario(file: ScenarioFile, sc: Scenario) {
   /* Fresh renderer state: clear storage, preset what Mochi "saved last time", leave the page. */
-  setLive(liveSpecs(sc), file.fixtures);
   const saved = sc.given?.saved;
   const savedJson = saved
     ? JSON.stringify(toSnapshot((typeof saved === 'string' ? file.fixtures?.[saved] : saved) as ShorthandSnapshot, Date.now() - 1))
@@ -209,11 +228,12 @@ async function runScenario(file: ScenarioFile, sc: Scenario) {
     { savedJson, sections: sc.given?.sections ?? null },
   );
   await page.goto('about:blank');
+  await settle();
+  setLive(liveSpecs(sc), file.fixtures);
   await app.evaluate(() => {
     (globalThis as unknown as { __opened: string[] }).__opened = [];
   });
   await app.evaluate(({ clipboard }) => clipboard.writeText(''));
-  await page.waitForTimeout(200); // let the last page's events reach the file
   eventsOffset = fs.existsSync(eventsFile) ? fs.statSync(eventsFile).size : 0;
 
   for (const step of sc.steps) {
@@ -284,6 +304,7 @@ async function runScenario(file: ScenarioFile, sc: Scenario) {
       default:
         throw new Error(`Unknown step "${action}" (see scenarios/README.md)`);
     }
+    if (action !== 'expect' && action !== 'wait' && action !== 'next_fetch') await settle();
   }
 
   /* Privacy: what reached events.jsonl carries IDs and enums, never task names. */
