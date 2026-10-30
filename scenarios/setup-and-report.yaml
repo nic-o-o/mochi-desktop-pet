@@ -1,0 +1,76 @@
+# Setup card (CLI missing / signed out), Report a Problem and Copy my review stats.
+# Format: scenarios/README.md.
+
+fixtures:
+  one_review:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30 }
+      - { id: r2, name: ember-old-review, review: accepted, pooled_ago_h: 50, reviewed_ago_h: 30 }
+    mine:
+      - { id: d1, name: ember-draft-ready, status: draft, validation: passing, updated_ago_h: 5 }
+
+scenarios:
+  - id: setup-cli-missing
+    title: Without the CLI the panel shows setup steps; Check connection recovers once it is installed
+    given: { live: { error: cli_missing } }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: [Setup required, Codimango is not connected, codimango auth setup, Check connection]
+          not_see: [Waiting for your review]
+          events:
+            - { event: mochi_vpv, surface: panel, component: setup_card, kind: cli_missing }
+      - click: Open Alacarte
+      - expect: { opened: [internalfb.com/alacarte] }
+      - next_fetch: one_review
+      - click: Check connection
+      - expect:
+          see: [Waiting for your review, ember-lobby-seat]
+          not_see: [Codimango is not connected]
+
+  - id: setup-signed-out
+    title: An expired sign-in asks for codimango auth setup, with no Alacarte step
+    given: { live: { error: login_required } }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: [Sign-in required, Codimango sign-in expired, codimango auth setup]
+          not_see: [Open Alacarte]
+
+  - id: report-from-menu
+    title: ≡ → Report a problem sends status and counts only, and says what to do next
+    given: { live: one_review }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - click: Report a problem…
+      - expect:
+          report: { status: ok, failureKind: null, counts: { reviews: 1, revisions: 0, drafts: 1 } }
+          see: ["Diagnostics copied: paste them in Slack"]
+          events:
+            - { event: mochi_click, surface: panel, component: report_problem }
+
+  - id: report-from-dock
+    title: Dock → Report a Problem works with the panel closed and records the last error
+    given: { live: { error: offline } }
+    steps:
+      - start
+      - dock_report
+      - expect:
+          panel: closed
+          report: { status: offline, failureKind: offline }
+
+  - id: copy-review-stats
+    title: Copy my review stats puts a readable summary on the clipboard
+    given: { live: one_review }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - click: Copy my review stats
+      - expect:
+          clipboard: [Mochi review stats]
+          see: [Copied ✓]

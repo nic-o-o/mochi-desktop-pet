@@ -1,0 +1,133 @@
+# Notification bubble, unread badge and history.
+# Mochi seeds history silently from the snapshot it saved last time, then pops a
+# bubble for anything that changed since. Format: scenarios/README.md.
+
+fixtures:
+  quiet_day:
+    age_min: 60
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30, claimed_ago_h: 20 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: being_reviewed, review: open, claimed_ago_h: 5 }
+      - { id: d1, name: ember-hidden-frames, status: draft, validation: pending, updated_ago_h: 3 }
+
+  new_review_assigned:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30, claimed_ago_h: 20 }
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 47, claimed_ago_h: 0.2 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: being_reviewed, review: open, claimed_ago_h: 5 }
+      - { id: d1, name: ember-hidden-frames, status: draft, validation: pending, updated_ago_h: 3 }
+
+  my_task_accepted:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30, claimed_ago_h: 20 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: accepted, reviewed_ago_h: 0.1 }
+      - { id: d1, name: ember-hidden-frames, status: draft, validation: pending, updated_ago_h: 3 }
+
+  i_rejected_a_review:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: rejected, reviewed_ago_h: 0.1 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: being_reviewed, review: open, claimed_ago_h: 5 }
+      - { id: d1, name: ember-hidden-frames, status: draft, validation: pending, updated_ago_h: 3 }
+
+  draft_failed_validation:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30, claimed_ago_h: 20 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: being_reviewed, review: open, claimed_ago_h: 5 }
+      - id: d1
+        name: ember-hidden-frames
+        status: draft
+        validation: failed
+        failed_checks: [Metacode or Opus pass/fail balance]
+        updated_ago_h: 0.1
+
+scenarios:
+  - id: notif-review-assigned
+    title: A new review pops a bubble; clicking it opens the review and clears the badge
+    given: { saved: quiet_day, live: new_review_assigned }
+    steps:
+      - start
+      - expect:
+          bubble: Review Assigned
+          see: [ember-turn-timer]
+          badge: 1
+          events:
+            - { event: mochi_vpv, surface: bubble, component: notification, kind: review_assigned }
+      - click_bubble
+      - expect:
+          opened: [/reviews/r2]
+          bubble: none
+          badge: none
+          events:
+            - { event: mochi_click, surface: bubble, component: notification, kind: review_assigned }
+
+  - id: notif-own-verdict-quiet
+    title: Your own verdict on a review is saved to history but does not pop
+    given: { saved: quiet_day, live: i_rejected_a_review }
+    steps:
+      - start
+      - expect: { bubble: none, badge: none }
+      - click_bell
+      - expect: { bubble: Task Rejected, see: [A task assigned to you was rejected] }
+
+  - id: notif-task-accepted
+    title: Your task being accepted pops in the owner's voice
+    given: { saved: quiet_day, live: my_task_accepted }
+    steps:
+      - start
+      - expect:
+          bubble: Task Accepted
+          see: [ember-results-sync, Your task was accepted into the benchmark.]
+
+  - id: notif-validation-failed
+    title: A failed draft names the failing check in plain words
+    given: { saved: quiet_day, live: draft_failed_validation }
+    steps:
+      - start
+      - expect: { bubble: "Validation failed (Solvability & difficulty)." }
+      - click_bubble
+      - expect: { opened: [/submissions/d1] }
+
+  - id: notif-first-launch-silent
+    title: First launch (nothing saved) builds history without popping anything
+    given: { live: my_task_accepted }
+    steps:
+      - start
+      - expect: { bubble: none, badge: none }
+      - click_bell
+      - expect: { bubble: Task Accepted }
+
+  - id: notif-no-repeat
+    title: The same data fetched again does not pop a second time
+    given: { saved: quiet_day, live: new_review_assigned }
+    steps:
+      - start
+      - expect: { bubble: Review Assigned }
+      - close_bubble
+      - expect: { bubble: none }
+      - click_pet
+      - refresh_now
+      - wait: 100
+      - expect: { bubble: none, panel: open }
+
+  - id: notif-history-stepping
+    title: The bell shows the latest notice; › steps older and ‹ steps back
+    given: { saved: quiet_day, live: [new_review_assigned, my_task_accepted] }
+    steps:
+      - start
+      - expect: { bubble: Review Assigned }
+      - close_bubble
+      - click_pet
+      - refresh_now
+      - expect: { bubble: Task Accepted }
+      - close_bubble
+      - click_bell
+      - expect: { bubble: Task Accepted, badge: none }
+      - bubble_older
+      - expect: { bubble: Review Assigned }
+      - bubble_newer
+      - expect: { bubble: Task Accepted }
