@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
     ipcRenderer.on('mochi:screen-lock', listener);
     return () => ipcRenderer.removeListener('mochi:screen-lock', listener);
   },
+  ask: (text, context) => ipcRenderer.invoke('mochi:ask', text, context),
 });
 
 // Boot log: the only proof the bridge loaded (forwarded to the terminal).

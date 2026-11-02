@@ -65,4 +65,9 @@ describe('isAllowedLink', () => {
     expect(isAllowedLink('https://evil.example/codimango.internalmeta.com')).toBe(false);
     expect(isAllowedLink('file:///etc/passwd')).toBe(false);
   });
+
+  it('allows the Metamate 3 permission page, and nothing else on that host', () => {
+    expect(isAllowedLink('https://agentcloud.internalmeta.com/authorize')).toBe(true);
+    expect(isAllowedLink('https://agentcloud.internalmeta.com/46cfded1-81a8-4da0-82d8-77c370ef755f')).toBe(false);
+  });
 });

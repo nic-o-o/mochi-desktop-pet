@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { expect } from 'vitest';
 import App from '../../App.tsx';
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
-import type { ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
+import type { AskContext, ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
 import { resetUsageForTests } from '../../mochi/usage.ts';
 import { toSnapshot } from './fixtures.ts';
 import type { ShorthandSnapshot } from './fixtures.ts';
@@ -39,6 +39,8 @@ export interface Expectation {
   not_events?: ExpectedEvent[];
   /** Exactly this many logged events match, e.g. `{ match: { component: row }, count: 1 }`. */
   event_count?: { match: ExpectedEvent; count: number };
+  /** What Mochi was last asked through Metamate (partial match), e.g. { text: hi, reviews: 1 }. */
+  asked?: { text?: string; reviews?: number; revisions?: number; drafts?: number };
 }
 
 export type ExpectedEvent = { event?: string } & Record<string, string | number | boolean>;
@@ -54,6 +56,8 @@ export interface Scenario {
     /** What each Codimango fetch returns, in order; the last one repeats. */
     live?: LiveSpec | LiveSpec[];
     sections?: Record<string, boolean>;
+    /** What Metamate answers when you talk to Mochi, in order: text, or `access_needed`. */
+    metamate?: string[];
   };
   steps: Step[];
 }
@@ -72,6 +76,8 @@ interface Harness {
   queue: CodimangoFetchResult[];
   resume?: () => void;
   reportRequest?: () => void;
+  answers: string[];
+  asked: { text: string; context?: AskContext }[];
 }
 
 const FAILURE_MESSAGES: Record<FailureKind, string> = {
@@ -153,7 +159,7 @@ function findByText(label: string): HTMLElement {
 /** Run one scenario; throws on the first step or expectation that fails. */
 export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<void> {
   const now = Date.now();
-  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [] };
+  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], answers: [...(sc.given?.metamate ?? [])], asked: [] };
   const lives = sc.given?.live === undefined ? [] : Array.isArray(sc.given.live) ? sc.given.live : [sc.given.live];
   h.queue = lives.map((l) => resolveLive(l, file.fixtures, now));
 
@@ -181,6 +187,15 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
     logEvent: (event) => void h.events.push(event),
     usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
+    ask: (text, context) => {
+      h.asked.push({ text, context });
+      const next = h.answers.shift();
+      if (next === undefined) return Promise.resolve({ kind: 'error', message: 'scenario gave no Metamate answer' });
+      if (next === 'access_needed') {
+        return Promise.resolve({ kind: 'access_needed', message: 'Mochi needs your OK to use Metamate 3 first.', fix: 'https://agentcloud.internalmeta.com/authorize' });
+      }
+      return Promise.resolve({ kind: 'answer', text: next });
+    },
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -248,6 +263,11 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'close_panel':
           fireEvent.click(mustFind('[aria-label="Close task panel"]', 'the panel ×'));
           break;
+        case 'say': {
+          fireEvent.change(mustFind('[aria-label="Message to Mochi"]', 'the Talk to Mochi box'), { target: { value: String(arg) } });
+          fireEvent.click(mustFind('.talk-form button[type="submit"]', 'the Send button'));
+          break;
+        }
         case 'wake':
           h.resume?.();
           break;
@@ -318,6 +338,13 @@ async function checkExpectation(e: Expectation, h: Harness) {
       if (e.event_count) {
         const n = h.events.filter((ev) => matches(ev, e.event_count!.match)).length;
         expect(n, `events matching ${JSON.stringify(e.event_count.match)}`).toBe(e.event_count.count);
+      }
+      if (e.asked) {
+        const last = h.asked.at(-1);
+        expect(last, 'Mochi was asked something').toBeDefined();
+        const { text, ...counts } = e.asked;
+        if (text !== undefined) expect(last!.text).toContain(text);
+        expect(last!.context ?? {}).toMatchObject(counts);
       }
       for (const label of e.disabled ?? []) {
         const box = findByText(label).querySelector('input');

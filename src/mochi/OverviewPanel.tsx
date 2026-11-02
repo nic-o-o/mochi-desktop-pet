@@ -13,6 +13,8 @@ import {
   stepGoal,
 } from './logic.ts';
 import { SetupCard } from './SetupCard.tsx';
+import { TalkBox } from './TalkBox.tsx';
+import type { AskContext, AskResult } from './shell.ts';
 import type { SetupKind } from './SetupCard.tsx';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionPrefs } from './sections.ts';
@@ -49,6 +51,8 @@ interface OverviewPanelProps {
   connecting?: boolean;
   /** Data age line under the header with a refresh button (desktop shell only). */
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
+  /** Talk to Mochi through Metamate 3 (desktop shell only). */
+  talk?: { ask: (text: string, context: AskContext) => Promise<AskResult>; onOpenLink: (url: string) => void };
 }
 
 /** Small full-circle progress ring with a centered "done / goal" label. */
@@ -435,6 +439,14 @@ export function OverviewPanel(props: OverviewPanelProps) {
             ↻
           </button>
         </p>
+      )}
+
+      {props.talk && (
+        <TalkBox
+          context={{ reviews: props.pending.length, revisions: props.revisions.length, drafts: props.drafts.length }}
+          ask={props.talk.ask}
+          onOpenLink={props.talk.onOpenLink}
+        />
       )}
 
       {props.setup ? (
