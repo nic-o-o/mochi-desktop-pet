@@ -11,6 +11,7 @@ import {
 } from './mochi/logic.ts';
 import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
 import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
+import { usePool } from './mochi/usePool.ts';
 import { useTasks } from './mochi/useTasks.ts';
 import { advanceStudy, loadStudy, saveStudy, studyReport } from './mochi/study.ts';
 import type { StudyRecord } from './mochi/study.ts';
@@ -185,6 +186,7 @@ export default function App() {
 
   /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
   const { tasks, weekly, snapshot, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
+  const pool = usePool(panelOpen);
   /* Review-turnaround study: install time + "before" stats, kept locally (study.ts). */
   const studyRef = useRef<StudyRecord | null>(null);
   useEffect(() => {
@@ -713,6 +715,7 @@ export default function App() {
                 }
               : undefined
           }
+          pool={pool ? { ...pool, onOpen: openLink } : undefined}
           connecting={!setupKind && status === 'loading' && fetchedAtMs === null}
           freshness={
             status === 'mock'

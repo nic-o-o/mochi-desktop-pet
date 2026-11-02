@@ -46,7 +46,27 @@ export interface MochiShell {
   fetchCodimango?: () => Promise<CodimangoFetchResult>;
   /** Open a Codimango (or Alacarte) page in the default browser. */
   openLink?: (url: string) => Promise<boolean>;
+  /** The team's too-easy pool, minus your own tasks (main process). */
+  fetchPool?: () => Promise<PoolResult>;
 }
+
+/** A teammate's task that's still too easy after several rounds (pipeline/pools in the task repo). */
+export interface PoolTask {
+  name: string;
+  id: string | null;
+  owner: string;
+  rounds: number;
+  /** The owner committed in the last 48 h: they're on it. */
+  active: boolean;
+  claimedBy: string | null;
+  outcome: string | null;
+  pr: string | null;
+  saturated: boolean;
+}
+
+export type PoolResult =
+  | { ok: true; me: string; updated: string | null; tasks: PoolTask[] }
+  | { ok: false; kind: 'missing' | 'error'; message: string };
 
 declare global {
   interface Window {
@@ -119,6 +139,13 @@ export function fetchCodimango(): Promise<CodimangoFetchResult | null> {
   const b = bridge();
   if (!b?.fetchCodimango) return Promise.resolve(null);
   return b.fetchCodimango();
+}
+
+/** Null outside the desktop shell (plain browser, or an older preload). */
+export function fetchPool(): Promise<PoolResult | null> {
+  const b = bridge();
+  if (!b?.fetchPool) return Promise.resolve(null);
+  return b.fetchPool().catch(() => null);
 }
 
 /** Opens the page in the browser via the shell; in a plain browser, a new tab. */

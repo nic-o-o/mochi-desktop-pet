@@ -9,6 +9,8 @@ import App from '../../App.tsx';
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
 import type { ProblemReportState } from '../../mochi/shell.ts';
 import { toSnapshot } from './fixtures.ts';
+// @ts-expect-error -- plain JS module from the Electron side; same picking the app gets.
+import { pickPool } from '../../../electron/pool.mjs';
 import type { ShorthandSnapshot } from './fixtures.ts';
 
 type FailureKind = 'cli_missing' | 'login_required' | 'offline' | 'error';
@@ -47,6 +49,8 @@ export interface Scenario {
     /** What each Codimango fetch returns, in order; the last one repeats. */
     live?: LiveSpec | LiveSpec[];
     sections?: Record<string, boolean>;
+    /** The team's too-easy pool as published (pipeline/pools/too_easy.json); you are `debrax`. */
+    pool?: { updated?: string; tasks: Record<string, Record<string, unknown>> };
   };
   steps: Step[];
 }
@@ -138,6 +142,10 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     },
     openLink: (url) => (h.opened.push(url), Promise.resolve(true)),
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
+    fetchPool: () => {
+      if (!sc.given?.pool) return Promise.resolve({ ok: false, kind: 'missing', message: 'not published' });
+      return Promise.resolve(pickPool({ updated: sc.given.pool.updated ?? null, tasks: sc.given.pool.tasks }, 'debrax'));
+    },
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,

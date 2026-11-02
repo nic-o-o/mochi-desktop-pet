@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
   syncBounds: (rect) => ipcRenderer.send('mochi:sync-bounds', rect),
   fetchCodimango: () => ipcRenderer.invoke('mochi:fetch-codimango'),
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
+  fetchPool: () => ipcRenderer.invoke('mochi:fetch-pool'),
 });
 
 // Boot log: the only proof the bridge loaded (forwarded to the terminal).

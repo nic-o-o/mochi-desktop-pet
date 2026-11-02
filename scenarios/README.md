@@ -47,6 +47,7 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 - `saved`: a fixture name or inline snapshot. Mochi diffs the first fetch against it, which is how "something changed while Mochi was closed" pops a bubble. Leave it out for a first launch.
 - `live`: a fixture, an inline snapshot, `{ error: cli_missing | login_required | offline | error }`, or a list (one per fetch; the last repeats).
 - `sections`: saved section choices, e.g. `{ revisions: false, reviews: true, drafts: true }`.
+- `pool`: the team's too-easy pool as published (`{ updated, tasks: { <name>: { id, owner, rounds, claimed_by, active } } }`); you are `debrax`. Leave it out for "not published yet".
 
 ## Steps
 
