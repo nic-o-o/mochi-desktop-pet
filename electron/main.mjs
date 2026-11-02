@@ -78,6 +78,10 @@ function createWindow() {
       preload: path.join(here, 'preload.cjs'),
     },
   });
+  /* A file dropped outside the chat box would otherwise replace Mochi with that file. */
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== win.webContents.getURL()) event.preventDefault();
+  });
 
   win.setAlwaysOnTop(true, 'floating');
   showOnAllDesktops(win);
@@ -138,10 +142,14 @@ ipcMain.handle('mochi:open-link', (_event, url) => {
 
 // Talk to Mochi: the renderer sends the text and task counts (no task names);
 // the answer comes from Metamate 3 under the user's own meta CLI login.
-ipcMain.handle('mochi:ask', (_event, text, context) => {
+ipcMain.handle('mochi:ask', (_event, text, context, images) => {
   const count = (n) => (Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0);
   const counts = context ? { reviews: count(context.reviews), revisions: count(context.revisions), drafts: count(context.drafts) } : undefined;
-  return askMochi(String(text ?? ''), { stateFile: path.join(app.getPath('userData'), 'metamate.json'), context: counts });
+  /* Pictures dropped or pasted into the chat: { type, bytes }; askMochi checks type and size. */
+  const pictures = Array.isArray(images)
+    ? images.filter((i) => i && i.bytes instanceof Uint8Array).map((i) => ({ type: String(i.type), bytes: i.bytes }))
+    : [];
+  return askMochi(String(text ?? ''), { stateFile: path.join(app.getPath('userData'), 'metamate.json'), context: counts, images: pictures });
 });
 
 // Report a Problem: the renderer sends status and counts; we add version, OS

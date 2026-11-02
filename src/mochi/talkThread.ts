@@ -2,6 +2,8 @@
 export interface TalkLine {
   from: 'me' | 'mochi';
   text: string;
+  /** Thumbnails of pictures you shared with this message. */
+  images?: string[];
 }
 
 let thread: TalkLine[] = [];

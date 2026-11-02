@@ -55,11 +55,17 @@ export interface MochiShell {
   /** Screen locked (true) or unlocked (false); returns unsubscribe. */
   onScreenLock?: (callback: (locked: boolean) => void) => () => void;
   /** Ask Mochi something; answered by Metamate 3 under the user's meta CLI login (main process). */
-  ask?: (text: string, context?: AskContext) => Promise<AskResult>;
+  ask?: (text: string, context?: AskContext, images?: AskImage[]) => Promise<AskResult>;
 }
 
 /** One usage event: a name from the logging plan plus ID/enum/number fields. */
 export type UsageEvent = { event_name: string } & Record<string, string | number | boolean | undefined>;
+
+/** A picture dropped or pasted into the chat (PNG, JPEG, GIF or WebP, up to 7 MB). */
+export interface AskImage {
+  type: string;
+  bytes: Uint8Array;
+}
 
 /** Task counts Mochi may mention. Counts only: task names never leave the panel. */
 export interface AskContext {
@@ -167,10 +173,10 @@ export function canAsk(): boolean {
   return Boolean(bridge()?.ask);
 }
 
-export function ask(text: string, context?: AskContext): Promise<AskResult> {
+export function ask(text: string, context?: AskContext, images?: AskImage[]): Promise<AskResult> {
   const b = bridge();
   if (!b?.ask) return Promise.resolve({ kind: 'error', message: 'Talking to Mochi needs the desktop app.' });
-  return b.ask(text, context).catch((e: unknown) => ({ kind: 'error' as const, message: String(e) }));
+  return b.ask(text, context, images).catch((e: unknown) => ({ kind: 'error' as const, message: String(e) }));
 }
 
 /** Opens the page in the browser via the shell; in a plain browser, a new tab. */
