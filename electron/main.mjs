@@ -24,6 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
 import { installFileLog } from './logfile.mjs';
+import { fetchPool } from './pool.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -124,6 +125,9 @@ ipcMain.handle('mochi:open-link', (_event, url) => {
   if (!isAllowedLink(url)) return false;
   return shell.openExternal(url).then(() => true);
 });
+
+// The team's too-easy pool (teammates' tasks only), from GitHub or a local checkout.
+ipcMain.handle('mochi:fetch-pool', () => fetchPool());
 
 // Report a Problem: the renderer sends status and counts; we add version, OS
 // and the log tail, copy it, and open #mochi-dogfood-feedback in Slack.

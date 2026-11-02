@@ -1,0 +1,37 @@
+# The too-easy pool in the panel: teammates' tasks still too easy after 3+ rounds.
+# Format: scenarios/README.md. You are debrax.
+
+fixtures:
+  one_review:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30 }
+    mine: []
+
+scenarios:
+  - id: pool-lists-teammates
+    title: The panel lists teammates' too-easy tasks, most-tried first, without yours; a row opens the task
+    given:
+      live: one_review
+      pool:
+        updated: "2026-11-02T20:31:00+00:00"
+        tasks:
+          ember-llm-speaker-attribution-parity: { id: "284566", owner: arnavnarula, rounds: 25 }
+          ember-quest-reconcile-drift-repair: { id: "375992", owner: nuhaqadir, rounds: 8, claimed_by: zixuanchen }
+          ember-keep-the-round-word-out-of-guesser-chat-e59c2-debrax: { id: "615297", owner: debrax, rounds: 17 }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: ["Too easy: help a teammate", arnavnarula · too easy after 25 rounds, open, zixuanchen is on it]
+          in_order: [ember-llm-speaker-attribution-parity, ember-quest-reconcile-drift-repair]
+          not_see: [ember-keep-the-round-word-out-of-guesser-chat]
+      - click: ember-llm-speaker-attribution-parity
+      - expect: { opened: [codimango.internalmeta.com/submissions/284566] }
+
+  - id: pool-not-published
+    title: Before the team pool is published, the panel doesn't show the section
+    given: { live: one_review }
+    steps:
+      - start
+      - click_pet
+      - expect: { see: [Waiting for your review], not_see: ["Too easy: help a teammate"] }

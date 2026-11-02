@@ -1493,3 +1493,7 @@ html.mochi-shell .expanded-view {
 .section-menu-action:hover {
   background: var(--accent-soft);
 }
+
+.pool-updated {
+  margin: 6px 0 0;
+}

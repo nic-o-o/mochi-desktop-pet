@@ -13,6 +13,8 @@ import {
   stepGoal,
 } from './logic.ts';
 import { SetupCard } from './SetupCard.tsx';
+import { PoolSection } from './PoolSection.tsx';
+import type { PoolTask } from './shell.ts';
 import type { SetupKind } from './SetupCard.tsx';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionPrefs } from './sections.ts';
@@ -42,6 +44,8 @@ interface OverviewPanelProps {
   connecting?: boolean;
   /** Data age line under the header with a refresh button (desktop shell only). */
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
+  /** The team's too-easy pool (desktop shell, once the pool is published). */
+  pool?: { tasks: PoolTask[]; updated: string | null; onOpen: (url: string) => void };
 }
 
 /** Small full-circle progress ring with a centered "done / goal" label. */
@@ -426,6 +430,12 @@ export function OverviewPanel(props: OverviewPanelProps) {
                 />
               </div>
             ))
+          )}
+          {props.pool && (
+            <>
+              <hr className="glance-divider" />
+              <PoolSection {...props.pool} />
+            </>
           )}
         </>
       )}
