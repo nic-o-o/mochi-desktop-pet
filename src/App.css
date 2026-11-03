@@ -1118,8 +1118,13 @@ input:focus-visible {
   border: 1px solid var(--line);
   background: var(--card);
   box-shadow: var(--shadow);
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   opacity: 0.75;
+}
+
+.restore-btn.is-dragging {
+  cursor: grabbing;
 }
 
 .restore-btn:hover {

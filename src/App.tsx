@@ -397,7 +397,7 @@ export default function App() {
     setPanelOpen((v) => !v);
   }, [touch, resetCycle, panelOpen, bubble]);
 
-  function handlePetPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+  function handlePetPointerDown(e: ReactPointerEvent<HTMLElement>) {
     if ((e.target as HTMLElement).closest('[data-nodrag]')) return;
     touch();
     try {
@@ -416,7 +416,7 @@ export default function App() {
     };
   }
 
-  function handlePetPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+  function handlePetPointerMove(e: ReactPointerEvent<HTMLElement>) {
     const d = dragRef.current;
     if (!d) return;
     const mdx = e.movementX ?? 0;
@@ -446,6 +446,23 @@ export default function App() {
     dragRef.current = null;
     setDragging(false);
     if (d && !d.moved) togglePanel('pet_click');
+  }
+
+  /* The paw drags like the pet (it marks where Mochi comes back); a plain click restores. */
+  const pawDragged = useRef(false);
+  function handlePawPointerUp() {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    pawDragged.current = Boolean(d?.moved);
+  }
+
+  function handlePawClick() {
+    if (pawDragged.current) {
+      pawDragged.current = false;
+      return;
+    }
+    restorePet();
   }
 
   function handlePetKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
@@ -774,8 +791,15 @@ export default function App() {
       ) : (
         <button
           type="button"
-          className="restore-btn"
-          onClick={restorePet}
+          className={`restore-btn${dragging ? ' is-dragging' : ''}`}
+          onClick={handlePawClick}
+          onPointerDown={handlePetPointerDown}
+          onPointerMove={handlePetPointerMove}
+          onPointerUp={handlePawPointerUp}
+          onPointerCancel={() => {
+            dragRef.current = null;
+            setDragging(false);
+          }}
           style={shell ? { left: pawPos.x, top: pawPos.y } : undefined}
           aria-label="Show Mochi"
           title="Show Mochi"
