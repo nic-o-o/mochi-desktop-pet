@@ -22,8 +22,6 @@ import type { Notice } from './mochi/notifications.ts';
 import { NOTICE_ICONS, noticeAge, useNotificationHistory } from './mochi/notifications.ts';
 import { MochiPet } from './mochi/MochiPet.tsx';
 import {
-  ask,
-  canAsk,
   getDisplayBounds,
   isDesktopShell,
   isShellMode,
@@ -858,7 +856,6 @@ export default function App() {
                 }
               : undefined
           }
-          talk={canAsk() ? { ask, onOpenLink: openLink } : undefined}
           connecting={!setupKind && status === 'loading' && fetchedAtMs === null}
           freshness={
             status === 'mock'

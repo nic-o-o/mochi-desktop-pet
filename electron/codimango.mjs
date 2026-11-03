@@ -143,8 +143,6 @@ export function isAllowedLink(url) {
     const u = new URL(String(url));
     if (u.protocol !== 'https:') return false;
     if (u.hostname === 'codimango.internalmeta.com') return true;
-    /* Talk to Mochi: the one-time Metamate 3 (Agentcloud) permission page. */
-    if (u.hostname === 'agentcloud.internalmeta.com' && u.pathname === '/authorize') return true;
     return u.hostname === 'www.internalfb.com' && (u.pathname === '/alacarte' || u.pathname.startsWith('/alacarte/'));
   } catch {
     return false;
