@@ -26,6 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
+import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
@@ -53,6 +54,11 @@ function defaultBounds() {
   };
 }
 
+/* On every desktop (Space) and over full-screen apps. */
+function showOnAllDesktops(target) {
+  target.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
 function createWindow() {
   win = new BrowserWindow({
     ...defaultBounds(),
@@ -73,7 +79,7 @@ function createWindow() {
   });
 
   win.setAlwaysOnTop(true, 'floating');
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  showOnAllDesktops(win);
   // Permanently enabled: only painted Mochi pixels hit-test, transparent gaps
   // fall through natively — no enter/leave toggling, no race with clicks.
   win.setIgnoreMouseEvents(false);
@@ -119,10 +125,7 @@ if (!isPrimary) {
   });
 }
 
-ipcMain.handle('mochi:get-display-bounds', () => {
-  const b = screen.getPrimaryDisplay().bounds;
-  return { x: b.x, y: b.y, width: b.width, height: b.height };
-});
+ipcMain.handle('mochi:get-display-bounds', () => allDisplayBounds(screen.getAllDisplays()));
 
 // Codimango reads go through the user's CLI login (electron/codimango.mjs).
 ipcMain.handle('mochi:fetch-codimango', () => fetchCodimango());
@@ -180,6 +183,9 @@ ipcMain.on('mochi:sync-bounds', (event, rect) => {
   if (!syncedOnce) {
     syncedOnce = true;
     target.show();
+    // Again once visible: macOS can drop it for a window that was created hidden,
+    // leaving the pet on one desktop only.
+    showOnAllDesktops(target);
   }
 });
 
@@ -226,9 +232,9 @@ app.whenReady().then(() => {
   setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
-  screen.on('display-metrics-changed', () => {
-    win?.webContents.send('mochi:display-changed');
-  });
+  for (const event of ['display-metrics-changed', 'display-added', 'display-removed']) {
+    screen.on(event, () => win?.webContents.send('mochi:display-changed'));
+  }
   // After sleep or a locked screen the snapshot is stale: ask the renderer to refresh.
   for (const event of ['resume', 'unlock-screen']) {
     powerMonitor.on(event, () => win?.webContents.send('mochi:system-resumed'));

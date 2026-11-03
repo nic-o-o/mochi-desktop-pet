@@ -67,10 +67,10 @@ export function SetupCard({
         {missing ? (
           <>
             Please open Alacarte to install Codimango (<code>devfeature_codimango</code>), then run the
-            command below once in Terminal to sign in.
+            command below once in Terminal on this Mac (not on a devserver) to sign in.
           </>
         ) : (
-          <>Run the command below once in Terminal to sign in to Codimango again.</>
+          <>Run the command below once in Terminal on this Mac (not on a devserver) to sign in to Codimango again.</>
         )}
       </p>
 
@@ -96,12 +96,14 @@ export function SetupCard({
           {missing ? (
             <>
               Still not connected — make sure Codimango is installed from Alacarte and you've run{' '}
-              <code>codimango auth setup</code> in Terminal, then check again.
+              <code>codimango auth setup</code> in Terminal on this Mac, then check again. Signing in on a
+              devserver doesn't count: Mochi reads the sign-in on this Mac.
             </>
           ) : (
             <>
-              Still not connected — run <code>codimango auth setup</code> in Terminal to refresh your
-              sign-in, then check again.
+              Still not connected — run <code>codimango auth setup</code> in Terminal on this Mac to
+              refresh your sign-in, then check again. Signing in on a devserver doesn't count: Mochi reads
+              the sign-in on this Mac.
             </>
           )}
         </p>

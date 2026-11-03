@@ -27,6 +27,8 @@ export const LONG_FAILING_DAYS = 10;
 export interface CodimangoValidationDetail {
   label: string;
   status: string;
+  /** Doesn't affect the overall status: a task can pass validation with advisory checks failing. */
+  advisory?: boolean;
 }
 
 /** The subset of a `task list --json` row Mochi reads. */
@@ -145,15 +147,27 @@ const CHECK_LABELS: Record<string, string> = {
   'Agentic trial-output review': 'Trial review',
   'Contamination check': 'Contamination',
   'VALIDATION_ENGINE::unified_provenance': 'Provenance',
+  'VALIDATION_ENGINE::deep_review': 'Deep review',
+  'VALIDATION_ENGINE::reward_hack_detector': 'Reward-hack detector',
 };
 
-/** "Oracle 1/3", "Solvability & difficulty", "Oracle 1/3 +2" — the failed checks, shortest first. */
+function checkName(label: string): string {
+  return CHECK_LABELS[label] ?? label.replace(/^VALIDATION_ENGINE::/, '').replace(/_/g, ' ');
+}
+
+/** Advisory checks that failed: "Deep review, Reward-hack detector". They don't change the overall status. */
+export function advisoryFailures(row: CodimangoRow): string | undefined {
+  const names = (row.validationDetails ?? []).filter((d) => d.status === 'failed' && d.advisory).map((d) => checkName(d.label));
+  return names.length ? names.join(', ') : undefined;
+}
+
+/** "Oracle 1/3", "Solvability & difficulty", "Oracle 1/3 +2" — the failed required checks (advisory ones don't block). */
 export function failedCheckSummary(row: CodimangoRow): string | undefined {
-  const failed = (row.validationDetails ?? []).filter((d) => d.status === 'failed');
+  const failed = (row.validationDetails ?? []).filter((d) => d.status === 'failed' && !d.advisory);
   const names = failed.map((d) =>
     d.label === 'Oracle validation' && row.oracleTotalCount
       ? `Oracle ${row.oraclePassCount ?? 0}/${row.oracleTotalCount}`
-      : (CHECK_LABELS[d.label] ?? d.label),
+      : checkName(d.label),
   );
   if (names.length === 0) return undefined;
   return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
