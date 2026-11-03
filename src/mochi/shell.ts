@@ -9,6 +9,8 @@ export interface DisplayBounds {
   y: number;
   width: number;
   height: number;
+  /** Each display in global coordinates; x/y/width/height above is the box around them all. */
+  displays?: { x: number; y: number; width: number; height: number }[];
 }
 
 export interface BoundsRect {

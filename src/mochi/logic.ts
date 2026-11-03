@@ -257,6 +257,36 @@ export function clampPetPosition(pos: XY, viewport: Size, petSize: number): XY {
 
 export interface Rect extends XY, Size {}
 
+/** The display the rect's center is on, else the nearest one; null with no displays. */
+export function displayFor(rect: Rect, displays: Rect[]): Rect | null {
+  if (displays.length === 0) return null;
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  const gap = (d: Rect) => Math.hypot(Math.max(d.x - cx, 0, cx - (d.x + d.w)), Math.max(d.y - cy, 0, cy - (d.y + d.h)));
+  return displays.reduce((best, d) => (gap(d) < gap(best) ? d : best));
+}
+
+/**
+ * Keep the whole pet on one display: the one it is mostly over, or the nearest,
+ * so it can cross between monitors but never rest in the gap between them.
+ * With no display list (a plain browser), the viewport is the only display.
+ */
+export function clampToDisplays(pos: XY, viewport: Size, petSize: number, displays: Rect[]): XY {
+  const d = displayFor({ ...pos, w: petSize, h: petSize }, displays);
+  if (!d) return clampPetPosition(pos, viewport, petSize);
+  return {
+    x: Math.min(Math.max(d.x, pos.x), Math.max(d.x, d.x + d.w - petSize)),
+    y: Math.min(Math.max(d.y, pos.y), Math.max(d.y, d.y + d.h - petSize)),
+  };
+}
+
+/** placeFloating within one display (viewport-local rects), so a panel opens on the pet's monitor. */
+export function placeOnDisplay(pet: Rect, float: Size, display: Rect, gap = 12, avoid: Rect[] = []): XY {
+  const shift = (r: Rect) => ({ ...r, x: r.x - display.x, y: r.y - display.y });
+  const local = placeFloating(shift(pet), float, { w: display.w, h: display.h }, gap, avoid.map(shift));
+  return { x: local.x + display.x, y: local.y + display.y };
+}
+
 function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }

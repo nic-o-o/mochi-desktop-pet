@@ -3,13 +3,15 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import {
   DRAG_THRESHOLD_PX,
   clampPetPosition,
-  placeFloating,
+  clampToDisplays,
+  displayFor,
+  placeOnDisplay,
   resolvePetState,
   ringFraction,
   sortTasks,
   unionBounds,
 } from './mochi/logic.ts';
-import type { PlacedRect, WeeklyGoals, XY } from './mochi/logic.ts';
+import type { PlacedRect, Rect, WeeklyGoals, XY } from './mochi/logic.ts';
 import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
 import { advanceStudy, loadStudy, saveStudy, studyReport } from './mochi/study.ts';
@@ -48,6 +50,7 @@ const PANEL_UNION = { w: 384, h: 700 };
 const BUBBLE_UNION = { w: 312, h: 180 };
 const EXPANDED_UNION = { w: 624, h: 692 };
 const PAW_UNION = { w: 96, h: 96 };
+const PAW_SIZE = 44;
 
 interface Bubble {
   id: number;
@@ -73,6 +76,8 @@ function loadPetPos(): XY {
     if (!raw) return defaultPetPos();
     const parsed = JSON.parse(raw) as Partial<XY>;
     if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return defaultPetPos();
+    /* desktop shell: saved in screen coordinates and clamped once the displays are known */
+    if (isShellMode()) return { x: parsed.x, y: parsed.y };
     return clampPetPosition(
       { x: parsed.x, y: parsed.y },
       { w: window.innerWidth, h: window.innerHeight },
@@ -100,6 +105,9 @@ export default function App() {
   const [viewport, setViewport] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   /* desktop shell: display origin (for global window coords) + readiness gate */
   const [displayOrigin, setDisplayOrigin] = useState({ x: 0, y: 0 });
+  /* every display, in viewport-local coords (empty in a plain browser: the viewport is the display) */
+  const [displays, setDisplays] = useState<Rect[]>([]);
+  const originRef = useRef({ x: 0, y: 0 });
   const [displayReady, setDisplayReady] = useState(() => !isShellMode());
 
   const dragRef = useRef<{
@@ -150,9 +158,15 @@ export default function App() {
     const refresh = () => {
       getDisplayBounds().then((b) => {
         if (!alive || !b) return;
-        setViewport({ w: b.width, h: b.height });
+        const next = { w: b.width, h: b.height };
+        const local = (b.displays ?? []).map((d) => ({ x: d.x - b.x, y: d.y - b.y, w: d.width, h: d.height }));
+        /* keep the pet where it is on screen when the box around the displays moves (a monitor added on the left) */
+        const was = originRef.current;
+        originRef.current = { x: b.x, y: b.y };
+        setViewport(next);
         setDisplayOrigin({ x: b.x, y: b.y });
-        setPetPos((p) => clampPetPosition(p, { w: b.width, h: b.height }, PET_BOX));
+        setDisplays(local);
+        setPetPos((p) => clampToDisplays({ x: p.x + was.x - b.x, y: p.y + was.y - b.y }, next, PET_BOX, local));
         setDisplayReady(true);
       });
     };
@@ -163,7 +177,8 @@ export default function App() {
   /* persist position across refreshes */
   useEffect(() => {
     try {
-      localStorage.setItem(PET_POS_STORAGE_KEY, JSON.stringify(petPos));
+      const o = originRef.current;
+      localStorage.setItem(PET_POS_STORAGE_KEY, JSON.stringify({ x: petPos.x + o.x, y: petPos.y + o.y }));
     } catch {
       /* ignore — position still applies for the session */
     }
@@ -180,8 +195,9 @@ export default function App() {
 
   const shell = isShellMode();
   /* belt-and-braces clamp so the first shell frame (pre-display-bounds) stays sane */
-  const petRenderPos = clampPetPosition(petPos, viewport, PET_BOX);
-  const pawPos = { x: viewport.w - 80, y: viewport.h - 80 };
+  const petRenderPos = clampToDisplays(petPos, viewport, PET_BOX, displays);
+  /* the paw takes the pet's spot (not a screen corner, where chat apps keep Send) */
+  const pawPos = { x: petRenderPos.x + PET_BOX / 2 - PAW_SIZE / 2, y: petRenderPos.y + PET_BOX / 2 - PAW_SIZE / 2 };
 
   /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
   const { tasks, weekly, snapshot, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
@@ -256,18 +272,23 @@ export default function App() {
     () => ({ x: petRenderPos.x, y: petRenderPos.y, w: PET_BOX, h: PET_BOX }),
     [petRenderPos],
   );
-  const panelPos = useMemo(() => placeFloating(petRect, PANEL_SIZE, viewport), [petRect, viewport]);
+  /* panels and bubbles open on the pet's monitor */
+  const petDisplay = useMemo(
+    () => displayFor(petRect, displays) ?? { x: 0, y: 0, ...viewport },
+    [petRect, displays, viewport],
+  );
+  const panelPos = useMemo(() => placeOnDisplay(petRect, PANEL_SIZE, petDisplay), [petRect, petDisplay]);
   const expandedPos = useMemo(
-    () => placeFloating(petRect, EXPANDED_SIZE, viewport),
-    [petRect, viewport],
+    () => placeOnDisplay(petRect, EXPANDED_SIZE, petDisplay),
+    [petRect, petDisplay],
   );
   const bubblePos = useMemo(() => {
     /* With the panel open the bubble sits below the pet even over panel
        content; otherwise it steers clear of the full view. */
     const avoid: { x: number; y: number; w: number; h: number }[] = [];
     if (expandedOpen) avoid.push({ x: expandedPos.x, y: expandedPos.y, ...EXPANDED_SIZE });
-    return placeFloating(petRect, BUBBLE_SIZE, viewport, 4, avoid);
-  }, [petRect, viewport, panelOpen, hidden, expandedOpen, expandedPos]);
+    return placeOnDisplay(petRect, BUBBLE_SIZE, petDisplay, 4, avoid);
+  }, [petRect, petDisplay, panelOpen, hidden, expandedOpen, expandedPos]);
 
   /* desktop shell: union of visible UI in screen-local coords. The container
      is shifted by -union so screen coords render at the right window offset
@@ -357,7 +378,7 @@ export default function App() {
       setDragging(true);
     }
     touch();
-    setPetPos(clampPetPosition({ x: d.origX + d.accX, y: d.origY + d.accY }, viewport, PET_BOX));
+    setPetPos(clampToDisplays({ x: d.origX + d.accX, y: d.origY + d.accY }, viewport, PET_BOX, displays));
   }
 
   function handlePetPointerUp() {
