@@ -1,0 +1,56 @@
+# Talk to Mochi: a chat box in the panel, answered by Metamate 3.
+# Format: scenarios/README.md.
+
+fixtures:
+  one_review:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30 }
+    mine:
+      - { id: d1, name: ember-draft-ready, status: draft, validation: passing, updated_ago_h: 5 }
+
+scenarios:
+  - id: talk-answer
+    title: You say hi in the panel and Mochi answers; Metamate gets your task counts, not task names
+    given: { live: one_review, metamate: ["Hi! One review is waiting for you."] }
+    steps:
+      - start
+      - click_pet
+      - say: hi Mochi
+      - expect:
+          see: [hi Mochi, "Hi! One review is waiting for you."]
+          asked: { text: hi Mochi, reviews: 1, revisions: 0, drafts: 1 }
+          events:
+            - { event: mochi_click, surface: talk, component: send, kind: text }
+            - { event: mochi_vpv, surface: talk, component: answer, result: answer }
+
+  - id: talk-needs-permission
+    title: Before Metamate 3 access is granted, Mochi links to the permission page; after that it answers
+    given: { live: one_review, metamate: [access_needed, "There you are!"] }
+    steps:
+      - start
+      - click_pet
+      - say: hi
+      - expect: { see: [Mochi needs your OK to use Metamate 3 first., Give permission] }
+      - click: Give permission
+      - expect:
+          opened: [agentcloud.internalmeta.com/authorize]
+          events:
+            - { event: mochi_vpv, surface: talk, component: answer, result: access_needed }
+            - { event: mochi_click, surface: talk, component: give_permission }
+      - say: hi again
+      - expect:
+          see: [There you are!]
+          not_see: [Mochi needs your OK]
+
+  - id: talk-keeps-chat
+    title: Closing and reopening the panel keeps the chat
+    given: { live: one_review, metamate: ["Still here!"] }
+    steps:
+      - start
+      - click_pet
+      - say: you there?
+      - expect: { see: [Still here!] }
+      - click_pet
+      - expect: { panel: closed }
+      - click_pet
+      - expect: { see: [you there?, Still here!] }

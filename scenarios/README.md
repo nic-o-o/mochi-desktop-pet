@@ -47,6 +47,7 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 - `saved`: a fixture name or inline snapshot. Mochi diffs the first fetch against it, which is how "something changed while Mochi was closed" pops a bubble. Leave it out for a first launch.
 - `live`: a fixture, an inline snapshot, `{ error: cli_missing | login_required | offline | error }`, or a list (one per fetch; the last repeats).
 - `sections`: saved section choices, e.g. `{ revisions: false, reviews: true, drafts: true }`.
+- `metamate`: what Metamate 3 answers when you talk to Mochi, in order: answer text, or `access_needed`.
 
 ## Steps
 
@@ -62,6 +63,7 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 | `click: <text>` | Any button or link showing that text |
 | `press: <aria-label>` | A control by its accessible label, e.g. `Increase reviewed goal` |
 | `next_fetch: <live>` | Change what the following fetches return |
+| `say: <text>` | Type in the panel's Talk to Mochi box and send |
 | `wake`, `dock_report` | Mac woke up; Dock → Report a Problem |
 | `wait: <ms>` | Let time pass |
 | `expect: {…}` | Check (retries for up to 1.5 s) |
@@ -82,6 +84,7 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 | `events` | Each listed usage event was logged (see below) |
 | `not_events` | None of these were logged |
 | `event_count` | Exactly `count` logged events match `match` |
+| `asked` | What Mochi last sent to Metamate (partial): `{ text: hi, reviews: 1 }`; counts only, never task names |
 
 ## Events
 

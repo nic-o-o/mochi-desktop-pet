@@ -54,10 +54,30 @@ export interface MochiShell {
   usageSummary?: () => Promise<string | null>;
   /** Screen locked (true) or unlocked (false); returns unsubscribe. */
   onScreenLock?: (callback: (locked: boolean) => void) => () => void;
+  /** Ask Mochi something; answered by Metamate 3 under the user's meta CLI login (main process). */
+  ask?: (text: string, context?: AskContext, images?: AskImage[]) => Promise<AskResult>;
 }
 
 /** One usage event: a name from the logging plan plus ID/enum/number fields. */
 export type UsageEvent = { event_name: string } & Record<string, string | number | boolean | undefined>;
+
+/** A picture dropped or pasted into the chat (PNG, JPEG, GIF or WebP, up to 7 MB). */
+export interface AskImage {
+  type: string;
+  bytes: Uint8Array;
+}
+
+/** Task counts Mochi may mention. Counts only: task names never leave the panel. */
+export interface AskContext {
+  reviews: number;
+  revisions: number;
+  drafts: number;
+}
+
+export type AskResult =
+  | { kind: 'answer'; text: string }
+  | { kind: 'access_needed'; message: string; fix: string }
+  | { kind: 'cli_missing' | 'offline' | 'timeout' | 'error'; message: string };
 
 declare global {
   interface Window {
@@ -146,6 +166,17 @@ export function fetchCodimango(): Promise<CodimangoFetchResult | null> {
   const b = bridge();
   if (!b?.fetchCodimango) return Promise.resolve(null);
   return b.fetchCodimango();
+}
+
+/** Null outside the desktop shell: talking needs the meta CLI, which only the shell can run. */
+export function canAsk(): boolean {
+  return Boolean(bridge()?.ask);
+}
+
+export function ask(text: string, context?: AskContext, images?: AskImage[]): Promise<AskResult> {
+  const b = bridge();
+  if (!b?.ask) return Promise.resolve({ kind: 'error', message: 'Talking to Mochi needs the desktop app.' });
+  return b.ask(text, context, images).catch((e: unknown) => ({ kind: 'error' as const, message: String(e) }));
 }
 
 /** Opens the page in the browser via the shell; in a plain browser, a new tab. */
