@@ -2,12 +2,14 @@
  * (Spotlight, Launchpad, Dock, or at login) with no terminal or Vite server.
  *
  *   npm run package              # → out/Mochi-darwin-<arch>/Mochi.app + out/Mochi.dmg
- *   npm run package -- --install # also copies the app to ~/Applications
+ *   npm run package -- --install # also installs it over the existing copy (or ~/Applications)
+ *                                # and restarts a running Mochi on the new build
  *
  * Mochi.dmg is the drag-to-Applications installer to share. The app is only
  * ad-hoc signed (no Apple Developer ID, not notarized), so on another Mac the
  * first launch needs System Settings → Privacy & Security → Open Anyway.
- * Quit Mochi before installing over a running copy.
+ * Installing from the DMG by hand: quit Mochi first, so the new copy is the one that runs
+ * (only one Mochi runs at a time; a second launch just quits).
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -84,11 +86,26 @@ try {
 }
 
 if (install) {
-  const dest = path.join(os.homedir(), 'Applications', 'Mochi.app');
+  /* Replace the copy that's already installed (usually /Applications), so there
+     is never a second Mochi, and swap a running pet for the new build. */
+  const dest = ['/Applications/Mochi.app', path.join(os.homedir(), 'Applications', 'Mochi.app')].find((p) => fs.existsSync(p))
+    ?? path.join(os.homedir(), 'Applications', 'Mochi.app');
+  const wasRunning = quitRunningMochi();
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.rmSync(dest, { recursive: true, force: true });
   fs.cpSync(appPath, dest, { recursive: true, verbatimSymlinks: true });
-  console.log(`Installed ${dest}. Open it from Spotlight ("Mochi") or Launchpad.`);
+  spawnSync('open', [dest]);
+  console.log(`Installed ${dest}${wasRunning ? ' and restarted Mochi' : ' and opened it'}.`);
 } else {
-  console.log('Run `npm run package -- --install` to copy it to ~/Applications.');
+  console.log('Run `npm run package -- --install` to install it (replaces and restarts a running Mochi).');
+}
+
+/** Quit the packaged Mochi if it's running and wait for it to exit; true if it was running. */
+function quitRunningMochi() {
+  const running = () => spawnSync('pgrep', ['-f', 'Mochi.app/Contents/MacOS/Mochi']).status === 0;
+  if (!running()) return false;
+  spawnSync('osascript', ['-e', 'quit app "Mochi"']);
+  for (let i = 0; i < 50 && running(); i += 1) spawnSync('sleep', ['0.2']);
+  if (running()) spawnSync('pkill', ['-f', 'Mochi.app/Contents/MacOS/Mochi']);
+  return true;
 }

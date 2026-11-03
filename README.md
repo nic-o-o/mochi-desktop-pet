@@ -60,8 +60,13 @@ npm run package
 ```
 
 This builds `out/Mochi.dmg`: open it and drag **Mochi** to **Applications**,
-then open Mochi from Spotlight or Launchpad. (Or `npm run package -- --install`
-copies the app to `~/Applications`.) The packaged app loads its built files,
+then open Mochi from Spotlight or Launchpad. Or run `npm run package -- --install`:
+it replaces the installed copy (`/Applications`, else `~/Applications`) and
+restarts a running Mochi on the new build.
+
+To update from the DMG by hand, quit Mochi first (right-click its Dock icon →
+Quit), then drag the new one to Applications and choose Replace. Only one
+Mochi runs at a time, so a new copy opened while the old one runs just quits. The packaged app loads its built files,
 so no terminal or Vite server is needed; right-click its Dock icon for
 **Open at Login**. Logs go to `~/Library/Logs/Mochi/main.log`.
 
