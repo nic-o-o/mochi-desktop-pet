@@ -64,6 +64,12 @@ then open Mochi from Spotlight or Launchpad. Or run `npm run package -- --instal
 it replaces the installed copy (`/Applications`, else `~/Applications`) and
 restarts a running Mochi on the new build.
 
+**Releasing to testers:** `npm run release -- patch` (or `minor`) bumps the
+version, builds and installs it, then opens the testers' Drive folder and shows
+`out/Mochi.dmg` in Finder: drag it in and choose "Replace existing file" so the
+link stays the same. It prints a note to post for testers. `npm run release`
+alone rebuilds the current version.
+
 To update from the DMG by hand, quit Mochi first (right-click its Dock icon →
 Quit), then drag the new one to Applications and choose Replace. Only one
 Mochi runs at a time, so a new copy opened while the old one runs just quits. The packaged app loads its built files,
