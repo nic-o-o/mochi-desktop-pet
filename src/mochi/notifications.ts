@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodimangoRow, CodimangoSnapshot } from './codimango.ts';
-import { failedCheckSummary, reviewUrl, submissionUrl } from './codimango.ts';
+import { advisoryFailures, failedCheckSummary, reviewUrl, submissionUrl } from './codimango.ts';
 
 /* v3: task_submitted became review_started; older entries are dropped and reseeded. */
 export const NOTIFICATIONS_STORAGE_KEY = 'mochi.notifications.v3';
@@ -155,12 +155,17 @@ function validationNotice(row: CodimangoRow, raisedAtMs: number): Notice {
   const v = row.validationStatus ?? '';
   const passed = v === 'passing';
   const summary = !passed ? failedCheckSummary(row) : undefined;
+  const advisory = passed ? advisoryFailures(row) : undefined;
   return {
     id: `validation:${row.id}:${v}:${raisedAtMs}`,
     kind: passed ? 'validation_passed' : 'validation_failed',
     title: passed ? 'Validation passed' : 'Validation failed',
     taskName: row.name,
-    detail: passed ? 'All validation checks passed.' : `Validation failed${summary ? ` (${summary})` : ''}.`,
+    detail: passed
+      ? advisory
+        ? `Required checks passed; advisory checks failed: ${advisory}.`
+        : 'All validation checks passed.'
+      : `Validation failed${summary ? ` (${summary})` : ''}.`,
     url: submissionUrl(row.id),
     taskId: row.id,
     raisedAtMs,

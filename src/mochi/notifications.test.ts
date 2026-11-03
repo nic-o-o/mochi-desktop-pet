@@ -126,6 +126,31 @@ describe('diffNotifications — arrivals from snapshot diffs', () => {
     expect(fail.detail).toContain('Oracle 1/3');
   });
 
+  it('says when a pass came with advisory checks failing, and leaves them out of a failure', () => {
+    /* Like ember-pairs-cache-bust-on-block-unblock: overall passing, advisory deep review failed. */
+    const advisory = [
+      { label: 'Oracle validation', status: 'passed' },
+      { label: 'VALIDATION_ENGINE::deep_review', status: 'failed', advisory: true },
+      { label: 'VALIDATION_ENGINE::reward_hack_detector', status: 'failed', advisory: true },
+    ];
+    const prev = snap([], [row({ id: 'm1', name: 'ember-a', validationStatus: 'pending' }), row({ id: 'm2', name: 'ember-b', validationStatus: 'pending' })]);
+    const next = snap(
+      [],
+      [
+        row({ id: 'm1', name: 'ember-a', validationStatus: 'passing', validationDetails: advisory }),
+        row({
+          id: 'm2',
+          name: 'ember-b',
+          validationStatus: 'failed',
+          validationDetails: [...advisory, { label: 'Structural checks', status: 'failed' }],
+        }),
+      ],
+    );
+    const [pass, fail] = diffNotifications(prev, next, NOW);
+    expect(pass.detail).toBe('Required checks passed; advisory checks failed: Deep review, Reward-hack detector.');
+    expect(fail.detail).toBe('Validation failed (Structural).');
+  });
+
   it('fires assigned and review-started when a reviewer claims a task', () => {
     const prev = snap([], []);
     const next = snap(

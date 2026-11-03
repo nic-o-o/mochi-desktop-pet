@@ -36,12 +36,18 @@ describe('pickRow', () => {
       name: 'x',
       status: 'needs_revision',
       metadataJson: '{"big":true}',
-      validationDetails: [{ label: 'AI assessment', status: 'failed', detail: 'long text' }],
+      validationDetails: [
+        { label: 'AI assessment', status: 'failed', detail: 'long text' },
+        { label: 'VALIDATION_ENGINE::deep_review', status: 'failed', detail: 'long text', advisory: true },
+      ],
     });
     expect(row.id).toBe('42');
     expect(row.metadataJson).toBeUndefined();
     expect(row.reviewSlaDeadline).toBeNull();
-    expect(row.validationDetails).toEqual([{ label: 'AI assessment', status: 'failed' }]);
+    expect(row.validationDetails).toEqual([
+      { label: 'AI assessment', status: 'failed', advisory: false },
+      { label: 'VALIDATION_ENGINE::deep_review', status: 'failed', advisory: true },
+    ]);
   });
 });
 

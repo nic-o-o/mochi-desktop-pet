@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampPetPosition,
+  clampToDisplays,
+  displayFor,
+  placeOnDisplay,
   formatSla,
   freshnessLabel,
   IDLE_SLEEPY_SECONDS,
@@ -361,5 +364,42 @@ describe('freshnessLabel', () => {
     expect(freshnessLabel(NOW - 5 * MIN, NOW, 'error')).toBe("Couldn't refresh · showing data from 5 min ago");
     expect(freshnessLabel(null, NOW, 'offline')).toBe('Offline');
     expect(freshnessLabel(NOW, NOW, 'refreshing')).toBe('Refreshing…');
+  });
+});
+
+describe('multiple displays', () => {
+  /* A laptop at the left (0,0 1512x982) and a taller external monitor to its right,
+     top-aligned, in viewport-local coords. */
+  const laptop = { x: 0, y: 0, w: 1512, h: 982 };
+  const external = { x: 1512, y: 0, w: 2560, h: 1440 };
+  const both = [laptop, external];
+  const viewport = { w: 4072, h: 1440 };
+
+  it('lets the pet move onto the second monitor', () => {
+    expect(clampToDisplays({ x: 3000, y: 1200 }, viewport, 144, both)).toEqual({ x: 3000, y: 1200 });
+  });
+
+  it('never leaves the pet in the gap under the shorter monitor', () => {
+    /* below the laptop, where no screen exists: snaps up onto the laptop */
+    expect(clampToDisplays({ x: 200, y: 1200 }, viewport, 144, both)).toEqual({ x: 200, y: 982 - 144 });
+  });
+
+  it('keeps the whole pet on the monitor it is mostly over', () => {
+    /* straddling the edge, centre on the external monitor */
+    expect(clampToDisplays({ x: 1480, y: 100 }, viewport, 144, both)).toEqual({ x: 1512, y: 100 });
+  });
+
+  it('falls back to the viewport with no display list', () => {
+    expect(clampToDisplays({ x: 5000, y: -10 }, { w: 800, h: 600 }, 144, [])).toEqual({ x: 656, y: 0 });
+  });
+
+  it('opens the panel on the pet\'s monitor', () => {
+    const pet = { x: 1512 + 2560 - 144 - 20, y: 1440 - 144 - 20, w: 144, h: 144 };
+    const d = displayFor(pet, both)!;
+    expect(d).toBe(external);
+    const pos = placeOnDisplay(pet, { w: 352, h: 470 }, d);
+    expect(pos.x).toBeGreaterThanOrEqual(external.x);
+    expect(pos.x + 352).toBeLessThanOrEqual(external.x + external.w);
+    expect(pos.y + 470).toBeLessThanOrEqual(external.h);
   });
 });
