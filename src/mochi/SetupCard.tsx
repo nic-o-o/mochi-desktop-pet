@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { logClick, logVpv, useVpv } from './usage.ts';
 
 export type SetupKind = 'cli_missing' | 'login_required';
 
@@ -27,6 +28,8 @@ export function SetupCard({
   onOpenAlacarte: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useVpv(ref, `setup:${kind}`, () => logVpv('setup_card', 'setup_card', { kind }));
 
   useEffect(() => {
     if (!copied) return;
@@ -35,6 +38,7 @@ export function SetupCard({
   }, [copied]);
 
   function copyCommand() {
+    logClick('setup_card', 'copy_command');
     navigator.clipboard
       ?.writeText(AUTH_SETUP_COMMAND)
       .then(() => setCopied(true))
@@ -45,7 +49,7 @@ export function SetupCard({
 
   const missing = kind === 'cli_missing';
   return (
-    <div className="setup-card" role="status">
+    <div ref={ref} className="setup-card" role="status">
       <div className="setup-head">
         <span className="setup-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={1.8}>

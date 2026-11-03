@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FreshnessState, GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
 import {
   PRIORITY_RANK,
@@ -16,6 +16,13 @@ import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionPrefs } from './sections.ts';
+import { SECTION_EVENT_NAME, logClick, logVpv, msSincePanelOpen, useVpv } from './usage.ts';
+
+const KIND_SECTION: Record<'revision' | 'pending' | 'draft', SectionKey> = {
+  revision: 'revisions',
+  pending: 'reviews',
+  draft: 'drafts',
+};
 
 interface OverviewPanelProps {
   position: XY;
@@ -147,6 +154,60 @@ function RowFlag({ flag }: { flag: GlanceFlag }) {
   return <span className={`glance-flag tone-${flag.tone}`}>{flag.text}</span>;
 }
 
+/** One row; logs a VPV once per panel opening when half of it is on screen for 250 ms. */
+function GlanceRow({
+  task: t,
+  kind,
+  position,
+  nowMs,
+  onOpen,
+}: {
+  task: TaskItem;
+  kind: 'revision' | 'pending' | 'draft';
+  position: number;
+  nowMs: number;
+  onOpen: (id: string) => void;
+}) {
+  const ref = useRef<HTMLLIElement>(null);
+  const flag =
+    kind === 'revision'
+      ? revisionRowFlag(t.priority)
+      : kind === 'draft'
+        ? draftRowFlag(t.draftState)
+        : pendingRowFlag(t.slaDueMs, nowMs);
+  const fields = { section: SECTION_EVENT_NAME[KIND_SECTION[kind]], task_id: t.id, position, badge: flag.text };
+  useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
+  return (
+    <li ref={ref} className="glance-row">
+      <button
+        type="button"
+        className="glance-title"
+        onClick={() => {
+          logClick('glance_panel', 'row', { ...fields, ms_since_panel_open: msSincePanelOpen() });
+          onOpen(t.id);
+        }}
+        title={t.title}
+      >
+        {t.title}
+      </button>
+      <div className="glance-meta">
+        <span className="muted">
+          {t.subtitle
+            ? t.subtitle
+            : kind === 'revision'
+              ? t.checkSummary
+                ? `Validation failed · ${t.checkSummary}`
+                : `${t.type} · ${formatSla(t.slaDueMs, nowMs)}`
+              : t.submittedBy
+                ? `Submitted by ${t.submittedBy}`
+                : `Assigned by ${t.requester}`}
+        </span>
+        <RowFlag flag={flag} />
+      </div>
+    </li>
+  );
+}
+
 /** One glance section: the first task shows, the rest hide behind "View N more". */
 function TaskSection({
   title,
@@ -197,38 +258,19 @@ function TaskSection({
       ) : (
         <>
           <ul className="glance-list">
-            {shown.map((t) => (
-              <li key={t.id} className="glance-row">
-                <button type="button" className="glance-title" onClick={() => onOpen(t.id)} title={t.title}>
-                  {t.title}
-                </button>
-                <div className="glance-meta">
-                  <span className="muted">
-                    {t.subtitle
-                      ? t.subtitle
-                      : kind === 'revision'
-                        ? t.checkSummary
-                          ? `Validation failed · ${t.checkSummary}`
-                          : `${t.type} · ${formatSla(t.slaDueMs, nowMs)}`
-                        : t.submittedBy
-                          ? `Submitted by ${t.submittedBy}`
-                          : `Assigned by ${t.requester}`}
-                  </span>
-                  <RowFlag
-                    flag={
-                      kind === 'revision'
-                        ? revisionRowFlag(t.priority)
-                        : kind === 'draft'
-                          ? draftRowFlag(t.draftState)
-                          : pendingRowFlag(t.slaDueMs, nowMs)
-                    }
-                  />
-                </div>
-              </li>
+            {shown.map((t, i) => (
+              <GlanceRow key={t.id} task={t} kind={kind} position={i} nowMs={nowMs} onOpen={onOpen} />
             ))}
           </ul>
           {remaining > 0 && (
-            <button type="button" className="glance-more" onClick={() => setExpanded(true)}>
+            <button
+              type="button"
+              className="glance-more"
+              onClick={() => {
+                logClick('glance_panel', 'view_more', { section: SECTION_EVENT_NAME[KIND_SECTION[kind]], hidden_count: remaining });
+                setExpanded(true);
+              }}
+            >
               View {remaining} more ▾
             </button>
           )}
@@ -296,7 +338,10 @@ function SectionFilter({
                   type="checkbox"
                   checked={prefs[key]}
                   disabled={last}
-                  onChange={(e) => onChange({ ...prefs, [key]: e.target.checked })}
+                  onChange={(e) => {
+                    logClick('glance_panel', 'section_filter', { section: SECTION_EVENT_NAME[key], enabled: e.target.checked });
+                    onChange({ ...prefs, [key]: e.target.checked });
+                  }}
                 />
                 <span>{label}</span>
                 <span className="section-count">{counts[key]}</span>
@@ -307,7 +352,10 @@ function SectionFilter({
             <button
               type="button"
               className="section-menu-action"
-              onClick={() => void onCopyStats().then((ok) => setCopyState(ok ? 'copied' : 'failed'))}
+              onClick={() => {
+                logClick('glance_panel', 'copy_stats');
+                void onCopyStats().then((ok) => setCopyState(ok ? 'copied' : 'failed'));
+              }}
               title="Copies your review speed before and since installing Mochi, to send to the Mochi team"
             >
               {copyState === 'copied' ? 'Copied ✓' : copyState === 'failed' ? "Couldn't copy" : 'Copy my review stats'}
@@ -317,7 +365,10 @@ function SectionFilter({
             <button
               type="button"
               className="section-menu-action"
-              onClick={() => void onReportProblem().then((ok) => setReportState(ok ? 'sent' : 'failed'))}
+              onClick={() => {
+                logClick('glance_panel', 'report_problem');
+                void onReportProblem().then((ok) => setReportState(ok ? 'sent' : 'failed'));
+              }}
               title="Copies diagnostics and opens #mochi-dogfood-feedback in Slack"
             >
               {reportState === 'sent'
@@ -397,7 +448,11 @@ export function OverviewPanel(props: OverviewPanelProps) {
               done={reviewsCompleted}
               goal={goals.reviewGoal}
               tone="green"
-              onStep={(d) => props.onSaveGoals({ ...goals, reviewGoal: stepGoal(goals.reviewGoal, d) })}
+              onStep={(d) => {
+                const next = stepGoal(goals.reviewGoal, d);
+                logClick('glance_panel', 'goal_stepper', { goal: 'reviews', old_value: goals.reviewGoal, new_value: next });
+                props.onSaveGoals({ ...goals, reviewGoal: next });
+              }}
             />
             <GlanceCard
               title="Accepted"
@@ -405,9 +460,11 @@ export function OverviewPanel(props: OverviewPanelProps) {
               done={submissionsCompleted}
               goal={goals.submissionGoal}
               tone="orange"
-              onStep={(d) =>
-                props.onSaveGoals({ ...goals, submissionGoal: stepGoal(goals.submissionGoal, d) })
-              }
+              onStep={(d) => {
+                const next = stepGoal(goals.submissionGoal, d);
+                logClick('glance_panel', 'goal_stepper', { goal: 'accepted', old_value: goals.submissionGoal, new_value: next });
+                props.onSaveGoals({ ...goals, submissionGoal: next });
+              }}
             />
           </div>
 

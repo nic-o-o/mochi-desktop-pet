@@ -20,7 +20,8 @@ scenarios:
           see: [Setup required, Codimango is not connected, codimango auth setup, Check connection]
           not_see: [Waiting for your review]
           events:
-            - { event: mochi_vpv, surface: panel, component: setup_card, kind: cli_missing }
+            - { event: mochi_vpv, surface: setup_card, kind: cli_missing }
+            - { event: mochi_fetch, trigger: launch, status: cli_missing }
       - click: Open Alacarte
       - expect: { opened: [internalfb.com/alacarte] }
       - next_fetch: one_review
@@ -51,7 +52,7 @@ scenarios:
           report: { status: ok, failureKind: null, counts: { reviews: 1, revisions: 0, drafts: 1 } }
           see: ["Diagnostics copied: paste them in Slack"]
           events:
-            - { event: mochi_click, surface: panel, component: report_problem }
+            - { event: mochi_click, surface: glance_panel, component: report_problem }
 
   - id: report-from-dock
     title: Dock → Report a Problem works with the panel closed and records the last error

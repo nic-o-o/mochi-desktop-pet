@@ -1,0 +1,154 @@
+# Usage events (logging plan, "Validation before any data read"). Every scenario
+# also checks that no event carries a task name. Format: scenarios/README.md.
+
+fixtures:
+  two_reviews:
+    age_min: 60
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 60, claimed_ago_h: 10 }
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40 }
+    mine: []
+
+  new_assignment:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 60, claimed_ago_h: 10 }
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40 }
+      - { id: r3, name: ember-seat-reuse, review: open, due_in_h: 47, claimed_ago_h: 0.01 }
+    mine: []
+
+scenarios:
+  - id: log-row-vpv-once-per-opening
+    title: A row VPV logs once per panel opening, not for rows behind "View N more", and again after reopening
+    given: { live: two_reviews }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          events: [{ event: mochi_vpv, component: row, task_id: r2, section: waiting_review, position: 0, badge: 0d left }]
+          not_events: [{ event: mochi_vpv, component: row, task_id: r1 }]
+      - click: View 1 more
+      - expect:
+          events:
+            - { event: mochi_click, component: view_more, section: waiting_review, hidden_count: 1 }
+            - { event: mochi_vpv, component: row, task_id: r1, position: 1 }
+          event_count: { match: { event: mochi_vpv, component: row, task_id: r2 }, count: 1 }
+      - close_panel
+      - click_pet
+      - expect:
+          event_count: { match: { event: mochi_vpv, component: row, task_id: r2 }, count: 2 }
+
+  - id: log-panel-close-reasons
+    title: Panel closes record why and for how long
+    given: { live: two_reviews }
+    steps:
+      - start
+      - click_pet
+      - close_panel
+      - expect:
+          events:
+            - { event: mochi_click, surface: pet, component: pet, action: open_panel }
+            - { event: mochi_close, surface: glance_panel, component: panel, reason: close_button }
+      - click_pet
+      - click_pet
+      - expect:
+          events:
+            - { event: mochi_click, surface: pet, component: pet, action: close_panel }
+            - { event: mochi_close, surface: glance_panel, component: panel, reason: pet_click }
+      - click_pet
+      - hide_pet
+      - expect:
+          panel: closed
+          events:
+            - { event: mochi_close, surface: glance_panel, component: panel, reason: hide }
+            - { event: mochi_close, surface: pet, component: hide }
+      - restore_pet
+      - expect:
+          events: [{ event: mochi_click, surface: pet, component: paw }]
+
+  - id: log-bubble-takes-over-panel
+    title: A bubble arriving while the panel is open closes it with reason bubble_arrived
+    given: { saved: two_reviews, live: [two_reviews, new_assignment] }
+    steps:
+      - start
+      - click_pet
+      - expect: { panel: open }
+      - refresh_now
+      - expect:
+          bubble: Review Assigned
+          panel: closed
+          events:
+            - { event: mochi_close, surface: glance_panel, component: panel, reason: bubble_arrived }
+            - { event: mochi_vpv, surface: bubble, component: bubble, notif_kind: review_assigned, task_id: r3, source: arrival }
+
+  - id: log-bubble-close-and-history
+    title: Bell, ‹ ›, × and pet click on the bubble are logged; replays are marked as replays
+    given: { saved: two_reviews, live: new_assignment }
+    steps:
+      - start
+      - expect: { bubble: Review Assigned, badge: 1 }
+      - close_bubble
+      - expect:
+          events: [{ event: mochi_close, surface: bubble, component: bubble, reason: close_button, source: arrival }]
+      - click_bell
+      - expect:
+          events:
+            - { event: mochi_click, surface: pet, component: bell, unread_count: 0 }
+            - { event: mochi_vpv, surface: bubble, component: bubble, source: replay }
+      - bubble_older
+      - bubble_newer
+      - expect:
+          events:
+            - { event: mochi_click, surface: bubble, component: older }
+            - { event: mochi_click, surface: bubble, component: newer }
+      - click_pet
+      - expect:
+          events: [{ event: mochi_close, surface: bubble, component: bubble, reason: pet_click, source: replay }]
+
+  - id: log-setup-funnel
+    title: Setup card VPV, Open Alacarte, Copy and Check connection (with its result) make a funnel
+    given: { live: { error: cli_missing } }
+    steps:
+      - start
+      - click_pet
+      - wait: 300 # a VPV needs 250 ms on screen
+      - click: Open Alacarte
+      - click: Copy
+      - next_fetch: two_reviews
+      - click: Check connection
+      - expect:
+          see: [ember-turn-timer]
+          events:
+            - { event: mochi_vpv, surface: setup_card, component: setup_card, kind: cli_missing }
+            - { event: mochi_click, surface: setup_card, component: open_alacarte }
+            - { event: mochi_click, surface: setup_card, component: copy_command }
+            - { event: mochi_fetch, trigger: check_connection, status: ok, reviewing_rows: 2, mine_rows: 0 }
+            - { event: mochi_click, surface: setup_card, component: check_connection, result: ok }
+
+  - id: log-goals-and-daily-active
+    title: Goal steppers log old and new values; daily active logs once
+    given: { live: two_reviews }
+    steps:
+      - start
+      - expect:
+          events: [{ event: mochi_fetch, trigger: launch, status: ok }]
+          not_events: [{ event: mochi_daily_active }]
+      - click_pet
+      - press: Increase reviewed goal
+      - press: Decrease accepted goal
+      - expect:
+          events:
+            - { event: mochi_click, component: goal_stepper, goal: reviews, old_value: 5, new_value: 6 }
+            - { event: mochi_click, component: goal_stepper, goal: accepted, old_value: 2, new_value: 1 }
+          event_count: { match: { event: mochi_daily_active }, count: 1 }
+
+  - id: log-usage-in-copied-stats
+    title: Copy my review stats includes the usage summary
+    given: { live: two_reviews }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - click: Copy my review stats
+      - expect:
+          clipboard: [Mochi review stats, Mochi usage (last 7 days on this Mac; counts only)]
+          events: [{ event: mochi_click, surface: glance_panel, component: copy_stats }]

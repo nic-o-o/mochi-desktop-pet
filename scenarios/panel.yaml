@@ -34,7 +34,7 @@ scenarios:
           in_order: [ember-turn-timer, ember-lobby-seat]
           not_see: [ember-old-review, ember-draft-ready]
           events:
-            - { event: mochi_vpv, surface: panel, component: task_panel }
+            - { event: mochi_vpv, surface: glance_panel, component: panel, trigger: pet_click, sections_on: "revisions,reviews" }
 
   - id: panel-row-opens-codimango
     title: Clicking a row opens its Codimango page, not an in-app view
@@ -46,7 +46,7 @@ scenarios:
       - expect:
           opened: [/reviews/r2]
           events:
-            - { event: mochi_click, surface: panel, component: task_row, section: reviews }
+            - { event: mochi_click, surface: glance_panel, component: row, section: waiting_review, task_id: r2, position: 0, badge: 0d left }
       - click: ember-results-sync
       - expect: { opened: [/reviews/r2, /submissions/v1] }
 
@@ -64,7 +64,7 @@ scenarios:
           see: [Drafts, READY, RUNNING, FAILING, Validation passing · ready to submit]
           in_order: [ember-draft-ready, ember-draft-failing, ember-draft-running]
           events:
-            - { event: mochi_click, surface: panel, component: section_toggle, section: drafts, on: true }
+            - { event: mochi_click, surface: glance_panel, component: section_filter, section: drafts, enabled: true }
 
   - id: panel-saved-sections
     title: Sections chosen earlier are restored on launch
@@ -100,7 +100,8 @@ scenarios:
       - expect:
           see: [Updated just now]
           events:
-            - { event: mochi_click, surface: panel, component: refresh }
+            - { event: mochi_click, surface: glance_panel, component: refresh, freshness_state: idle }
+            - { event: mochi_fetch, trigger: refresh_button, status: ok, reviewing_rows: 3, mine_rows: 4 }
 
   - id: panel-offline
     title: Offline keeps the saved rows and says how old they are

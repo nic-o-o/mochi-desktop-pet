@@ -12,12 +12,15 @@ import { MOCK_TASKS, WEEKLY_COMPLETED } from './mockData.ts';
 import { parseCachedSnapshot, toTaskItems, weeklyCompleted } from './codimango.ts';
 import type { CodimangoFailure, CodimangoFailureKind, CodimangoSnapshot, WeeklyCompleted } from './codimango.ts';
 import { fetchCodimango, isDesktopShell, onSystemResumed } from './shell.ts';
+import { logFetch } from './usage.ts';
 
 export const TASKS_CACHE_KEY = 'mochi.codimango.v1';
 const MIN_REFRESH_MS = 60_000;
 const BACKGROUND_REFRESH_MS = 10 * 60_000;
 
 export type TasksStatus = 'mock' | 'loading' | 'ok' | CodimangoFailureKind;
+/** Why a refresh ran (logging plan: mochi_fetch.trigger). */
+export type FetchTrigger = 'launch' | 'panel_open' | 'interval' | 'wake' | 'online' | 'refresh_button' | 'check_connection';
 
 export interface TasksState {
   tasks: TaskItem[];
@@ -29,7 +32,8 @@ export interface TasksState {
   failure: CodimangoFailure | null;
   /** When the rows on screen were read from Codimango (null: never). */
   fetchedAtMs: number | null;
-  refresh: () => void;
+  /** Refresh now; resolves with the result (null: skipped, a read already running). */
+  refresh: (trigger: FetchTrigger) => Promise<TasksStatus | null>;
 }
 
 function loadSnapshot(): CodimangoSnapshot | null {
@@ -57,30 +61,36 @@ export function useTasks(active: boolean, nowMs: number): TasksState {
   const lastAttemptMs = useRef(0);
 
   const run = useCallback(
-    (force: boolean) => {
-      if (!desktop || inFlight.current) return;
-      if (!force && Date.now() - lastAttemptMs.current < MIN_REFRESH_MS) return;
+    (force: boolean, trigger: FetchTrigger): Promise<TasksStatus | null> => {
+      if (!desktop || inFlight.current) return Promise.resolve(null);
+      if (!force && Date.now() - lastAttemptMs.current < MIN_REFRESH_MS) return Promise.resolve(null);
       inFlight.current = true;
       lastAttemptMs.current = Date.now();
+      const startedMs = performance.now();
       setStatus('loading');
-      fetchCodimango()
-        .then((result) => {
-          if (!result) return;
+      return fetchCodimango()
+        .then((result): TasksStatus | null => {
+          if (!result) return null;
+          const rows = result.ok ? { reviewing_rows: result.snapshot.reviewing.length, mine_rows: result.snapshot.mine.length } : {};
+          logFetch({ trigger, status: result.ok ? 'ok' : result.error.kind, duration_ms: Math.round(performance.now() - startedMs), ...rows });
           if (result.ok) {
             setSnapshot(result.snapshot);
             saveSnapshot(result.snapshot);
             setFailure(null);
             setStatus('ok');
-          } else {
-            setFailure(result.error);
-            setStatus(result.error.kind);
-            const fix = result.error.fix ? ` (fix: ${result.error.fix})` : '';
-            console.log(`[mochi] codimango ${result.error.kind}: ${result.error.message}${fix}`);
+            return 'ok';
           }
+          setFailure(result.error);
+          setStatus(result.error.kind);
+          const fix = result.error.fix ? ` (fix: ${result.error.fix})` : '';
+          console.log(`[mochi] codimango ${result.error.kind}: ${result.error.message}${fix}`);
+          return result.error.kind;
         })
-        .catch((err: unknown) => {
+        .catch((err: unknown): TasksStatus => {
+          logFetch({ trigger, status: 'error', duration_ms: Math.round(performance.now() - startedMs) });
           setFailure({ kind: 'error', message: String(err) });
           setStatus('error');
+          return 'error';
         })
         .finally(() => {
           inFlight.current = false;
@@ -90,22 +100,22 @@ export function useTasks(active: boolean, nowMs: number): TasksState {
   );
 
   useEffect(() => {
-    run(true);
-    const id = window.setInterval(() => run(false), BACKGROUND_REFRESH_MS);
+    void run(true, 'launch');
+    const id = window.setInterval(() => void run(false, 'interval'), BACKGROUND_REFRESH_MS);
     return () => window.clearInterval(id);
   }, [run]);
 
   useEffect(() => {
-    if (active) run(false);
+    if (active) void run(false, 'panel_open');
   }, [active, run]);
 
   /* Wake, unlock or reconnect: data may be hours old, so refresh (throttled). */
   useEffect(() => {
-    const refreshSoon = () => run(false);
-    window.addEventListener('online', refreshSoon);
-    const offResume = onSystemResumed(refreshSoon);
+    const onOnline = () => void run(false, 'online');
+    window.addEventListener('online', onOnline);
+    const offResume = onSystemResumed(() => void run(false, 'wake'));
     return () => {
-      window.removeEventListener('online', refreshSoon);
+      window.removeEventListener('online', onOnline);
       offResume();
     };
   }, [run]);
@@ -119,7 +129,7 @@ export function useTasks(active: boolean, nowMs: number): TasksState {
     () => (snapshot ? weeklyCompleted(snapshot, minuteMs) : desktop ? { reviewsCompleted: 0, submissionsCompleted: 0 } : WEEKLY_COMPLETED),
     [snapshot, minuteMs, desktop],
   );
-  const refresh = useCallback(() => run(true), [run]);
+  const refresh = useCallback((trigger: FetchTrigger) => run(true, trigger), [run]);
 
   return { tasks, weekly, snapshot, status, failure, fetchedAtMs: snapshot?.fetchedAtMs ?? null, refresh };
 }

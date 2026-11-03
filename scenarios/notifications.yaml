@@ -56,14 +56,14 @@ scenarios:
           see: [ember-turn-timer]
           badge: 1
           events:
-            - { event: mochi_vpv, surface: bubble, component: notification, kind: review_assigned }
+            - { event: mochi_vpv, surface: bubble, component: bubble, notif_kind: review_assigned, task_id: r2, source: arrival }
       - click_bubble
       - expect:
           opened: [/reviews/r2]
           bubble: none
           badge: none
           events:
-            - { event: mochi_click, surface: bubble, component: notification, kind: review_assigned }
+            - { event: mochi_click, surface: bubble, component: bubble, notif_kind: review_assigned, task_id: r2, source: arrival }
 
   - id: notif-own-verdict-quiet
     title: Your own verdict on a review is saved to history but does not pop
