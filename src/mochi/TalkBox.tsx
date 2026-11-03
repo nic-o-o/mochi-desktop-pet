@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ClipboardEvent, DragEvent, FormEvent } from 'react';
 import type { AskContext, AskImage, AskResult } from './shell.ts';
 import { saveThread, savedThread } from './talkThread.ts';
+import { elapsedMs, logClick, logVpv, mark } from './usage.ts';
 import type { TalkLine } from './talkThread.ts';
 
 interface TalkBoxProps {
@@ -88,7 +89,11 @@ export function TalkBox({ context, ask, onOpenLink }: TalkBoxProps) {
     setStaged([]);
     setProblem(null);
     setBusy(true);
+    /* Usage: the kind of message and the outcome only, never the words or the pictures. */
+    logClick('talk', 'send', { kind: text && pictures.length ? 'text_and_picture' : pictures.length ? 'picture' : 'text' });
+    const started = mark();
     const result = await ask(text, context, pictures.length ? pictures.map((p) => p.image) : undefined);
+    logVpv('talk', 'answer', { result: result.kind, duration_ms: elapsedMs(started) });
     setBusy(false);
     if (result.kind === 'answer') append({ from: 'mochi', text: result.text });
     else setProblem(result);
@@ -124,7 +129,14 @@ export function TalkBox({ context, ask, onOpenLink }: TalkBoxProps) {
           {problem.kind === 'access_needed' && (
             <>
               {' '}
-              <button type="button" className="talk-link" onClick={() => onOpenLink(problem.fix)}>
+              <button
+                type="button"
+                className="talk-link"
+                onClick={() => {
+                  logClick('talk', 'give_permission');
+                  onOpenLink(problem.fix);
+                }}
+              >
                 Give permission
               </button>
               , then send again.
