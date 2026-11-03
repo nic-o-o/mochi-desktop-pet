@@ -46,7 +46,11 @@ export function pickRow(task) {
   const row = { id: String(task.id) };
   for (const key of ROW_FIELDS) row[key] = task[key] ?? null;
   row.validationDetails = Array.isArray(task.validationDetails)
-    ? task.validationDetails.map((d) => ({ label: String(d?.label ?? ''), status: String(d?.status ?? '') }))
+    ? task.validationDetails.map((d) => ({
+        label: String(d?.label ?? ''),
+        status: String(d?.status ?? ''),
+        advisory: d?.advisory === true,
+      }))
     : null;
   return row;
 }
