@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
+import { FLUSH_MS, flushSender, loadSharing, setSharing } from './sender.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 
@@ -192,6 +193,7 @@ ipcMain.on('mochi:sync-bounds', (event, rect) => {
 /** Dock icon right-click → "Open at Login" (packaged app only). */
 function setDockMenu() {
   const { openAtLogin } = app.getLoginItemSettings();
+  const sharing = loadSharing(app.getPath('userData')).sharing;
   app.dock?.setMenu(
     Menu.buildFromTemplate([
       {
@@ -201,6 +203,16 @@ function setDockMenu() {
         click: (item) => {
           app.setLoginItemSettings({ openAtLogin: item.checked });
           events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'open_at_login', enabled: item.checked });
+        },
+      },
+      {
+        label: 'Share Usage Data',
+        type: 'checkbox',
+        checked: sharing,
+        click: (item) => {
+          setSharing(app.getPath('userData'), item.checked);
+          events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'share_usage', enabled: item.checked });
+          setDockMenu();
         },
       },
       { type: 'separator' },
@@ -229,6 +241,15 @@ app.whenReady().then(() => {
     unixname: os.userInfo().username,
   });
   events.log({ event_name: 'mochi_app_start', launched_at_login: app.getLoginItemSettings().wasOpenedAtLogin === true });
+  /* Scuba sender: no-op until LOGGER_CONFIG is set; never throws. */
+  const flush = () => {
+    if (!events) return;
+    flushSender({ logFile: events.file, userDataDir: app.getPath('userData') }).catch((e) => {
+      console.warn('[mochi] sender flush failed', String(e));
+    });
+  };
+  setTimeout(flush, 60_000).unref();
+  setInterval(flush, FLUSH_MS).unref();
   setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
