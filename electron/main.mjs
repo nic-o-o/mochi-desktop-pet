@@ -79,7 +79,10 @@ function createWindow() {
     },
   });
 
-  win.setAlwaysOnTop(true, 'floating');
+  /* 'screen-saver' tier (not 'floating'): the only always-on-top tier macOS
+     keeps visible when swiping into full-screen apps. Combined with
+     visibleOnFullScreen below, the pet rides along to every Space. */
+  win.setAlwaysOnTop(true, 'screen-saver');
   showOnAllDesktops(win);
   // Permanently enabled: only painted Mochi pixels hit-test, transparent gaps
   // fall through natively — no enter/leave toggling, no race with clicks.
