@@ -412,7 +412,10 @@ export function OverviewPanel(props: OverviewPanelProps) {
       emptyText: 'No drafts ready to submit.',
     },
   };
-  const shownSections = SECTIONS.filter(({ key }) => props.sections[key]);
+  /* Ready for submission hides when empty and pins to the top otherwise. */
+  const shownSections = SECTIONS.filter(
+    ({ key }) => props.sections[key] && (key !== 'submittable' || props.submittable.length > 0),
+  ).sort((a, b) => (a.key === 'submittable' ? -1 : b.key === 'submittable' ? 1 : 0));
   return (
     <section
       className="float-panel overview-panel"
