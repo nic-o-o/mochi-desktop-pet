@@ -9,6 +9,7 @@ import {
   resolvePetState,
   ringFraction,
   sortTasks,
+  submittableDrafts,
   unionBounds,
 } from './mochi/logic.ts';
 import type { PlacedRect, Rect, WeeklyGoals, XY } from './mochi/logic.ts';
@@ -277,6 +278,7 @@ export default function App() {
   const pending = useMemo(() => sortedTasks.filter((t) => t.status === 'pending_review'), [sortedTasks]);
   const revisions = useMemo(() => sortedTasks.filter((t) => t.status === 'revision_required'), [sortedTasks]);
   const drafts = useMemo(() => sortedTasks.filter((t) => t.status === 'draft'), [sortedTasks]);
+  const submittable = useMemo(() => submittableDrafts(sortedTasks), [sortedTasks]);
   /* Panel sections the user chose (filter menu); the full task list follows the same choice. */
   const [sections, setSections] = useState<SectionPrefs>(loadSectionPrefs);
   const listedTasks = useMemo(() => {
@@ -817,6 +819,7 @@ export default function App() {
           pending={pending}
           revisions={revisions}
           drafts={drafts}
+          submittable={submittable}
           onCopyStats={status === 'mock' ? undefined : copyStats}
           onReportProblem={status === 'mock' ? undefined : startProblemReport}
           sections={sections}

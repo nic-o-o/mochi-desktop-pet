@@ -29,6 +29,8 @@ interface OverviewPanelProps {
   pending: TaskItem[];
   revisions: TaskItem[];
   drafts: TaskItem[];
+  /** Drafts whose validation passes (submittable); filtered by the caller. */
+  submittable: TaskItem[];
   /** Which sections show (header filter menu); saved by the caller. */
   sections: SectionPrefs;
   onSectionsChange: (next: SectionPrefs) => void;
@@ -161,12 +163,15 @@ function GlanceRow({
   position,
   nowMs,
   onOpen,
+  eventSection,
 }: {
   task: TaskItem;
   kind: 'revision' | 'pending' | 'draft';
   position: number;
   nowMs: number;
   onOpen: (id: string) => void;
+  /** Logging section override (ready-for-submission rows share the draft look). */
+  eventSection?: SectionKey;
 }) {
   const ref = useRef<HTMLLIElement>(null);
   const flag =
@@ -175,7 +180,7 @@ function GlanceRow({
       : kind === 'draft'
         ? draftRowFlag(t.draftState)
         : pendingRowFlag(t.slaDueMs, nowMs);
-  const fields = { section: SECTION_EVENT_NAME[KIND_SECTION[kind]], task_id: t.id, position, badge: flag.text };
+  const fields = { section: SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]], task_id: t.id, position, badge: flag.text };
   useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
   return (
     <li ref={ref} className="glance-row">
@@ -215,12 +220,17 @@ function TaskSection({
   nowMs,
   kind,
   onOpen,
+  eventSection,
+  emptyText,
 }: {
   title: string;
   tasks: TaskItem[];
   nowMs: number;
   kind: 'revision' | 'pending' | 'draft';
   onOpen: (id: string) => void;
+  /** Logging section + empty copy overrides (ready-for-submission shares the draft look). */
+  eventSection?: SectionKey;
+  emptyText?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   /* Flag-rank order: HI PRI above LOW PRI; Past due above 0d/1d/2d left.
@@ -249,17 +259,18 @@ function TaskSection({
       </div>
       {tasks.length === 0 ? (
         <p className="muted small">
-          {kind === 'revision'
-            ? 'No revisions requested.'
-            : kind === 'draft'
-              ? 'No drafts.'
-              : 'Nothing awaiting review. Nice.'}
+          {emptyText ??
+            (kind === 'revision'
+              ? 'No revisions requested.'
+              : kind === 'draft'
+                ? 'No drafts.'
+                : 'Nothing awaiting review. Nice.')}
         </p>
       ) : (
         <>
           <ul className="glance-list">
             {shown.map((t, i) => (
-              <GlanceRow key={t.id} task={t} kind={kind} position={i} nowMs={nowMs} onOpen={onOpen} />
+              <GlanceRow key={t.id} task={t} kind={kind} position={i} nowMs={nowMs} onOpen={onOpen} eventSection={eventSection} />
             ))}
           </ul>
           {remaining > 0 && (
@@ -267,7 +278,7 @@ function TaskSection({
               type="button"
               className="glance-more"
               onClick={() => {
-                logClick('glance_panel', 'view_more', { section: SECTION_EVENT_NAME[KIND_SECTION[kind]], hidden_count: remaining });
+                logClick('glance_panel', 'view_more', { section: SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]], hidden_count: remaining });
                 setExpanded(true);
               }}
             >
@@ -387,10 +398,19 @@ function SectionFilter({
 /** "Your week at a glance" — compact floating overview next to the pet. */
 export function OverviewPanel(props: OverviewPanelProps) {
   const { goals, reviewsCompleted, submissionsCompleted } = props;
-  const lists: Record<SectionKey, { tasks: TaskItem[]; kind: 'revision' | 'pending' | 'draft' }> = {
+  const lists: Record<
+    SectionKey,
+    { tasks: TaskItem[]; kind: 'revision' | 'pending' | 'draft'; eventSection?: SectionKey; emptyText?: string }
+  > = {
     revisions: { tasks: props.revisions, kind: 'revision' },
     reviews: { tasks: props.pending, kind: 'pending' },
     drafts: { tasks: props.drafts, kind: 'draft' },
+    submittable: {
+      tasks: props.submittable,
+      kind: 'draft',
+      eventSection: 'submittable',
+      emptyText: 'No drafts ready to submit.',
+    },
   };
   const shownSections = SECTIONS.filter(({ key }) => props.sections[key]);
   return (
@@ -410,6 +430,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                 revisions: props.revisions.length,
                 reviews: props.pending.length,
                 drafts: props.drafts.length,
+                submittable: props.submittable.length,
               }}
               onChange={props.onSectionsChange}
               onCopyStats={props.onCopyStats}
@@ -480,6 +501,8 @@ export function OverviewPanel(props: OverviewPanelProps) {
                   nowMs={props.nowMs}
                   kind={lists[key].kind}
                   onOpen={props.onOpenTask}
+                  eventSection={lists[key].eventSection}
+                  emptyText={lists[key].emptyText}
                 />
               </div>
             ))

@@ -1,19 +1,20 @@
 /* Which glance-panel sections the user wants to see, saved locally.
- * Revisions and reviews are on by default; drafts are opt-in.
+ * Revisions, reviews, and ready-for-submission are on by default; drafts are opt-in.
  */
 import type { TaskStatus } from './logic.ts';
 
-export type SectionKey = 'revisions' | 'reviews' | 'drafts';
+export type SectionKey = 'revisions' | 'reviews' | 'drafts' | 'submittable';
 export type SectionPrefs = Record<SectionKey, boolean>;
 
 export const SECTIONS_STORAGE_KEY = 'mochi.sections.v1';
-export const DEFAULT_SECTIONS: SectionPrefs = { revisions: true, reviews: true, drafts: false };
+export const DEFAULT_SECTIONS: SectionPrefs = { revisions: true, reviews: true, drafts: false, submittable: true };
 
 /** Panel order, labels, and the task status each section lists. */
 export const SECTIONS: { key: SectionKey; label: string; status: TaskStatus }[] = [
   { key: 'revisions', label: 'Needs revision', status: 'revision_required' },
   { key: 'reviews', label: 'Waiting for your review', status: 'pending_review' },
   { key: 'drafts', label: 'Drafts', status: 'draft' },
+  { key: 'submittable', label: 'Ready for submission', status: 'draft' },
 ];
 
 export function parseSectionPrefs(raw: string | null): SectionPrefs {
