@@ -17,6 +17,7 @@ import {
   ringFraction,
   sortTasks,
   stepGoal,
+  submittableDrafts,
   unionBounds,
   validateGoalInput,
 } from './logic.ts';
@@ -213,6 +214,37 @@ describe('glance flags — panel row badges', () => {
     expect(overdue).toBeLessThan(d0);
     expect(d0).toBeLessThan(d1);
     expect(d1).toBeLessThan(d2);
+  });
+});
+
+describe('submittableDrafts — ready-for-submission lists passing drafts only', () => {
+  const draft = (id: string, draftState: TaskItem['draftState']): TaskItem => ({
+    id,
+    title: id,
+    type: 'Task',
+    priority: 'normal',
+    status: 'draft',
+    slaDueMs: 0,
+    description: id,
+    requester: 'You',
+    draftState,
+  });
+
+  it('keeps ready drafts and drops every other draft state', () => {
+    const tasks = [draft('ready-1', 'ready'), draft('failing', 'failing'), draft('running', 'running'), draft('new', 'new')];
+    expect(submittableDrafts(tasks).map((t) => t.id)).toEqual(['ready-1']);
+  });
+
+  it('ignores non-draft tasks and drafts without a state', () => {
+    const revision = { ...draft('rev', undefined), status: 'revision_required' as const };
+    expect(submittableDrafts([revision, draft('stateless', undefined)])).toEqual([]);
+  });
+
+  it('does not mutate the input', () => {
+    const tasks = [draft('ready-1', 'ready'), draft('failing', 'failing')];
+    const snapshot = tasks.map((t) => ({ ...t }));
+    submittableDrafts(tasks);
+    expect(tasks).toEqual(snapshot);
   });
 });
 

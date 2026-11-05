@@ -19,6 +19,7 @@ export const SECTION_EVENT_NAME: Record<SectionKey, string> = {
   revisions: 'needs_revision',
   reviews: 'waiting_review',
   drafts: 'drafts',
+  submittable: 'ready_submission',
 };
 
 /* ---------------------------------------------------------------- clock -- */

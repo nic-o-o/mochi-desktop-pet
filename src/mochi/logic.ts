@@ -140,6 +140,11 @@ export function draftRowFlag(state: DraftState | undefined): GlanceFlag {
   }
 }
 
+/** "Ready for submission": drafts whose validation passes (submittable). Never mutates the input. */
+export function submittableDrafts(tasks: TaskItem[]): TaskItem[] {
+  return tasks.filter((t) => t.status === 'draft' && t.draftState === 'ready');
+}
+
 /** Glance ordering for revision rows: HI PRI (0) always precedes LOW PRI (1). */
 export function revisionRank(priority: TaskPriority): number {
   return priority === 'urgent' || priority === 'high' ? 0 : 1;
