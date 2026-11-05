@@ -412,10 +412,11 @@ export function OverviewPanel(props: OverviewPanelProps) {
       emptyText: 'No drafts ready to submit.',
     },
   };
-  /* Ready for submission hides when empty and pins to the top otherwise. */
-  const shownSections = SECTIONS.filter(
-    ({ key }) => props.sections[key] && (key !== 'submittable' || props.submittable.length > 0),
-  ).sort((a, b) => (a.key === 'submittable' ? -1 : b.key === 'submittable' ? 1 : 0));
+  /* Sections with no tasks are hidden entirely — each only appears when at least one task exists.
+     Ready for submission pins to the top otherwise. */
+  const shownSections = SECTIONS.filter(({ key }) => props.sections[key] && lists[key].tasks.length > 0).sort(
+    (a, b) => (a.key === 'submittable' ? -1 : b.key === 'submittable' ? 1 : 0),
+  );
   return (
     <section
       className="float-panel overview-panel"
@@ -494,6 +495,8 @@ export function OverviewPanel(props: OverviewPanelProps) {
 
           {props.connecting ? (
             <p className="muted small glance-connecting">Connecting to Codimango…</p>
+          ) : shownSections.length === 0 ? (
+            <p className="muted small">You&apos;re all caught up. Nice.</p>
           ) : (
             shownSections.map(({ key, label }, i) => (
               <div key={key}>
