@@ -26,7 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
-import { allDisplayBounds } from './displays.mjs';
+import { allDisplayBounds, clampPetBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
 import { FLUSH_MS, flushSender, loadSharing, setSharing } from './sender.mjs';
 import { installFileLog } from './logfile.mjs';
@@ -171,12 +171,16 @@ function sampleResources() {
 ipcMain.on('mochi:sync-bounds', (event, rect) => {
   const target = BrowserWindow.fromWebContents(event.sender);
   if (!target || target.isDestroyed()) return;
-  const next = {
+  const requested = {
     x: Math.round(rect.x),
     y: Math.round(rect.y),
     width: Math.max(1, Math.round(rect.width)),
     height: Math.max(1, Math.round(rect.height)),
   };
+  // Never lose the pet off-screen: persisted positions from unplugged monitors
+  // and runaway drags snap back (fully on launch, to a grab strip on drags).
+  const areas = screen.getAllDisplays().map((d) => d.bounds);
+  const next = clampPetBounds(requested, areas, defaultBounds(), !syncedOnce);
   const key = JSON.stringify(next);
   if (key === lastBoundsKey) return;
   lastBoundsKey = key;
