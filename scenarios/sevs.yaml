@@ -10,21 +10,20 @@ fixtures:
 
 scenarios:
   - id: sev-open-bubble
-    title: A newly opened Codimango SEV bubbles once, comes in front of other apps, and the bubble opens the SEV
+    title: A newly opened Codimango SEV bubbles once, and the bubble opens the SEV
     given: { live: one_review }
     steps:
       - start
       - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
       - expect:
           bubble: Codimango SEV3 open
-          raised: 1
           see: [TBR mac_swe lane increased job timeouts. Submissions or validation may fail until it's fixed.]
           events:
             - { event: mochi_vpv, surface: bubble, component: bubble, notif_kind: sev_open }
       - click_bubble
       - expect: { opened: [/sevmanager/view/728082], bubble: none }
       - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
-      - expect: { bubble: none, raised: 1 }
+      - expect: { bubble: none }
 
   - id: sev-panel-line
     title: While a SEV is open the panel shows one line for it, and the line opens the SEV
@@ -35,8 +34,8 @@ scenarios:
       - start
       - expect: { bubble: none }
       - click_pet
-      - expect: { see: ["SEV3 open: TBR mac_swe lane increased job timeouts", ember-turn-timer] }
-      - click: SEV3 open
+      - expect: { see: ["SEV3 · TBR mac_swe lane increased job timeouts", ember-turn-timer] }
+      - click: SEV3 ·
       - expect:
           opened: [/sevmanager/view/728082]
           events:
@@ -54,7 +53,22 @@ scenarios:
       - expect: { bubble: Codimango SEV mitigated, see: [Retry anything it blocked.] }
       - close_bubble
       - click_pet
-      - expect: { not_see: [SEV2 open] }
+      - expect: { not_see: [SEV2 ·] }
+
+  - id: sev-lines-trimmed
+    title: Long SEV titles become short headlines, and past two open SEVs the panel counts the rest
+    given:
+      live: one_review
+      sevs:
+        - { id: S728323, level: 3, open: true, opened_ago_h: 30, title: 'Oracle runs stuck or never return results ("not settled in codimango" / "no results after dispatch deadline"); oracle error rate 2–9x baseline' }
+        - { id: S728082, level: 3, open: true, opened_ago_h: 30, title: TBR mac_swe lane increased job timeouts }
+        - { id: S728100, level: 3, open: true, opened_ago_h: 30, title: Validation queue slow }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: ["SEV3 · Oracle runs stuck or never return results", "SEV3 · TBR mac_swe lane increased job timeouts", +1 more open]
+          not_see: [not settled in codimango, Validation queue slow]
 
   - id: sev-mitigated-unseen
     title: A SEV that was opened and mitigated between reads doesn't bubble
@@ -62,4 +76,4 @@ scenarios:
     steps:
       - start
       - sevs: [{ id: S727987, level: 3, open: false, title: Harbor result ingest stopped, opened_ago_h: 5, mitigated_ago_h: 4 }]
-      - expect: { bubble: none, raised: 0 }
+      - expect: { bubble: none }

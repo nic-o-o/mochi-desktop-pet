@@ -109,8 +109,7 @@ To update from the DMG by hand, quit Mochi first (right-click its Dock icon →
 Quit), then drag the new one to Applications and choose Replace. Only one
 Mochi runs at a time, so a new copy opened while the old one runs just quits. The packaged app loads its built files,
 so no terminal or Vite server is needed; right-click its Dock icon for
-**Open at Login** and **Keep Mochi on Top**. With Keep on Top off (the default),
-other windows can cover Mochi; it comes forward when a new bubble arrives.
+**Open at Login**.
 Logs go to `~/Library/Logs/Mochi/main.log`.
 
 The app is ad-hoc signed only (no Apple Developer ID, not notarized). On the

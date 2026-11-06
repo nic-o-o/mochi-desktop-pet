@@ -84,7 +84,6 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `see`, `not_see` | Mochi's UI contains / doesn't contain each string (the mock backdrop page is ignored) |
 | `in_order` | The strings appear in this order (ranking) |
 | `panel` | `open` or `closed` |
-| `raised` | Times Mochi came in front of other apps since start (once per arriving bubble) |
 | `pet_over_view` | `true` when the pet sits above an open full view, so it can be dragged |
 | `bubble` | The bubble contains this text, or `none` |
 | `badge` | Unread count on the bell, or `none` |

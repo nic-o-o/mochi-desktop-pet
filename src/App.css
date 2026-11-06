@@ -1446,12 +1446,19 @@ html.mochi-shell .expanded-view {
 
 .sev-lines {
   list-style: none;
-  margin: 0;
+  /* Clears the freshness line's -8px pull; keeps the same gap above the cards. */
+  margin: 14px 0 -8px;
   padding: 0;
+  display: grid;
+  /* minmax(0, …): a long title can't widen the column past the panel's padding. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
 }
 
 /* One quiet line per open SEV: a link to SEV Manager, not a card. */
 .sev-line {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
   padding: 4px 8px;
   border: none;
@@ -1464,6 +1471,12 @@ html.mochi-shell .expanded-view {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+}
+
+.sev-more {
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ink-soft);
 }
 
 .sev-line:hover {

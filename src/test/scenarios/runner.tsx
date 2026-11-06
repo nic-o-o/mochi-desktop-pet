@@ -27,8 +27,6 @@ export interface Expectation {
   panel?: 'open' | 'closed';
   /** The pet is lifted above the full view's scrim, so it can be dragged while the view is open. */
   pet_over_view?: boolean;
-  /** Times Mochi has asked to come in front of other apps since start (once per arriving bubble). */
-  raised?: number;
   /** Text the notification bubble contains, or `none`. */
   bubble?: string | 'none';
   /** Every opened link so far, by substring. */
@@ -129,8 +127,6 @@ interface Harness {
   agentStarts: AgentReviewStart[];
   agentListener?: (jobs: AgentJob[]) => void;
   sevListener?: (sevs: Sev[]) => void;
-  /** Times Mochi asked to come in front of other apps (new bubbles). */
-  raised: number;
 }
 
 const FAILURE_MESSAGES: Record<FailureKind, string> = {
@@ -271,7 +267,7 @@ function findByText(label: string): HTMLElement {
 /** Run one scenario; throws on the first step or expectation that fails. */
 export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<void> {
   const now = Date.now();
-  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], agentJobs: [], agentStarts: [], raised: 0 };
+  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], agentJobs: [], agentStarts: [] };
   h.agentJobs = (sc.given?.agents ?? []).map((g, i) => givenJob(file, sc, g, now, i));
   const lives = sc.given?.live === undefined ? [] : Array.isArray(sc.given.live) ? sc.given.live : [sc.given.live];
   h.queue = lives.map((l) => resolveLive(l, file.fixtures, now));
@@ -300,7 +296,6 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
     logEvent: (event) => void h.events.push(event),
     usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
-    raise: () => void (h.raised += 1),
     listSevs: () => Promise.resolve((sc.given?.sevs ?? []).map((g) => givenSev(g, now))),
     onSevsChanged: (cb) => ((h.sevListener = cb), () => {}),
     listAgentReviews: () => Promise.resolve(h.agentJobs),
@@ -467,7 +462,6 @@ async function checkExpectation(e: Expectation, h: Harness) {
         expect(badge, 'bell badge').toBe(String(e.badge));
       }
       if (e.panel) expect(q('.overview-panel') ? 'open' : 'closed', 'panel').toBe(e.panel);
-      if (e.raised !== undefined) expect(h.raised, 'times Mochi came in front of other apps').toBe(e.raised);
       if (e.pet_over_view !== undefined) expect(Boolean(q('.pet-widget.is-over-view')), 'pet above the full view').toBe(e.pet_over_view);
       if (e.bubble !== undefined) {
         const bubble = q('.notif-bubble')?.textContent?.replace(/\s+/g, ' ') ?? 'none';

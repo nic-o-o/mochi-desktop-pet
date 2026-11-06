@@ -23,7 +23,6 @@
  */
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,31 +61,6 @@ function defaultBounds() {
   };
 }
 
-/* Dock menu "Keep Mochi on Top". Off: Mochi is an ordinary window that other
-   apps can cover, and it comes forward when a bubble arrives. */
-let keepOnTop = false;
-const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
-
-function loadSettings() {
-  try {
-    keepOnTop = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')).keepOnTop === true;
-  } catch {
-    keepOnTop = false;
-  }
-}
-
-function saveSettings() {
-  try {
-    fs.writeFileSync(settingsFile(), JSON.stringify({ keepOnTop }));
-  } catch (err) {
-    console.warn('[mochi] could not save settings:', err.message);
-  }
-}
-
-function applyKeepOnTop() {
-  win?.setAlwaysOnTop(keepOnTop, 'floating');
-}
-
 /* On every desktop (Space) and over full-screen apps. */
 function showOnAllDesktops(target) {
   target.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -111,7 +85,7 @@ function createWindow() {
     },
   });
 
-  applyKeepOnTop();
+  win.setAlwaysOnTop(true, 'floating');
   showOnAllDesktops(win);
   // Permanently enabled: only painted Mochi pixels hit-test, transparent gaps
   // fall through natively — no enter/leave toggling, no race with clicks.
@@ -187,17 +161,11 @@ ipcMain.on('mochi:log-event', (_event, raw) => {
   events?.log(raw);
 });
 
-// Ask agents to review: the renderer sends the task and the chosen agents; runs
-// and reports live in the main process and are pushed back on every change.
-/* A new bubble: bring Mochi in front of other apps without taking focus. */
-ipcMain.on('mochi:raise', () => {
-  if (!win || win.isDestroyed() || keepOnTop) return;
-  win.showInactive();
-  win.moveTop();
-});
-
+// Codimango SEVs, already filtered; changes are pushed on 'mochi:sevs'.
 ipcMain.handle('mochi:sevs-list', () => sevWatch?.list() ?? []);
 
+// Ask agents to review: the renderer sends the task and the chosen agents; runs
+// and reports live in the main process and are pushed back on every change.
 ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
 
 ipcMain.handle('mochi:agent-review-start', (_event, req) =>
@@ -260,17 +228,6 @@ function setDockMenu() {
           events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'open_at_login', enabled: item.checked });
         },
       },
-      {
-        label: 'Keep Mochi on Top',
-        type: 'checkbox',
-        checked: keepOnTop,
-        click: (item) => {
-          keepOnTop = item.checked;
-          applyKeepOnTop();
-          saveSettings();
-          events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'keep_on_top', enabled: item.checked });
-        },
-      },
       { type: 'separator' },
       {
         // The renderer holds status and counts, so ask it to start the report.
@@ -286,7 +243,6 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
-  loadSettings();
   if (app.isPackaged) {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);
     setDockMenu();

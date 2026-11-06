@@ -68,11 +68,27 @@ export function sevBubbles(memory: SevMemory, sevs: Sev[], nowMs: number): { bub
   return { bubbles, memory: { open, mitigated } };
 }
 
+/** Panel lines shown at most; the rest are counted ("+2 more open"). */
+export const SEV_LINES_MAX = 2;
+
+/**
+ * A SEV title as a short headline: up to the first "(", ";" or dash clause,
+ * then cut on a word boundary. The full title stays on hover.
+ */
+export function sevHeadline(title: string, max = 48): string {
+  const head = title.split(/\s*(?:[(;]|\s[—–-]\s)/)[0].trim() || title.trim();
+  if (head.length <= max) return head;
+  const cut = head.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,:]+$/, '')}…`;
+}
+
 /** Bubble text for a SEV. */
 export function sevBubbleText({ kind, sev }: SevBubble): { title: string; detail: string } {
+  const headline = sevHeadline(sev.title, 80);
   return kind === 'sev_open'
-    ? { title: `Codimango SEV${sev.level} open`, detail: `${sev.title}. Submissions or validation may fail until it's fixed.` }
-    : { title: 'Codimango SEV mitigated', detail: `${sev.title}. Retry anything it blocked.` };
+    ? { title: `Codimango SEV${sev.level} open`, detail: `${headline}. Submissions or validation may fail until it's fixed.` }
+    : { title: 'Codimango SEV mitigated', detail: `${headline}. Retry anything it blocked.` };
 }
 
 /** Open SEVs for the panel line, plus a callback for the one bubble to show. */

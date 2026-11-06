@@ -54,8 +54,6 @@ export interface MochiShell {
   logEvent?: (event: UsageEvent) => void;
   /** Last 7 days of usage as paste-able counts; null if nothing is logged. */
   usageSummary?: () => Promise<string | null>;
-  /** Bring Mochi in front of other apps without focus (new bubble); no-op when kept on top. */
-  raise?: () => void;
   /** Codimango SEVs, already filtered (open in the last week, or mitigated in the last day). */
   listSevs?: () => Promise<Sev[]>;
   /** The SEV list changed (read every ten minutes); returns unsubscribe. */
@@ -165,11 +163,6 @@ export function fetchCodimango(): Promise<CodimangoFetchResult | null> {
 }
 
 /** Opens the page in the browser via the shell; in a plain browser, a new tab. */
-/** A bubble arrived: bring Mochi forward if another app covers it. */
-export function raisePet(): void {
-  bridge()?.raise?.();
-}
-
 export function openLink(url: string): void {
   const b = bridge();
   if (b?.openLink) {

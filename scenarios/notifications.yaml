@@ -115,19 +115,19 @@ scenarios:
       - expect: { bubble: none, panel: open }
 
   - id: notif-history-stepping
-    title: The bell shows the latest notice; › steps older and ‹ steps back. Only arrivals bring Mochi in front of other apps
+    title: The bell shows the latest notice; › steps older and ‹ steps back
     given: { saved: quiet_day, live: [new_review_assigned, my_task_accepted] }
     steps:
       - start
-      - expect: { bubble: Review Assigned, raised: 1 }
+      - expect: { bubble: Review Assigned }
       - close_bubble
       - click_pet
       - refresh_now
-      - expect: { bubble: Task Accepted, raised: 2 }
+      - expect: { bubble: Task Accepted }
       - close_bubble
       - click_bell
       - expect: { bubble: Task Accepted, badge: none }
       - bubble_older
       - expect: { bubble: Review Assigned }
       - bubble_newer
-      - expect: { bubble: Task Accepted, raised: 2 }
+      - expect: { bubble: Task Accepted }
