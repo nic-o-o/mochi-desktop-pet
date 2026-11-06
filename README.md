@@ -52,6 +52,28 @@ token. Install the CLI from Alacarte (`devfeature_codimango`), then run
 - **Baseline:** `npm run baseline [days] [--json]` prints your time to verdict
   (pool entry to verdict: median, p90, worst) for before/after comparisons.
 
+## Ask agents to review (desktop shell)
+
+Each row in Waiting for your review has **Ask agents**: pick Claude Code
+and/or Codex and they review the task on this Mac, under your own logins.
+Mochi bubbles when a report is ready; the report shows the decision, blocking
+answer and every review-form field with Copy. Mochi never submits a review:
+you read the report, decide, and submit in Codimango (Open in Codimango).
+
+- **Reviewer:** the team-aai `codimango-review-assistant` skill, so its rubric
+  updates reach Mochi without a release. Claude Code loads it from your plugins
+  (`claude plugin install team-aai@agent-market` if missing); Codex is pointed
+  at the skill's `SKILL.md`.
+- **Runs:** `electron/agentReview.mjs` starts `claude -p` / `codex exec` by full
+  path in a fresh temp folder, at most two at once, and stops a run after 45
+  minutes. Runs and reports are saved under `userData/agent-reviews/` (kept 14
+  days); a run still going when Mochi quits comes back as interrupted.
+- **Reports:** `src/mochi/agentReport.ts` splits the skill's "Review summary"
+  and "Structured form" into fields; a report it can't split is shown as
+  written. A report from before the task's latest change says so.
+- **Try it without agents:** `MOCHI_CLAUDE_BIN=/nonexistent npm run desktop`
+  shows the "can't find Claude Code" failure.
+
 ## Install as a Mac app (no terminal)
 
 ```sh

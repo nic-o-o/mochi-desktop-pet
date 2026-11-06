@@ -202,6 +202,7 @@ function pendingReviewItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem 
     requester: 'Codimango',
     subtitle: escalation > 0 ? 'Assigned to you · escalated' : 'Assigned to you',
     url: reviewUrl(row.id),
+    updatedAtMs: ms(row.updatedAt) ?? undefined,
   };
 }
 

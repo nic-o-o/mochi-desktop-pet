@@ -18,13 +18,15 @@
  * Packaged (`npm run package` → Mochi.app) it loads the built `dist/` files
  * instead of the Vite server, logs to ~/Library/Logs/Mochi/main.log, and the
  * Dock icon's menu offers "Open at Login". Usage events (dev and packaged) go
- * to events.jsonl in the same folder (electron/events.mjs).
+ * to events.jsonl in the same folder (electron/events.mjs). "Ask agents to
+ * review" runs Claude Code or Codex in the background (electron/agentReview.mjs).
  */
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAgentReviews } from './agentReview.mjs';
 import { fetchCodimango, isAllowedLink } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
@@ -43,6 +45,8 @@ let lastBoundsKey = '';
 let syncedOnce = false;
 /* Usage events (electron/events.mjs); created once the app is ready. */
 let events = null;
+/* Agent review jobs (electron/agentReview.mjs); created once the app is ready. */
+let agentReviews = null;
 
 function defaultBounds() {
   const b = screen.getPrimaryDisplay().bounds;
@@ -154,6 +158,21 @@ ipcMain.on('mochi:log-event', (_event, raw) => {
   events?.log(raw);
 });
 
+// Ask agents to review: the renderer sends the task and the chosen agents; runs
+// and reports live in the main process and are pushed back on every change.
+ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
+
+ipcMain.handle('mochi:agent-review-start', (_event, req) =>
+  agentReviews?.start({
+    taskId: String(req?.taskId ?? ''),
+    taskName: String(req?.taskName ?? ''),
+    taskUpdatedAtMs: Number(req?.taskUpdatedAtMs),
+    agents: Array.isArray(req?.agents) ? req.agents.map(String) : [],
+  }) ?? [],
+);
+
+ipcMain.handle('mochi:agent-review-cancel', (_event, id) => agentReviews?.cancel(String(id)) ?? []);
+
 ipcMain.handle('mochi:usage-summary', () => (events ? usageSummary(readEvents(events.file, Date.now())) : null));
 
 /** Hourly CPU and memory across Mochi's processes (logging plan: mochi_resource). */
@@ -229,6 +248,19 @@ app.whenReady().then(() => {
     unixname: os.userInfo().username,
   });
   events.log({ event_name: 'mochi_app_start', launched_at_login: app.getLoginItemSettings().wasOpenedAtLogin === true });
+  agentReviews = createAgentReviews({
+    dir: path.join(app.getPath('userData'), 'agent-reviews'),
+    onChange: (jobs) => win?.webContents.send('mochi:agent-reviews', jobs),
+    onFinished: (job) =>
+      events?.log({
+        event_name: 'mochi_agent_review',
+        task_id: job.taskId,
+        kind: job.agent,
+        status: job.status,
+        result: job.failure?.kind ?? 'report',
+        duration_ms: job.startedAtMs ? job.endedAtMs - job.startedAtMs : 0,
+      }),
+  });
   setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
@@ -256,6 +288,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  agentReviews?.stopAll();
   void events?.close();
 });
 

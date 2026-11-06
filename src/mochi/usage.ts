@@ -9,7 +9,7 @@ import type { RefObject } from 'react';
 import { logEvent, onScreenLock } from './shell.ts';
 import type { SectionKey } from './sections.ts';
 
-export type Surface = 'pet' | 'glance_panel' | 'bubble' | 'setup_card';
+export type Surface = 'pet' | 'glance_panel' | 'bubble' | 'setup_card' | 'agent_review';
 type Fields = Record<string, string | number | boolean | undefined>;
 
 const DAILY_ACTIVE_KEY = 'mochi.usage.active-day';
