@@ -57,6 +57,8 @@ export interface TaskItem {
   url?: string;
   /** Draft rows only. */
   draftState?: DraftState;
+  /** Codimango rows: last change to the task (push, validation, edit); agent reports older than this are stale. */
+  updatedAtMs?: number;
 }
 
 export const PRIORITY_RANK: Record<TaskPriority, number> = {

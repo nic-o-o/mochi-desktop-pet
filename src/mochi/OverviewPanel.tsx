@@ -12,6 +12,9 @@ import {
   ringFraction,
   stepGoal,
 } from './logic.ts';
+import { AgentRow } from './AgentRow.tsx';
+import type { AgentReviewControls } from './AgentRow.tsx';
+import { jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
 import { SECTIONS } from './sections.ts';
@@ -51,6 +54,8 @@ interface OverviewPanelProps {
   connecting?: boolean;
   /** Data age line under the header with a refresh button (desktop shell only). */
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
+  /** "Ask agents" on review rows (desktop shell only). */
+  agentReview?: AgentReviewControls;
 }
 
 /** Small full-circle progress ring with a centered "done / goal" label. */
@@ -164,6 +169,7 @@ function GlanceRow({
   nowMs,
   onOpen,
   eventSection,
+  agentReview,
 }: {
   task: TaskItem;
   kind: 'revision' | 'pending' | 'draft';
@@ -172,6 +178,7 @@ function GlanceRow({
   onOpen: (id: string) => void;
   /** Logging section override (ready-for-submission rows share the draft look). */
   eventSection?: SectionKey;
+  agentReview?: AgentReviewControls;
 }) {
   const ref = useRef<HTMLLIElement>(null);
   const flag =
@@ -209,6 +216,9 @@ function GlanceRow({
         </span>
         <RowFlag flag={flag} />
       </div>
+      {kind === 'pending' && agentReview && (
+        <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
+      )}
     </li>
   );
 }
@@ -222,6 +232,7 @@ function TaskSection({
   onOpen,
   eventSection,
   emptyText,
+  agentReview,
 }: {
   title: string;
   tasks: TaskItem[];
@@ -231,6 +242,7 @@ function TaskSection({
   /** Logging section + empty copy overrides (ready-for-submission shares the draft look). */
   eventSection?: SectionKey;
   emptyText?: string;
+  agentReview?: AgentReviewControls;
 }) {
   const [expanded, setExpanded] = useState(false);
   /* Flag-rank order: HI PRI above LOW PRI; Past due above 0d/1d/2d left.
@@ -270,7 +282,16 @@ function TaskSection({
         <>
           <ul className="glance-list">
             {shown.map((t, i) => (
-              <GlanceRow key={t.id} task={t} kind={kind} position={i} nowMs={nowMs} onOpen={onOpen} eventSection={eventSection} />
+              <GlanceRow
+                key={t.id}
+                task={t}
+                kind={kind}
+                position={i}
+                nowMs={nowMs}
+                onOpen={onOpen}
+                eventSection={eventSection}
+                agentReview={agentReview}
+              />
             ))}
           </ul>
           {remaining > 0 && (
@@ -509,6 +530,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                   onOpen={props.onOpenTask}
                   eventSection={lists[key].eventSection}
                   emptyText={lists[key].emptyText}
+                  agentReview={props.agentReview}
                 />
               </div>
             ))

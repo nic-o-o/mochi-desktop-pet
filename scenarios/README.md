@@ -47,6 +47,11 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 - `saved`: a fixture name or inline snapshot. Mochi diffs the first fetch against it, which is how "something changed while Mochi was closed" pops a bubble. Leave it out for a first launch.
 - `live`: a fixture, an inline snapshot, `{ error: cli_missing | login_required | offline | error }`, or a list (one per fetch; the last repeats).
 - `sections`: saved section choices, e.g. `{ revisions: false, reviews: true, drafts: true }`.
+- `agents`: agent reviews the shell already has, e.g. `[{ task: r2, agent: claude, status: done, report: accept }]`. Optional `failure` (`skill_missing`, `codimango_login`, `timeout`, `interrupted`), `started_ago_min`, `steps`, `task_updated_ago_h` (the task's last change when the run started).
+
+A file can also have `agent_reports:`: report texts by name, written the way the
+review skill answers ("## Review summary", "## Structured form"). `report:` in
+`agents` and in the steps below takes a name from there.
 
 ## Steps
 
@@ -64,6 +69,9 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 | `next_fetch: <live>` | Change what the following fetches return |
 | `wake`, `dock_report` | Mac woke up; Dock → Report a Problem |
 | `wait: <ms>` | Let time pass |
+| `agent_progress: { task, agent, minutes, steps }` | An agent run has been going this long |
+| `agent_finishes: { task, agent, report }` | An agent run ends with this report |
+| `agent_fails: { task, agent, kind }` | An agent run fails (`kind` as in `given.agents`) |
 | `expect: {…}` | Check (retries for up to 1.5 s) |
 
 ## Expectations
@@ -82,6 +90,7 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 | `events` | Each listed usage event was logged (see below) |
 | `not_events` | None of these were logged |
 | `event_count` | Exactly `count` logged events match `match` |
+| `agents_started` | Agent reviews started so far, as `task:agent` (e.g. `r2:claude`) |
 
 ## Events
 

@@ -22,7 +22,12 @@ import type { SectionPrefs } from './mochi/sections.ts';
 import type { Notice } from './mochi/notifications.ts';
 import { NOTICE_ICONS, noticeAge, useNotificationHistory } from './mochi/notifications.ts';
 import { MochiPet } from './mochi/MochiPet.tsx';
+import { AGENT_LABELS, jobsForTask, useAgentReviews } from './mochi/agentReviews.ts';
+import type { AgentId, AgentJob } from './mochi/agentReviews.ts';
+import { AgentReportView } from './mochi/AgentReportView.tsx';
+import { reviewUrl } from './mochi/codimango.ts';
 import {
+  cancelAgentReview,
   getDisplayBounds,
   isDesktopShell,
   isShellMode,
@@ -31,6 +36,7 @@ import {
   onSimulateNotification,
   openLink,
   reportProblem,
+  startAgentReview,
   syncBounds,
   usageSummary,
 } from './mochi/shell.ts';
@@ -62,9 +68,11 @@ interface Bubble {
   taskName: string;
   detail: string;
   raisedAtMs: number;
-  kind: Notice['kind'];
+  kind: Notice['kind'] | 'agent_review';
   /** Codimango page to open instead of the panel (real notifications). */
   url?: string;
+  /** Agent review finished: clicking opens that task's report. */
+  reportTaskId?: string;
   /* Usage logging: which task, arrival or replay, and when it appeared. */
   taskId?: string;
   source: 'arrival' | 'replay';
@@ -116,6 +124,8 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /* The expanded card shows this task's agent reports instead of the task list. */
+  const [reportTaskId, setReportTaskId] = useState<string | null>(null);
   const [lastActive, setLastActive] = useState(() => Date.now());
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [viewport, setViewport] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
@@ -385,6 +395,58 @@ export default function App() {
     setPanelOpen(false);
   });
 
+  /* Ask agents to review: a run that finishes pops the bubble; clicking it opens the report. */
+  const agentReviews = useAgentReviews((job: AgentJob) => {
+    touch();
+    const label = AGENT_LABELS[job.agent];
+    setBubble({
+      id: Date.now(),
+      title: job.status === 'done' ? 'Agent review ready' : 'Agent review failed',
+      taskName: job.taskName,
+      detail: job.status === 'done' ? `${label} finished its review.` : `${label}: ${job.failure?.message ?? 'it stopped.'}`,
+      raisedAtMs: Date.now(),
+      kind: 'agent_review',
+      taskId: job.taskId,
+      reportTaskId: job.taskId,
+      source: 'arrival',
+      shownAt: mark(),
+    });
+    panelCloseReason.current = 'bubble_arrived';
+    setPanelOpen(false);
+  });
+
+  function runReview(taskId: string, agents: AgentId[]) {
+    touch();
+    const task = sortedTasks.find((t) => t.id === taskId);
+    const taskName = task?.title ?? agentReviews.jobs.find((j) => j.taskId === taskId)?.taskName;
+    if (!taskName) return;
+    void startAgentReview({ taskId, taskName, taskUpdatedAtMs: task?.updatedAtMs, agents }).then(
+      (jobs) => jobs && agentReviews.apply(jobs),
+    );
+  }
+
+  function cancelReview(jobId: string) {
+    touch();
+    void cancelAgentReview(jobId).then((jobs) => jobs && agentReviews.apply(jobs));
+  }
+
+  function openReport(taskId: string) {
+    touch();
+    panelCloseReason.current = 'expanded_view';
+    setPanelOpen(false);
+    setSelectedId(null);
+    setEditingIn(null);
+    setReportTaskId(taskId);
+    setExpandedOpen(true);
+  }
+
+  function closeExpanded() {
+    setExpandedOpen(false);
+    setSelectedId(null);
+    setEditingIn(null);
+    setReportTaskId(null);
+  }
+
   const togglePanel = useCallback((via: 'pet_click' | 'keyboard') => {
     touch();
     logClick('pet', 'pet', { action: panelOpen ? 'close_panel' : 'open_panel' });
@@ -478,7 +540,7 @@ export default function App() {
     if (e.key !== 'Escape') return;
     if (editingIn) setEditingIn(null);
     else if (selectedId) setSelectedId(null);
-    else if (expandedOpen) setExpandedOpen(false);
+    else if (expandedOpen) closeExpanded();
     else if (panelOpen) {
       panelCloseReason.current = 'keyboard';
       setPanelOpen(false);
@@ -546,9 +608,14 @@ export default function App() {
     touch();
     if (bubble) logClick('bubble', 'bubble', bubbleFields(bubble));
     const url = bubble?.url;
+    const reportFor = bubble?.reportTaskId;
     setBubble(null);
     resetCycle();
     setUnread(0);
+    if (reportFor) {
+      openReport(reportFor);
+      return;
+    }
     /* Real notifications open their task page; the placeholder opens the panel. */
     if (url) {
       openLink(url);
@@ -587,6 +654,7 @@ export default function App() {
     setExpandedOpen(false);
     setSelectedId(null);
     setEditingIn(null);
+    setReportTaskId(null);
     panelTrigger.current = 'back';
     setPanelOpen(true);
   }
@@ -684,7 +752,7 @@ export default function App() {
           >
             <strong className="bubble-title">
               <span className="bubble-icon" aria-hidden="true">
-                {bubble.kind ? NOTICE_ICONS[bubble.kind] ?? '🔔' : '🔔'}
+                {bubble.kind === 'agent_review' ? '🤖' : bubble.kind ? NOTICE_ICONS[bubble.kind] ?? '🔔' : '🔔'}
               </span>
               {bubble.title}
             </strong>
@@ -860,6 +928,9 @@ export default function App() {
               : undefined
           }
           connecting={!setupKind && status === 'loading' && fetchedAtMs === null}
+          agentReview={
+            agentReviews.available ? { jobs: agentReviews.jobs, onStart: runReview, onOpenReport: openReport } : undefined
+          }
           freshness={
             status === 'mock'
               ? undefined
@@ -889,6 +960,21 @@ export default function App() {
 
       {expandedOpen && (
         <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
+        {reportTaskId ? (
+          <AgentReportView
+            key={reportTaskId}
+            anchor={shell ? expandedPos : undefined}
+            taskId={reportTaskId}
+            task={sortedTasks.find((t) => t.id === reportTaskId)}
+            jobs={jobsForTask(agentReviews.jobs, reportTaskId)}
+            nowMs={nowMs}
+            onRunAgain={(agent) => runReview(reportTaskId, [agent])}
+            onCancel={cancelReview}
+            onOpenCodimango={() => openLink(sortedTasks.find((t) => t.id === reportTaskId)?.url ?? reviewUrl(reportTaskId))}
+            onClose={closeExpanded}
+            onBack={backToOverview}
+          />
+        ) : (
         <ExpandedView
           anchor={shell ? expandedPos : undefined}
           tasks={listedTasks}
@@ -916,13 +1002,10 @@ export default function App() {
             touch();
             setEditingIn('expanded');
           }}
-          onClose={() => {
-            setExpandedOpen(false);
-            setSelectedId(null);
-            setEditingIn(null);
-          }}
+          onClose={closeExpanded}
           onBackToOverview={backToOverview}
         />
+        )}
         </div>
       )}
     </div>

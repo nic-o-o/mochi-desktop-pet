@@ -2,6 +2,7 @@
  * In a plain browser `window.mochiShell` is undefined and every function here
  * is a no-op, so `npm run dev` behaves exactly as before.
  */
+import type { AgentJob, AgentReviewStart } from './agentReviews.ts';
 import type { CodimangoFetchResult } from './codimango.ts';
 
 export interface DisplayBounds {
@@ -54,6 +55,14 @@ export interface MochiShell {
   usageSummary?: () => Promise<string | null>;
   /** Screen locked (true) or unlocked (false); returns unsubscribe. */
   onScreenLock?: (callback: (locked: boolean) => void) => () => void;
+  /** Agent review runs and their reports, oldest first (main process). */
+  listAgentReviews?: () => Promise<AgentJob[]>;
+  /** Queue one run per chosen agent for a task; resolves the updated list. */
+  startAgentReview?: (req: AgentReviewStart) => Promise<AgentJob[]>;
+  /** Stop a queued or running review; resolves the updated list. */
+  cancelAgentReview?: (id: string) => Promise<AgentJob[]>;
+  /** Every change to the runs (progress, finish); returns unsubscribe. */
+  onAgentReviewsChanged?: (callback: (jobs: AgentJob[]) => void) => () => void;
 }
 
 /** One usage event: a name from the logging plan plus ID/enum/number fields. */
@@ -156,4 +165,33 @@ export function openLink(url: string): void {
   } else if (typeof window !== 'undefined') {
     window.open(url, '_blank', 'noopener');
   }
+}
+
+/** True when the shell can run agent reviews (not in a plain browser or an older preload). */
+export function agentReviewsAvailable(): boolean {
+  return typeof bridge()?.startAgentReview === 'function';
+}
+
+export function listAgentReviews(): Promise<AgentJob[]> {
+  const b = bridge();
+  if (!b?.listAgentReviews) return Promise.resolve([]);
+  return b.listAgentReviews().catch(() => []);
+}
+
+export function startAgentReview(req: AgentReviewStart): Promise<AgentJob[] | null> {
+  const b = bridge();
+  if (!b?.startAgentReview) return Promise.resolve(null);
+  return b.startAgentReview(req).catch(() => null);
+}
+
+export function cancelAgentReview(id: string): Promise<AgentJob[] | null> {
+  const b = bridge();
+  if (!b?.cancelAgentReview) return Promise.resolve(null);
+  return b.cancelAgentReview(id).catch(() => null);
+}
+
+export function onAgentReviewsChanged(callback: (jobs: AgentJob[]) => void): () => void {
+  const b = bridge();
+  if (!b?.onAgentReviewsChanged) return () => {};
+  return b.onAgentReviewsChanged(callback);
 }

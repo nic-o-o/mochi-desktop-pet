@@ -22,6 +22,14 @@ contextBridge.exposeInMainWorld('mochiShell', {
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
   logEvent: (event) => ipcRenderer.send('mochi:log-event', event),
   usageSummary: () => ipcRenderer.invoke('mochi:usage-summary'),
+  listAgentReviews: () => ipcRenderer.invoke('mochi:agent-reviews-list'),
+  startAgentReview: (req) => ipcRenderer.invoke('mochi:agent-review-start', req),
+  cancelAgentReview: (id) => ipcRenderer.invoke('mochi:agent-review-cancel', id),
+  onAgentReviewsChanged: (callback) => {
+    const listener = (_event, jobs) => callback(jobs);
+    ipcRenderer.on('mochi:agent-reviews', listener);
+    return () => ipcRenderer.removeListener('mochi:agent-reviews', listener);
+  },
   onScreenLock: (callback) => {
     const listener = (_event, locked) => callback(locked);
     ipcRenderer.on('mochi:screen-lock', listener);

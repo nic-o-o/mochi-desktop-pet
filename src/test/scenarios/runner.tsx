@@ -6,6 +6,7 @@
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { expect } from 'vitest';
 import App from '../../App.tsx';
+import type { AgentId, AgentJob, AgentReviewStart } from '../../mochi/agentReviews.ts';
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
 import type { ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
 import { resetUsageForTests } from '../../mochi/usage.ts';
@@ -39,11 +40,28 @@ export interface Expectation {
   not_events?: ExpectedEvent[];
   /** Exactly this many logged events match, e.g. `{ match: { component: row }, count: 1 }`. */
   event_count?: { match: ExpectedEvent; count: number };
+  /** Agent reviews started so far, as `task:agent` (e.g. `r2:claude`), cumulative. */
+  agents_started?: string[];
 }
 
 export type ExpectedEvent = { event?: string } & Record<string, string | number | boolean>;
 
 export type Step = string | Record<string, unknown>;
+
+/** An agent review Mochi already knows about at launch (shorthand). */
+export interface GivenAgentJob {
+  task: string;
+  agent: AgentId;
+  status: AgentJob['status'];
+  /** Name in the file's `agent_reports`, or the report text itself. */
+  report?: string;
+  /** Failure kind for failed runs (see AGENT_FAILURES). */
+  failure?: string;
+  started_ago_min?: number;
+  steps?: number;
+  /** The task's updatedAt when the run started, hours ago. */
+  task_updated_ago_h?: number;
+}
 
 export interface Scenario {
   id: string;
@@ -54,12 +72,16 @@ export interface Scenario {
     /** What each Codimango fetch returns, in order; the last one repeats. */
     live?: LiveSpec | LiveSpec[];
     sections?: Record<string, boolean>;
+    /** Agent reviews the shell already has (running or finished). */
+    agents?: GivenAgentJob[];
   };
   steps: Step[];
 }
 
 export interface ScenarioFile {
   fixtures?: Record<string, ShorthandSnapshot>;
+  /** Agent review reports by name, as the skill would write them. */
+  agent_reports?: Record<string, string>;
   scenarios: Scenario[];
 }
 
@@ -72,6 +94,9 @@ interface Harness {
   queue: CodimangoFetchResult[];
   resume?: () => void;
   reportRequest?: () => void;
+  agentJobs: AgentJob[];
+  agentStarts: AgentReviewStart[];
+  agentListener?: (jobs: AgentJob[]) => void;
 }
 
 const FAILURE_MESSAGES: Record<FailureKind, string> = {
@@ -95,6 +120,64 @@ function resolveLive(spec: LiveSpec, fixtures: ScenarioFile['fixtures'], now: nu
   /* A live fetch happens now: age_min only describes what Mochi saved earlier. */
   const live = resolveSnapshot(spec as string | ShorthandSnapshot, fixtures, now);
   return { ok: true, snapshot: { ...live, fetchedAtMs: now } };
+}
+
+/* The same wording as electron/agentReview.mjs, for the failures scenarios use. */
+const AGENT_FAILURES: Record<string, { message: string; fix?: string }> = {
+  skill_missing: { message: "The Codimango review skill isn't installed.", fix: 'claude plugin install team-aai@agent-market' },
+  codimango_login: { message: 'Codimango login missing or expired.', fix: 'codimango auth setup' },
+  timeout: { message: 'The review took longer than 45 minutes and was stopped.' },
+  cancelled: { message: 'You stopped this review.' },
+  interrupted: { message: 'Mochi quit before the review finished.' },
+};
+
+function agentFailure(kind: string) {
+  const known = AGENT_FAILURES[kind];
+  if (!known) throw new Error(`Unknown agent failure "${kind}" (known: ${Object.keys(AGENT_FAILURES).join(', ')})`);
+  return { kind, ...known };
+}
+
+function reportText(file: ScenarioFile, ref: string | undefined): string | undefined {
+  if (ref === undefined) return undefined;
+  return file.agent_reports?.[ref] ?? ref;
+}
+
+function taskNameFor(file: ScenarioFile, sc: Scenario, taskId: string, now: number): string {
+  const lives = [sc.given?.live ?? []].flat().filter((l): l is string | ShorthandSnapshot => typeof l === 'string' || !('error' in l));
+  for (const live of lives) {
+    const row = resolveSnapshot(live, file.fixtures, now).reviewing.find((r) => r.id === taskId);
+    if (row) return row.name;
+  }
+  return `task-${taskId}`;
+}
+
+function givenJob(file: ScenarioFile, sc: Scenario, g: GivenAgentJob, now: number, i: number): AgentJob {
+  const started = now - (g.started_ago_min ?? 10) * 60_000;
+  const finished = g.status === 'done' || g.status === 'failed';
+  return {
+    id: `given-${i}`,
+    taskId: g.task,
+    taskName: taskNameFor(file, sc, g.task, now),
+    taskUpdatedAtMs: g.task_updated_ago_h === undefined ? null : now - g.task_updated_ago_h * 3_600_000,
+    agent: g.agent,
+    status: g.status,
+    steps: g.steps ?? 0,
+    createdAtMs: started,
+    startedAtMs: g.status === 'queued' ? undefined : started,
+    endedAtMs: finished ? now - 60_000 : undefined,
+    report: reportText(file, g.report),
+    failure: g.status === 'failed' ? agentFailure(g.failure ?? 'timeout') : undefined,
+  };
+}
+
+/** Change one agent run as the main process would, and push the new list to the app. */
+function updateAgentJob(h: Harness, arg: unknown, patch: (job: AgentJob) => Partial<AgentJob>) {
+  const { task, agent } = arg as { task: string; agent: AgentId };
+  const job = [...h.agentJobs].reverse().find((j) => j.taskId === String(task) && j.agent === agent);
+  if (!job) throw new Error(`Step failed: no ${agent} review of ${String(task)} to update`);
+  h.agentJobs = h.agentJobs.map((j) => (j === job ? { ...j, ...patch(j) } : j));
+  if (!h.agentListener) throw new Error('Step failed: the app never subscribed to agent review changes');
+  h.agentListener(h.agentJobs);
 }
 
 /* Mochi's own UI only: the mock backdrop page (.page) is not part of the product. */
@@ -153,7 +236,8 @@ function findByText(label: string): HTMLElement {
 /** Run one scenario; throws on the first step or expectation that fails. */
 export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<void> {
   const now = Date.now();
-  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [] };
+  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], agentJobs: [], agentStarts: [] };
+  h.agentJobs = (sc.given?.agents ?? []).map((g, i) => givenJob(file, sc, g, now, i));
   const lives = sc.given?.live === undefined ? [] : Array.isArray(sc.given.live) ? sc.given.live : [sc.given.live];
   h.queue = lives.map((l) => resolveLive(l, file.fixtures, now));
 
@@ -181,6 +265,26 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
     logEvent: (event) => void h.events.push(event),
     usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
+    listAgentReviews: () => Promise.resolve(h.agentJobs),
+    onAgentReviewsChanged: (cb) => ((h.agentListener = cb), () => {}),
+    startAgentReview: (req) => {
+      h.agentStarts.push(req);
+      const t = Date.now();
+      for (const agent of req.agents) {
+        const prior = h.agentJobs.filter((j) => j.taskId === req.taskId && j.agent === agent);
+        if (prior.some((j) => j.status === 'queued' || j.status === 'running')) continue;
+        h.agentJobs = h.agentJobs.filter((j) => !prior.includes(j));
+        h.agentJobs = [
+          ...h.agentJobs,
+          { id: `run-${h.agentStarts.length}-${agent}`, taskId: req.taskId, taskName: req.taskName, taskUpdatedAtMs: req.taskUpdatedAtMs ?? null, agent, status: 'running', steps: 0, createdAtMs: t, startedAtMs: t },
+        ];
+      }
+      return Promise.resolve(h.agentJobs);
+    },
+    cancelAgentReview: (id) => {
+      h.agentJobs = h.agentJobs.map((j) => (j.id === id ? { ...j, status: 'failed', endedAtMs: Date.now(), failure: agentFailure('cancelled') } : j));
+      return Promise.resolve(h.agentJobs);
+    },
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -258,6 +362,22 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'wait':
           await flush(Number(arg));
           break;
+        case 'agent_progress': {
+          const { minutes = 0, steps = 0 } = arg as { minutes?: number; steps?: number };
+          updateAgentJob(h, arg, () => ({ startedAtMs: Date.now() - minutes * 60_000, steps }));
+          break;
+        }
+        case 'agent_finishes': {
+          const report = reportText(file, (arg as { report?: string }).report);
+          if (!report) throw new Error('Step failed: agent_finishes needs a report');
+          updateAgentJob(h, arg, () => ({ status: 'done', report, endedAtMs: Date.now() }));
+          break;
+        }
+        case 'agent_fails': {
+          const failure = agentFailure(String((arg as { kind?: string }).kind ?? 'timeout'));
+          updateAgentJob(h, arg, () => ({ status: 'failed', failure, endedAtMs: Date.now() }));
+          break;
+        }
         case 'expect':
           await checkExpectation(arg as Expectation, h);
           break;
@@ -318,6 +438,10 @@ async function checkExpectation(e: Expectation, h: Harness) {
       if (e.event_count) {
         const n = h.events.filter((ev) => matches(ev, e.event_count!.match)).length;
         expect(n, `events matching ${JSON.stringify(e.event_count.match)}`).toBe(e.event_count.count);
+      }
+      for (const want of e.agents_started ?? []) {
+        const started = h.agentStarts.flatMap((r) => r.agents.map((a) => `${r.taskId}:${a}`));
+        expect(started, `expected agent review ${want} to start`).toContain(want);
       }
       for (const label of e.disabled ?? []) {
         const box = findByText(label).querySelector('input');

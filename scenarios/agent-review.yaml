@@ -1,0 +1,219 @@
+# Ask agents to review: the button on review rows, the picker, progress, the
+# finished bubble and the report view. Agents run in the main process; here the
+# fake bridge stands in for them (agent_progress / agent_finishes / agent_fails).
+# Format: scenarios/README.md.
+
+fixtures:
+  one_review:
+    reviewing:
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40, updated_ago_h: 3 }
+    mine:
+      - id: v1
+        name: ember-results-sync
+        status: needs_revision
+        validation: failed
+        failed_checks: [Oracle validation]
+        oracle: 1/3
+  pushed_since:
+    reviewing:
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40, updated_ago_h: 1 }
+
+agent_reports:
+  request_changes: |
+    I reviewed the task at its exact revision.
+
+    ## Review summary
+
+    Revision 3f2a9c1. Findings: 1 blocker, 2 minor. Human verdict: Request changes.
+    Blocking: Yes
+
+    ## Structured form
+
+    ### 1. Quality Review Agent
+    **Reviewer Agrees?** Yes
+    **Notes**
+    The quality agent's verdict matches the trajectories.
+
+    ### 2. Decision
+    **Decision:** Request changes
+    **If you did not accept the task, what kind of changes did you request?** Substantive changes
+    **Reason**
+    tests/test_timer.py asserts on wall-clock time, so the oracle passes only on fast machines.
+
+    ### 3. Reviewer Confidence
+    High
+  accept: |
+    ## Review summary
+    No blockers. Human verdict: Accept.
+    Blocking: No
+
+    ## Structured form
+    ### 1. Decision
+    **Decision:** Accept
+
+    ### 2. Reviewer Confidence
+    Medium
+  no_form: |
+    I couldn't open the task snapshot, so this is only a partial look: the instruction reads clearly.
+
+scenarios:
+  - id: agent-ask-start
+    title: A review row offers Ask agents; picking Claude Code and Codex starts both and the row shows progress
+    given: { live: one_review }
+    steps:
+      - start
+      - click_pet
+      - expect: { see: [ember-turn-timer, Ask agents] }
+      - click: Ask agents
+      - expect: { see: [Ask agents to review, Claude Code, Codex, Nothing is submitted] }
+      - toggle_section: Codex
+      - click: Start
+      - expect:
+          agents_started: ["r2:claude", "r2:codex"]
+          see: [Claude Code reviewing · under a minute, Codex reviewing, View progress]
+          not_see: [Ask agents, Ask again]
+          events:
+            - { event: mochi_click, surface: glance_panel, component: ask_agents, section: waiting_review, task_id: r2 }
+            - { event: mochi_click, surface: agent_review, component: start, task_id: r2, kind: claude+codex }
+
+  - id: agent-picker-cancel
+    title: Cancel closes the picker without starting anything
+    given: { live: one_review }
+    steps:
+      - start
+      - click_pet
+      - click: Ask agents
+      - click: Cancel
+      - expect:
+          see: [Ask agents]
+          not_see: [Ask agents to review]
+          events:
+            - { event: mochi_close, surface: agent_review, component: picker, task_id: r2 }
+          not_events:
+            - { event: mochi_click, surface: agent_review, component: start }
+
+  - id: agent-finish-bubble-report
+    title: When an agent finishes, Mochi bubbles; the report shows the verdict and every form field with Copy
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: claude, status: running, started_ago_min: 1, task_updated_ago_h: 3 }]
+    steps:
+      - start
+      - click_pet
+      - agent_progress: { task: r2, agent: claude, minutes: 12, steps: 30 }
+      - expect: { see: [Claude Code reviewing · 12 min] }
+      - agent_finishes: { task: r2, agent: claude, report: request_changes }
+      - expect: { panel: closed, bubble: Agent review ready, see: [ember-turn-timer, Claude Code finished its review.] }
+      - click_bubble
+      - expect:
+          see: [Agent review, "Decision: Request changes", "Blocking: Yes", Quality Review Agent, Reviewer Agrees?, Reviewer Confidence, High]
+          not_see: [Task changed since this report, "**"]
+          events:
+            - { event: mochi_click, surface: bubble, component: bubble, notif_kind: agent_review, task_id: r2 }
+            - { event: mochi_vpv, surface: agent_review, component: report, task_id: r2, kind: claude, status: done }
+      - press: "Copy Decision: Reason"
+      - expect:
+          clipboard: [asserts on wall-clock time]
+          events:
+            - { event: mochi_click, surface: agent_review, component: copy, task_id: r2, kind: claude, position: 4 }
+      - press: Copy whole report
+      - expect: { clipboard: [Review summary, Structured form] }
+
+  - id: agent-two-agents-disagree
+    title: With two reports that disagree, the report says so and each agent has its own tab
+    given:
+      live: one_review
+      agents:
+        - { task: r2, agent: claude, status: done, report: request_changes }
+        - { task: r2, agent: codex, status: done, report: accept }
+    steps:
+      - start
+      - click_pet
+      - expect: { see: [Claude Code · report ready, Codex · report ready, Ask again] }
+      - click: View report
+      - expect: { see: [The agents disagree on the decision, "Decision: Request changes"] }
+      - click: Codex
+      - expect:
+          see: ["Decision: Accept", "Blocking: No", Medium]
+          not_see: ["Decision: Request changes"]
+          events:
+            - { event: mochi_click, surface: agent_review, component: tab, task_id: r2, kind: codex }
+
+  - id: agent-failure-fix
+    title: A failed run bubbles with the reason; the report shows the fix and Run again restarts it
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: codex, status: running }]
+    steps:
+      - start
+      - agent_fails: { task: r2, agent: codex, kind: skill_missing }
+      - expect: { bubble: Agent review failed, see: ["Codex: The Codimango review skill isn't installed."] }
+      - click_bubble
+      - expect: { see: ["The Codimango review skill isn't installed.", claude plugin install team-aai@agent-market] }
+      - click: Run again
+      - expect:
+          agents_started: ["r2:codex"]
+          see: [Codex is reviewing]
+          events:
+            - { event: mochi_click, surface: agent_review, component: run_again, task_id: r2, kind: codex }
+
+  - id: agent-stop
+    title: Stopping a review ends it quietly, with no bubble
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: claude, status: running, started_ago_min: 3 }]
+    steps:
+      - start
+      - click_pet
+      - click: View progress
+      - expect: { see: [Claude Code is reviewing · 3 min] }
+      - click: Stop review
+      - expect:
+          see: [You stopped this review., Run again]
+          bubble: none
+          events:
+            - { event: mochi_click, surface: agent_review, component: cancel, task_id: r2, kind: claude }
+
+  - id: agent-stale-report
+    title: A report from before the author's latest push says the task changed
+    given:
+      live: pushed_since
+      agents: [{ task: r2, agent: claude, status: done, report: accept, task_updated_ago_h: 3 }]
+    steps:
+      - start
+      - click_pet
+      - click: View report
+      - expect: { see: [Task changed since this report, "Decision: Accept"] }
+
+  - id: agent-unparsed-report
+    title: A report without form fields is shown as written, with one Copy
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: claude, status: done, report: no_form }]
+    steps:
+      - start
+      - click_pet
+      - click: View report
+      - expect: { see: ["Mochi couldn't split this report into form fields", the instruction reads clearly] }
+      - press: Copy whole report
+      - expect:
+          clipboard: [partial look]
+          events:
+            - { event: mochi_click, surface: agent_review, component: copy_all, task_id: r2, kind: claude }
+
+  - id: agent-open-codimango
+    title: From the report, Open in Codimango goes to the review page to submit there
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: claude, status: done, report: accept }]
+    steps:
+      - start
+      - click_pet
+      - click: View report
+      - click: Open in Codimango
+      - expect:
+          opened: [/reviews/r2]
+          events:
+            - { event: mochi_click, surface: agent_review, component: open_codimango, task_id: r2, kind: claude }
+      - click: Back to overview
+      - expect: { panel: open, not_see: [Agent review] }

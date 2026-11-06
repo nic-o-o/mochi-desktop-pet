@@ -1498,3 +1498,201 @@ html.mochi-shell .expanded-view {
 .section-menu-action:hover {
   background: var(--accent-soft);
 }
+
+/* ------------------------------------------------ ask agents to review -- */
+
+.agent-row {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.agent-status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.agent-status {
+  color: var(--ink-soft);
+}
+
+.agent-running,
+.agent-queued {
+  color: var(--accent);
+}
+
+.agent-done {
+  color: var(--green);
+}
+
+.agent-failed {
+  color: var(--danger);
+}
+
+.agent-row-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.agent-link {
+  font-size: 11px;
+}
+
+.agent-picker {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #d9d6f2;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.agent-picker legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.agent-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agent-picker-actions .btn-primary,
+.agent-picker-actions .btn-secondary {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.agent-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-tab {
+  padding: 6px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.agent-banner {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--orange-soft);
+  color: #8a4300;
+  font-size: 12px;
+}
+
+.agent-progress {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.agent-failure p {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.agent-failure code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1efe7;
+  color: var(--ink);
+}
+
+.agent-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.agent-verdict .agent-copy {
+  margin-left: auto;
+}
+
+.agent-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agent-chip.is-blocking {
+  background: #fce8e6;
+  color: var(--danger);
+}
+
+.agent-chip.is-draft {
+  background: var(--orange-soft);
+  color: #8a4300;
+}
+
+.agent-section {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.agent-section h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.agent-field + .agent-field {
+  margin-top: 8px;
+}
+
+.agent-field-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.agent-copy {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.agent-text {
+  margin: 2px 0 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-summary {
+  margin-bottom: 10px;
+  color: var(--ink-soft);
+}
