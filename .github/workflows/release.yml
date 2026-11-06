@@ -1,0 +1,40 @@
+# Release: pushing a `v*` tag builds the Mac DMG and publishes the GitHub
+# Release with it attached. Testers download from the `releases/latest`
+# link — no terminal needed. (See README "Release cadence & version cuts".)
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    # Apple Silicon build. Intel Macs need a universal build or second job —
+    # add when a tester asks (see README install notes).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+      # Builds out/Mochi.app + out/Mochi.dmg (no --install: nothing to
+      # install on a runner). Ad-hoc signed — first launch needs
+      # System Settings → Privacy & Security → Open Anyway until the app
+      # is Developer-ID signed and notarized.
+      - run: npm run package
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/Mochi.dmg
+          generate_release_notes: true
