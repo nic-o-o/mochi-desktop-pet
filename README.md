@@ -112,6 +112,35 @@ so no terminal or Vite server is needed; right-click its Dock icon for
 **Open at Login**.
 Logs go to `~/Library/Logs/Mochi/main.log`.
 
+## Release cadence & version cuts
+
+Every user-facing change ships to testers inside a **versioned cut** — no
+unversioned DMGs. `package.json` is the single source of truth for the
+version; the download link and any future updater all key off it.
+
+- **Cadence:** cut **weekly (Friday)** with everything merged that week, plus
+  **on-demand cuts** for urgent dogfood fixes. If Friday has nothing merged,
+  skip the week — say so in chat so nobody waits on it.
+- **How to cut** (releaser only, one at a time — `main` is protected, so the
+  bump itself goes through a PR):
+  ```sh
+  git checkout main && git pull
+  git checkout -b mochi/release-x.y.z
+  npm version patch   # or minor for a feature batch
+  git push -u origin mochi/release-x.y.z
+  ```
+  open a PR titled `Release x.y.z`, merge it, then tag the merge:
+  ```sh
+  git checkout main && git pull
+  git tag vx.y.z && git push origin vx.y.z
+  ```
+  The tag is what release CI (and the `releases/latest` download link) listens to.
+- **Rule for PR authors (Debra and everyone):** every PR must declare in its
+  description whether it **rides the next scheduled cut** or **needs its own
+  cut** (urgent tester-facing fix). The PR template has the checkbox — check
+  it, or the PR doesn't merge. The releaser batches "rides along" PRs into
+  the Friday cut.
+
 The app is ad-hoc signed only (no Apple Developer ID, not notarized). On the
 Mac that built it, it opens normally; a copy downloaded on another Mac needs
 System Settings → Privacy & Security → **Open Anyway** on first launch. If
