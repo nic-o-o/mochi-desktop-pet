@@ -509,7 +509,14 @@ export default function App() {
     const d = dragRef.current;
     dragRef.current = null;
     setDragging(false);
-    if (d && !d.moved) togglePanel('pet_click');
+    if (!d || d.moved) return;
+    /* The pet sits above the full view so it can be dragged (the view follows);
+       a plain click closes the view, as clicking outside it does. */
+    if (expandedOpen) {
+      touch();
+      logClick('pet', 'pet', { action: 'close_view' });
+      closeExpanded();
+    } else togglePanel('pet_click');
   }
 
   /* The paw drags like the pet (it marks where Mochi comes back); a plain click restores. */
@@ -554,6 +561,7 @@ export default function App() {
     panelCloseReason.current = 'hide';
     setHidden(true);
     setPanelOpen(false);
+    closeExpanded();
     setBubble(null);
     resetCycle();
     setHovering(false);
@@ -798,7 +806,7 @@ export default function App() {
       )}
 
       {!hidden ? (
-        <div className="pet-widget" style={{ left: petRenderPos.x, top: petRenderPos.y }}>
+        <div className={`pet-widget${expandedOpen ? ' is-over-view' : ''}`} style={{ left: petRenderPos.x, top: petRenderPos.y }}>
           <div
             className={`pet-pressable pet-${petState}${dragging ? ' is-dragging' : ''}`}
             role="button"

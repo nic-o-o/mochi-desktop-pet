@@ -962,6 +962,11 @@ input:focus-visible {
 
 /* ----------------------------------------------------- expanded view -- */
 
+/* Above the scrim, so dragging the pet moves the open view instead of closing it. */
+.pet-widget.is-over-view {
+  z-index: 61;
+}
+
 .mochi-scrim {
   position: fixed;
   inset: 0;

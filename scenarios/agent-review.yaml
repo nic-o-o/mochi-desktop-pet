@@ -53,6 +53,45 @@ agent_reports:
 
     ### 2. Reviewer Confidence
     Medium
+  complete: |
+    ## Review summary
+    No blockers. Human verdict: Accept.
+    Blocking: No
+
+    ## Structured form
+    ### 1. Taxonomy
+    **Sub-domain:** Web APIs
+    **Action:** Save verification
+
+    ### 2. Human Checks
+    **Realistic — select:** 3
+    **Why this score?**
+    A pagination change real projects make.
+
+    ### 3. Decision
+    **Decision:** Accept
+  needs_evidence: |
+    ## Review summary
+    Status: DRAFT. Decision left as Needs evidence.
+
+    ## Structured form
+    ### 1. Quality Review Agent
+    Autoloaded: verdict Accept (GOOD), with Critical 0, High 0.
+
+    **Reviewer Agrees? — select:** Partially
+
+    ### 2. Decision
+    **Decision — select:** Do not select yet — Needs evidence
+
+    *(If F1 is ruled against the task, choose Request changes.)*
+
+    **Reason**
+
+    No confirmed blockers remain.
+
+    **F1.**
+    - **Finding:** the base bundle ships full git history.
+    - **Blocking:** Needs evidence.
   no_form: |
     I couldn't open the task snapshot, so this is only a partial look: the instruction reads clearly.
 
@@ -118,6 +157,56 @@ scenarios:
             - { event: mochi_click, surface: agent_review, component: copy, task_id: r2, kind: claude, position: 4 }
       - press: Copy whole report
       - expect: { clipboard: [Review summary, Structured form] }
+
+  - id: agent-form-gaps
+    title: A report missing parts every form has says what to fill in yourself; a complete one doesn't
+    given:
+      live: one_review
+      agents:
+        - { task: r2, agent: claude, status: done, report: request_changes }
+        - { task: r2, agent: codex, status: done, report: complete }
+    steps:
+      - start
+      - click_pet
+      - click: View report
+      - expect: { see: [This report leaves out Taxonomy, Validation Override] }
+      - click: Codex
+      - expect: { see: [Why this score?], not_see: [This report leaves out] }
+
+  - id: agent-text-box-answers
+    title: Copy Reason takes the whole answer with its findings; the autoloaded verdict shows; a not-yet decision gets no chip
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: claude, status: done, report: needs_evidence }]
+    steps:
+      - start
+      - click_pet
+      - click: View report
+      - expect:
+          see: ["Autoloaded: verdict Accept (GOOD)", "Blocking: Needs evidence"]
+          not_see: ["Decision: Request changes", "Copy Decision: Finding"]
+      - press: "Copy Decision: Reason"
+      - expect: { clipboard: [No confirmed blockers remain., "- Finding: the base bundle ships full git history."] }
+
+  - id: agent-report-drag-pet
+    title: With the report open, dragging Mochi keeps the report open; a plain click closes it
+    given:
+      live: one_review
+      agents: [{ task: r2, agent: claude, status: done, report: accept }]
+    steps:
+      - start
+      - click_pet
+      - click: View report
+      - expect: { see: [Agent review], pet_over_view: true }
+      - drag_pet: { dx: 80, dy: 40 }
+      - expect: { see: [Agent review, "Decision: Accept"], panel: closed }
+      - click_pet
+      - expect:
+          not_see: [Agent review]
+          panel: closed
+          pet_over_view: false
+          events:
+            - { event: mochi_click, surface: pet, component: pet, action: close_view }
 
   - id: agent-two-agents-disagree
     title: With two reports that disagree, the report says so and each agent has its own tab

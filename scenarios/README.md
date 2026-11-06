@@ -58,7 +58,8 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | Step | Does |
 |---|---|
 | `start` | Launch Mochi and wait for the first fetch |
-| `click_pet` | Click the pet (toggles the panel) |
+| `click_pet` | Click the pet (toggles the panel; closes a full view) |
+| `drag_pet: { dx: 80, dy: 40 }` | Drag the pet that far |
 | `click_bell`, `click_bubble`, `close_bubble` | Bell, bubble body, bubble × |
 | `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
@@ -81,6 +82,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `see`, `not_see` | Mochi's UI contains / doesn't contain each string (the mock backdrop page is ignored) |
 | `in_order` | The strings appear in this order (ranking) |
 | `panel` | `open` or `closed` |
+| `pet_over_view` | `true` when the pet sits above an open full view, so it can be dragged |
 | `bubble` | The bubble contains this text, or `none` |
 | `badge` | Unread count on the bell, or `none` |
 | `opened` | A link containing each string was opened (cumulative) |

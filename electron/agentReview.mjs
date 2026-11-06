@@ -76,6 +76,14 @@ const HEADLESS_RULES =
   'You are running headless for Mochi, a desktop app; nobody can answer questions. ' +
   'Do not submit the review, change the task, rerun validation, start paid trials, push anything or contact the author. ' +
   'Where the skill would ask the reviewer, choose the conservative option, keep the answer DRAFT and say why under Coverage / limitations. ' +
+  'The reviewer copies each field into the live form, so the Structured form must cover every section that form shows for this task, in its order. ' +
+  "Work out which conditional sections are visible from the exact task's data, not the fallback snapshot: " +
+  'Agentic Full-Task Review Agreement whenever an Agentic Full-Task Review result exists; ' +
+  "Validation Override whenever the submitter gave override reasons, with each overridden check's name, your agreement and your notes; " +
+  'and always Taxonomy, with every axis and the value to select or confirm. ' +
+  'Leave out sections with nothing to review, such as a Novelty report that was never generated. ' +
+  'In Human Checks, give every score its own "Why this score?" field. ' +
+  'If you cannot tell whether a section is shown, include it and say so in its notes. ' +
   'Your final message must be the skill\'s output: "## Review summary", then "## Structured form".';
 
 /** The command line for one run. `reportFile` is where Codex writes its last message. */

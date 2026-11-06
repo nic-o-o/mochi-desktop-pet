@@ -24,6 +24,8 @@ export interface Expectation {
   /** Unread number on the bell; `none` for no badge. */
   badge?: number | 'none';
   panel?: 'open' | 'closed';
+  /** The pet is lifted above the full view's scrim, so it can be dragged while the view is open. */
+  pet_over_view?: boolean;
   /** Text the notification bubble contains, or `none`. */
   bubble?: string | 'none';
   /** Every opened link so far, by substring. */
@@ -309,6 +311,14 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
           fireEvent.pointerUp(pet, { pointerId: 1, clientX: 10, clientY: 10 });
           break;
         }
+        case 'drag_pet': {
+          const { dx, dy } = arg as { dx: number; dy: number };
+          const pet = mustFind('[aria-label^="Mochi is"]', 'the pet');
+          fireEvent.pointerDown(pet, { pointerId: 1, clientX: 10, clientY: 10 });
+          fireEvent.pointerMove(pet, { pointerId: 1, clientX: 10 + dx, clientY: 10 + dy });
+          fireEvent.pointerUp(pet, { pointerId: 1, clientX: 10 + dx, clientY: 10 + dy });
+          break;
+        }
         case 'click_bell':
           fireEvent.click(mustFind('[aria-label^="Notifications"]', 'the bell'));
           break;
@@ -415,6 +425,7 @@ async function checkExpectation(e: Expectation, h: Harness) {
         expect(badge, 'bell badge').toBe(String(e.badge));
       }
       if (e.panel) expect(q('.overview-panel') ? 'open' : 'closed', 'panel').toBe(e.panel);
+      if (e.pet_over_view !== undefined) expect(Boolean(q('.pet-widget.is-over-view')), 'pet above the full view').toBe(e.pet_over_view);
       if (e.bubble !== undefined) {
         const bubble = q('.notif-bubble')?.textContent?.replace(/\s+/g, ' ') ?? 'none';
         if (e.bubble === 'none') expect(bubble, 'bubble').toBe('none');
