@@ -185,6 +185,11 @@ export function AgentReportView(props: AgentReportViewProps) {
               ))}
             </div>
           )}
+          {active?.model && (
+            <p className="muted small agent-model">
+              {AGENT_LABELS[active.agent]} · {active.model}
+            </p>
+          )}
           {disagree && (
             <p className="agent-banner" role="status">
               The agents disagree on the decision. Compare both reports before you decide.

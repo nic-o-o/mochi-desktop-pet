@@ -23,6 +23,7 @@
  */
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +33,7 @@ import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
+import { createSevWatch } from './sevs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -47,6 +49,8 @@ let syncedOnce = false;
 let events = null;
 /* Agent review jobs (electron/agentReview.mjs); created once the app is ready. */
 let agentReviews = null;
+/** Codimango SEVs (bubble and panel line), read every ten minutes. */
+let sevWatch = null;
 
 function defaultBounds() {
   const b = screen.getPrimaryDisplay().bounds;
@@ -56,6 +60,31 @@ function defaultBounds() {
     width: 200,
     height: 230,
   };
+}
+
+/* Dock menu "Keep Mochi on Top". Off: Mochi is an ordinary window that other
+   apps can cover, and it comes forward when a bubble arrives. */
+let keepOnTop = false;
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings() {
+  try {
+    keepOnTop = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')).keepOnTop === true;
+  } catch {
+    keepOnTop = false;
+  }
+}
+
+function saveSettings() {
+  try {
+    fs.writeFileSync(settingsFile(), JSON.stringify({ keepOnTop }));
+  } catch (err) {
+    console.warn('[mochi] could not save settings:', err.message);
+  }
+}
+
+function applyKeepOnTop() {
+  win?.setAlwaysOnTop(keepOnTop, 'floating');
 }
 
 /* On every desktop (Space) and over full-screen apps. */
@@ -82,7 +111,7 @@ function createWindow() {
     },
   });
 
-  win.setAlwaysOnTop(true, 'floating');
+  applyKeepOnTop();
   showOnAllDesktops(win);
   // Permanently enabled: only painted Mochi pixels hit-test, transparent gaps
   // fall through natively — no enter/leave toggling, no race with clicks.
@@ -160,6 +189,15 @@ ipcMain.on('mochi:log-event', (_event, raw) => {
 
 // Ask agents to review: the renderer sends the task and the chosen agents; runs
 // and reports live in the main process and are pushed back on every change.
+/* A new bubble: bring Mochi in front of other apps without taking focus. */
+ipcMain.on('mochi:raise', () => {
+  if (!win || win.isDestroyed() || keepOnTop) return;
+  win.showInactive();
+  win.moveTop();
+});
+
+ipcMain.handle('mochi:sevs-list', () => sevWatch?.list() ?? []);
+
 ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
 
 ipcMain.handle('mochi:agent-review-start', (_event, req) =>
@@ -222,6 +260,17 @@ function setDockMenu() {
           events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'open_at_login', enabled: item.checked });
         },
       },
+      {
+        label: 'Keep Mochi on Top',
+        type: 'checkbox',
+        checked: keepOnTop,
+        click: (item) => {
+          keepOnTop = item.checked;
+          applyKeepOnTop();
+          saveSettings();
+          events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'keep_on_top', enabled: item.checked });
+        },
+      },
       { type: 'separator' },
       {
         // The renderer holds status and counts, so ask it to start the report.
@@ -237,6 +286,7 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
+  loadSettings();
   if (app.isPackaged) {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);
     setDockMenu();
@@ -261,6 +311,8 @@ app.whenReady().then(() => {
         duration_ms: job.startedAtMs ? job.endedAtMs - job.startedAtMs : 0,
       }),
   });
+  sevWatch = createSevWatch({ onChange: (sevs) => win?.webContents.send('mochi:sevs', sevs) });
+  sevWatch.start();
   setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
   createWindow();
   // `screen` is unusable before ready — this must live in here, not at module scope.
@@ -269,7 +321,10 @@ app.whenReady().then(() => {
   }
   // After sleep or a locked screen the snapshot is stale: ask the renderer to refresh.
   for (const event of ['resume', 'unlock-screen']) {
-    powerMonitor.on(event, () => win?.webContents.send('mochi:system-resumed'));
+    powerMonitor.on(event, () => {
+      win?.webContents.send('mochi:system-resumed');
+      void sevWatch?.refresh();
+    });
   }
   // Panel and bubble time on screen excludes a locked screen (sleep already pauses the renderer clock).
   powerMonitor.on('lock-screen', () => win?.webContents.send('mochi:screen-lock', true));
@@ -289,6 +344,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   agentReviews?.stopAll();
+  sevWatch?.stop();
   void events?.close();
 });
 

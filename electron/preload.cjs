@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
   logEvent: (event) => ipcRenderer.send('mochi:log-event', event),
   usageSummary: () => ipcRenderer.invoke('mochi:usage-summary'),
+  raise: () => ipcRenderer.send('mochi:raise'),
   listAgentReviews: () => ipcRenderer.invoke('mochi:agent-reviews-list'),
   startAgentReview: (req) => ipcRenderer.invoke('mochi:agent-review-start', req),
   cancelAgentReview: (id) => ipcRenderer.invoke('mochi:agent-review-cancel', id),
@@ -29,6 +30,12 @@ contextBridge.exposeInMainWorld('mochiShell', {
     const listener = (_event, jobs) => callback(jobs);
     ipcRenderer.on('mochi:agent-reviews', listener);
     return () => ipcRenderer.removeListener('mochi:agent-reviews', listener);
+  },
+  listSevs: () => ipcRenderer.invoke('mochi:sevs-list'),
+  onSevsChanged: (callback) => {
+    const listener = (_event, sevs) => callback(sevs);
+    ipcRenderer.on('mochi:sevs', listener);
+    return () => ipcRenderer.removeListener('mochi:sevs', listener);
   },
   onScreenLock: (callback) => {
     const listener = (_event, locked) => callback(locked);

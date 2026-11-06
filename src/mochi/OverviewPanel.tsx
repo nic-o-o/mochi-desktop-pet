@@ -17,6 +17,7 @@ import type { AgentReviewControls } from './AgentRow.tsx';
 import { jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
+import type { Sev } from './sevs.ts';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionPrefs } from './sections.ts';
 import { SECTION_EVENT_NAME, logClick, logVpv, msSincePanelOpen, useVpv } from './usage.ts';
@@ -56,6 +57,9 @@ interface OverviewPanelProps {
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
   /** "Ask agents" on review rows (desktop shell only). */
   agentReview?: AgentReviewControls;
+  /** Open Codimango SEVs: one line each at the top, most severe first. */
+  sevs?: Sev[];
+  onOpenSev?: (sev: Sev) => void;
 }
 
 /** Small full-circle progress ring with a centered "done / goal" label. */
@@ -481,6 +485,25 @@ export function OverviewPanel(props: OverviewPanelProps) {
             ↻
           </button>
         </p>
+      )}
+
+      {props.sevs && props.sevs.length > 0 && (
+        <ul className="sev-lines" aria-label="Codimango SEVs">
+          {props.sevs.map((sev) => (
+            <li key={sev.id}>
+              <button
+                type="button"
+                className="sev-line"
+                onClick={() => {
+                  logClick('glance_panel', 'sev', { notif_kind: 'sev_open' });
+                  props.onOpenSev?.(sev);
+                }}
+              >
+                <span aria-hidden="true">⚠️</span> SEV{sev.level} open: {sev.title}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {props.setup ? (

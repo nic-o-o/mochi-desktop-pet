@@ -8,6 +8,7 @@ import { expect } from 'vitest';
 import App from '../../App.tsx';
 import type { AgentId, AgentJob, AgentReviewStart } from '../../mochi/agentReviews.ts';
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
+import type { Sev } from '../../mochi/sevs.ts';
 import type { ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
 import { resetUsageForTests } from '../../mochi/usage.ts';
 import { toSnapshot } from './fixtures.ts';
@@ -26,6 +27,8 @@ export interface Expectation {
   panel?: 'open' | 'closed';
   /** The pet is lifted above the full view's scrim, so it can be dragged while the view is open. */
   pet_over_view?: boolean;
+  /** Times Mochi has asked to come in front of other apps since start (once per arriving bubble). */
+  raised?: number;
   /** Text the notification bubble contains, or `none`. */
   bubble?: string | 'none';
   /** Every opened link so far, by substring. */
@@ -61,8 +64,32 @@ export interface GivenAgentJob {
   failure?: string;
   started_ago_min?: number;
   steps?: number;
+  /** The model that ran it, shown in the report. */
+  model?: string;
   /** The task's updatedAt when the run started, hours ago. */
   task_updated_ago_h?: number;
+}
+
+/** A Codimango SEV as the main process would pass it on (already filtered). */
+export interface GivenSev {
+  id: string;
+  level: number;
+  open: boolean;
+  title: string;
+  opened_ago_h?: number;
+  mitigated_ago_h?: number;
+}
+
+function givenSev(g: GivenSev, now: number): Sev {
+  return {
+    id: g.id,
+    level: g.level,
+    open: g.open,
+    title: g.title,
+    url: `https://www.internalfb.com/sevmanager/view/${g.id.slice(1)}`,
+    createdAtMs: now - (g.opened_ago_h ?? 1) * 3_600_000,
+    ...(g.mitigated_ago_h === undefined ? {} : { mitigatedAtMs: now - g.mitigated_ago_h * 3_600_000 }),
+  };
 }
 
 export interface Scenario {
@@ -76,6 +103,8 @@ export interface Scenario {
     sections?: Record<string, boolean>;
     /** Agent reviews the shell already has (running or finished). */
     agents?: GivenAgentJob[];
+    /** Codimango SEVs the main process has already read. */
+    sevs?: GivenSev[];
   };
   steps: Step[];
 }
@@ -99,6 +128,9 @@ interface Harness {
   agentJobs: AgentJob[];
   agentStarts: AgentReviewStart[];
   agentListener?: (jobs: AgentJob[]) => void;
+  sevListener?: (sevs: Sev[]) => void;
+  /** Times Mochi asked to come in front of other apps (new bubbles). */
+  raised: number;
 }
 
 const FAILURE_MESSAGES: Record<FailureKind, string> = {
@@ -164,6 +196,7 @@ function givenJob(file: ScenarioFile, sc: Scenario, g: GivenAgentJob, now: numbe
     agent: g.agent,
     status: g.status,
     steps: g.steps ?? 0,
+    model: g.model,
     createdAtMs: started,
     startedAtMs: g.status === 'queued' ? undefined : started,
     endedAtMs: finished ? now - 60_000 : undefined,
@@ -238,7 +271,7 @@ function findByText(label: string): HTMLElement {
 /** Run one scenario; throws on the first step or expectation that fails. */
 export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<void> {
   const now = Date.now();
-  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], agentJobs: [], agentStarts: [] };
+  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], agentJobs: [], agentStarts: [], raised: 0 };
   h.agentJobs = (sc.given?.agents ?? []).map((g, i) => givenJob(file, sc, g, now, i));
   const lives = sc.given?.live === undefined ? [] : Array.isArray(sc.given.live) ? sc.given.live : [sc.given.live];
   h.queue = lives.map((l) => resolveLive(l, file.fixtures, now));
@@ -267,6 +300,9 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
     logEvent: (event) => void h.events.push(event),
     usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
+    raise: () => void (h.raised += 1),
+    listSevs: () => Promise.resolve((sc.given?.sevs ?? []).map((g) => givenSev(g, now))),
+    onSevsChanged: (cb) => ((h.sevListener = cb), () => {}),
     listAgentReviews: () => Promise.resolve(h.agentJobs),
     onAgentReviewsChanged: (cb) => ((h.agentListener = cb), () => {}),
     startAgentReview: (req) => {
@@ -317,6 +353,12 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
           fireEvent.pointerDown(pet, { pointerId: 1, clientX: 10, clientY: 10 });
           fireEvent.pointerMove(pet, { pointerId: 1, clientX: 10 + dx, clientY: 10 + dy });
           fireEvent.pointerUp(pet, { pointerId: 1, clientX: 10 + dx, clientY: 10 + dy });
+          break;
+        }
+        case 'sevs': {
+          const list = (arg as GivenSev[]).map((g) => givenSev(g, Date.now()));
+          act(() => h.sevListener?.(list));
+          await flush();
           break;
         }
         case 'click_bell':
@@ -425,6 +467,7 @@ async function checkExpectation(e: Expectation, h: Harness) {
         expect(badge, 'bell badge').toBe(String(e.badge));
       }
       if (e.panel) expect(q('.overview-panel') ? 'open' : 'closed', 'panel').toBe(e.panel);
+      if (e.raised !== undefined) expect(h.raised, 'times Mochi came in front of other apps').toBe(e.raised);
       if (e.pet_over_view !== undefined) expect(Boolean(q('.pet-widget.is-over-view')), 'pet above the full view').toBe(e.pet_over_view);
       if (e.bubble !== undefined) {
         const bubble = q('.notif-bubble')?.textContent?.replace(/\s+/g, ' ') ?? 'none';

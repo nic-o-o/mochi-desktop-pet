@@ -138,17 +138,20 @@ function parseJson(text) {
   }
 }
 
+const modelOf = (model) => (typeof model === 'string' && model && model.length <= 100 ? { model } : {});
+
 /**
- * What one output line means: a tool step, the final report (Claude), or an
- * error message. Non-JSON lines (launcher banners) mean nothing.
+ * What one output line means: a tool step, the model (Claude), the final
+ * report (Claude), or an error message. Non-JSON lines (launcher banners) mean nothing.
  */
 export function readLine(agent, line) {
   const msg = parseJson(line);
   if (!msg || typeof msg !== 'object') return {};
   if (agent === 'claude') {
+    if (msg.type === 'system' && msg.subtype === 'init') return modelOf(msg.model);
     if (msg.type === 'assistant') {
       const steps = (msg.message?.content ?? []).filter((c) => c?.type === 'tool_use').length;
-      return steps ? { steps } : {};
+      return { ...modelOf(msg.message?.model), ...(steps ? { steps } : {}) };
     }
     if (msg.type === 'result') {
       if (msg.is_error || msg.subtype !== 'success') return { error: String(msg.result ?? msg.subtype ?? 'error') };
@@ -237,10 +240,31 @@ const ACTIVE = new Set(['queued', 'running']);
  * injectable for tests: `run` (spawnAgent), `findSkill`, `makeTempDir`, `now`.
  * `onChange(jobs)` fires after every change; `onFinished(job)` once per run.
  */
+/**
+ * The model Codex will use: the top-level `model` in its config.toml. Codex's
+ * --json events don't name it, and Mochi passes no model of its own.
+ */
+export function codexModel(home = os.homedir(), fsImpl = fs, env = process.env) {
+  const file = path.join(env.CODEX_HOME ?? path.join(home, '.codex'), 'config.toml');
+  let text;
+  try {
+    text = fsImpl.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  for (const line of text.split('\n')) {
+    if (/^\s*\[/.test(line)) break; // a [table]: past the top-level keys
+    const m = /^\s*model\s*=\s*["']([^"']{1,100})["']/.exec(line);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 export function createAgentReviews({
   dir,
   run = spawnAgent,
   findSkill = () => findReviewSkill(),
+  findCodexModel = () => codexModel(),
   makeTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mochi-review-')),
   removeDir = (d) => fs.rmSync(d, { recursive: true, force: true }),
   readFile = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''),
@@ -310,8 +334,9 @@ export function createAgentReviews({
     let timedOut = false;
     const handle = run({ bin: cmd.bin, args: cmd.args, cwd }, (line) => {
       const got = readLine(job.agent, line);
-      if (got.steps) {
-        job.steps += got.steps;
+      if (got.model && !job.model) job.model = got.model;
+      if (got.steps || got.model) {
+        job.steps += got.steps ?? 0;
         save(job);
         changed();
       }
@@ -325,6 +350,7 @@ export function createAgentReviews({
     timer.unref?.();
     running.set(job.id, handle);
     Object.assign(job, { status: 'running', startedAtMs: now() });
+    if (job.agent === 'codex') job.model = findCodexModel() ?? undefined;
     save(job);
     changed();
 
