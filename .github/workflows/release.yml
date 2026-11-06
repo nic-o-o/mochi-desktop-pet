@@ -15,7 +15,8 @@ jobs:
   build-mac:
     # Apple Silicon build. Intel Macs need a universal build or second job —
     # add when a tester asks (see README install notes).
-    runs-on: macos-14
+    # NOTE: `macos-14` is not offered on this host — keep `macos-latest`.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
