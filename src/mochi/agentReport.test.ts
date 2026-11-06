@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseReport, plainText, reportsDisagree } from './agentReport.ts';
+import { formGaps, parseReport, plainText, reportsDisagree } from './agentReport.ts';
 
 /* Shaped like the codimango-review-assistant output contract. */
 const REPORT = `I reviewed the task at the exact revision.
@@ -69,6 +69,89 @@ describe('parseReport', () => {
   it('returns null without a Structured form, so the caller shows the raw text', () => {
     expect(parseReport('I could not reach Codimango, so there is no review.')).toBeNull();
     expect(parseReport('## Structured form\n\n')).toBeNull();
+  });
+});
+
+/* Shaped like a real Claude Code run: autoloaded lines, bulleted findings inside text boxes, a not-yet decision. */
+const NEEDS_EVIDENCE = `## Review summary
+Status: DRAFT.
+
+## Structured form
+
+### 1. Quality Review Agent
+Autoloaded: verdict Accept (GOOD), with Critical 0, High 0.
+
+**Reviewer Agrees? — select:** Partially
+
+**Notes**
+
+The headline holds. Two problems:
+- **Environment hygiene:** /app keeps 789 ancestor commits.
+- **Difficulty:** "EASY" understates the results.
+
+### 2. Taxonomy
+- **Sub-domain — select:** web_backend
+- **Use case — select:** extend_behavior
+- **Action:** Save verification
+
+### 3. Decision
+**Decision — select:** Do not select yet — Needs evidence
+
+*(If F1 is ruled against the task, choose Request changes and then Substantive changes.)*
+
+**Reason**
+
+No confirmed blockers remain.
+
+**F1.**
+- **Finding:** the base bundle ships full git history.
+- **Blocking:** Needs evidence.
+
+**F2.**
+- **Finding:** authoring files are agent-visible.
+- **Blocking:** No.
+`;
+
+describe('parseReport on text-box answers', () => {
+  it('keeps bulleted findings inside the Notes and Reason they belong to', () => {
+    const r = parseReport(NEEDS_EVIDENCE)!;
+    expect(r.sections[0].fields.map((f) => f.label)).toEqual(['Reviewer Agrees? — select', 'Notes']);
+    expect(r.sections[0].fields[1].value).toContain('Difficulty: "EASY" understates');
+    const reason = r.sections[2].fields.find((f) => f.label === 'Reason')!;
+    expect(reason.value).toContain('F1.\n- Finding: the base bundle ships full git history.');
+    expect(reason.value).toContain('F2.\n- Finding: authoring files are agent-visible.\n- Blocking: No.');
+  });
+
+  it('still splits bulleted one-line fields such as Taxonomy axes', () => {
+    expect(parseReport(NEEDS_EVIDENCE)!.sections[1].fields.map((f) => f.label)).toEqual([
+      'Sub-domain — select',
+      'Use case — select',
+      'Action',
+    ]);
+  });
+
+  it('keeps the autoloaded line and takes the decision only from the selected choice', () => {
+    const r = parseReport(NEEDS_EVIDENCE)!;
+    expect(r.sections[0].intro).toBe('Autoloaded: verdict Accept (GOOD), with Critical 0, High 0.');
+    expect(r.decision).toBeUndefined();
+    expect(r.blocking).toBe('Needs evidence');
+  });
+});
+
+describe('formGaps', () => {
+  it('names the always-present parts a report leaves out', () => {
+    expect(formGaps(parseReport(REPORT)!)).toEqual(['Taxonomy']);
+    const merged = parseReport(
+      '## Structured form\n### 1. Human Checks\n**Realistic — select:** 3\n**Original — select:** 2\n**Additional Notes**\nOne paragraph for both.',
+    )!;
+    expect(formGaps(merged)).toEqual(['Taxonomy', 'Decision', 'a reason for each Human Checks score']);
+  });
+
+  it('is empty for a report with Taxonomy, Decision and a reason per score', () => {
+    const full = parseReport(
+      '## Structured form\n### 1. Taxonomy\n**Sub-domain:** Web APIs\n### 2. Human Checks\n**Realistic — select:** 3\n**Why this score?**\nA real API change.\n### 3. Decision\n**Decision:** Accept',
+    )!;
+    expect(formGaps(full)).toEqual([]);
   });
 });
 

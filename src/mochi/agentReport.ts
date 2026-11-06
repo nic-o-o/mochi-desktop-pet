@@ -15,6 +15,8 @@ export interface ReportSection {
   title: string;
   /** Bold-labelled fields in the section, in order; empty when it is plain text. */
   fields: ReportField[];
+  /** Text before the first field, such as the autoloaded agent verdict (read-only on the form). */
+  intro?: string;
   /** The whole section as plain text (Copy for sections without fields). */
   body: string;
 }
@@ -40,6 +42,8 @@ const SECTION_PATTERNS = [
 const BOLD_FIELD = /^\s*(?:[-*]\s+)?\*\*(.+?)\*\*\s*:?\s*(.*)$/;
 const BULLET_FIELD = /^\s*[-*]\s+([^:*.]{1,60}):\s+(.+)$/;
 const DECISIONS = /\b(Accept|Request changes|Reject)\b/;
+/** "**F1.**", "**2)**": numbered findings inside a Reason, not new fields. */
+const ENUMERATOR = /^[A-Z]?\d+[.)]?$/;
 
 /** Markdown emphasis off, for display and for pasting into Codimango's text boxes. */
 export function plainText(text: string): string {
@@ -58,9 +62,15 @@ function sectionTitle(line: string): string | null {
   return null;
 }
 
-function parseFields(lines: string[]): ReportField[] {
+/**
+ * A text box's label ("**Reason**", "**Notes**") sits on its own line with the
+ * answer below. Inside such an answer, bulleted bold labels and numbered
+ * finding headings belong to the answer, so Copy takes all of it.
+ */
+function parseFields(lines: string[]): { intro: string; fields: ReportField[] } {
   const fields: ReportField[] = [];
-  let current: { label: string; lines: string[] } | null = null;
+  const intro: string[] = [];
+  let current: { label: string; lines: string[]; textBox: boolean } | null = null;
   const close = () => {
     if (!current) return;
     const value = plainText(current.lines.join('\n'));
@@ -69,15 +79,19 @@ function parseFields(lines: string[]): ReportField[] {
   };
   for (const line of lines) {
     const m = BOLD_FIELD.exec(line) ?? BULLET_FIELD.exec(line);
-    if (m) {
+    const label = m ? plainText(m[1]).replace(/:$/, '').trim() : '';
+    const insideAnswer = current?.textBox && (/^\s*[-*]\s/.test(line) || ENUMERATOR.test(label));
+    if (m && !insideAnswer) {
       close();
-      current = { label: plainText(m[1]).replace(/:$/, '').trim(), lines: m[2] ? [m[2]] : [] };
+      current = { label, lines: m[2] ? [m[2]] : [], textBox: !m[2] };
     } else if (current) {
       current.lines.push(line);
+    } else {
+      intro.push(line);
     }
   }
   close();
-  return fields;
+  return { intro: plainText(intro.join('\n')), fields };
 }
 
 function between(text: string, from: RegExp, to?: RegExp): string {
@@ -99,7 +113,9 @@ export function parseReport(text: string): ParsedReport | null {
   const close = () => {
     if (!current) return;
     const body = plainText(current.lines.join('\n'));
-    if (body || current.title !== 'Form') sections.push({ title: current.title, fields: parseFields(current.lines), body });
+    if (!body && current.title === 'Form') return;
+    const { intro, fields } = parseFields(current.lines);
+    sections.push({ title: current.title, fields, body, ...(intro && fields.length > 0 ? { intro } : {}) });
   };
   for (const line of form.split('\n')) {
     const title = sectionTitle(line);
@@ -115,16 +131,36 @@ export function parseReport(text: string): ParsedReport | null {
   if (sections.length === 0) return null;
 
   const decisionSection = sections.find((s) => /^decision\b/i.test(s.title));
-  const decisionText = decisionSection
-    ? (decisionSection.fields.find((f) => /^decision$/i.test(f.label))?.value ?? decisionSection.body)
-    : (/^.*(verdict|decision).*$/im.exec(summary)?.[0] ?? '');
-  const decision = DECISIONS.exec(decisionText)?.[1] as ParsedReport['decision'];
+  // In the form, only the selected choice counts: an answer like "Do not select
+  // yet — Needs evidence (…choose Request changes if…)" has no decision.
+  const decisionField = decisionSection?.fields.find((f) => /^decision\b/i.test(f.label));
+  const decision = (
+    decisionSection
+      ? /^(Accept|Request changes|Reject)\b/.exec((decisionField?.value ?? decisionSection.body).trim())
+      : DECISIONS.exec(/^.*(verdict|decision).*$/im.exec(summary)?.[0] ?? '')
+  )?.[1] as ParsedReport['decision'];
   const blockingMatch = /Blocking:\s*\**\s*(Yes|No|Needs evidence)/i.exec(src);
   const blocking = blockingMatch
     ? ((blockingMatch[1][0].toUpperCase() + blockingMatch[1].slice(1).toLowerCase()) as Blocking)
     : undefined;
 
   return { summary, decision, blocking, draft: /\bDRAFT\b/.test(src), sections };
+}
+
+/**
+ * Parts of the review form the report leaves out, for a "fill these in
+ * yourself" banner. Only parts every form has are checked: Mochi doesn't know
+ * which conditional sections (Validation Override, Agentic Full-Task Review)
+ * a task shows.
+ */
+export function formGaps(report: ParsedReport): string[] {
+  const gaps: string[] = [];
+  const find = (re: RegExp) => report.sections.find((s) => re.test(s.title));
+  if (!find(/taxonomy/i)) gaps.push('Taxonomy');
+  if (!find(/^decision\b/i)) gaps.push('Decision');
+  const checks = find(/human checks/i);
+  if (checks && !checks.fields.some((f) => /\bwhy\b/i.test(f.label))) gaps.push('a reason for each Human Checks score');
+  return gaps;
 }
 
 /** Two finished reports disagree when their decision or blocking answer differs. */

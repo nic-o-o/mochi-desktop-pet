@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentId, AgentJob } from './agentReviews.ts';
 import { AGENT_LABELS, isActive, isStale, minutesLabel } from './agentReviews.ts';
 import type { ParsedReport } from './agentReport.ts';
-import { parseReport, plainText, reportsDisagree } from './agentReport.ts';
+import { formGaps, parseReport, plainText, reportsDisagree } from './agentReport.ts';
 import type { TaskItem, XY } from './logic.ts';
 import { logClick, logVpv } from './usage.ts';
 
@@ -19,6 +19,11 @@ interface AgentReportViewProps {
   onOpenCodimango?: () => void;
   onClose: () => void;
   onBack: () => void;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listText(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 /** A Copy button that says "Copied" for two seconds. */
@@ -51,6 +56,7 @@ function CopyButton({ text, label, onCopied }: { text: string; label: string; on
 
 function ReportBody({ job, report, stale, onCopied }: { job: AgentJob; report: ParsedReport | null; stale: boolean; onCopied: (position: number | 'all') => void }) {
   const raw = job.report ?? '';
+  const gaps = report ? formGaps(report) : [];
   let position = 0;
   return (
     <div className="agent-report">
@@ -70,6 +76,12 @@ function ReportBody({ job, report, stale, onCopied }: { job: AgentJob; report: P
         </>
       ) : (
         <>
+          {gaps.length > 0 && (
+            <p className="agent-banner" role="status">
+              This report leaves out {listText(gaps)}. Fill {gaps.length > 1 ? 'those' : 'that'} in on Codimango yourself, and check for sections
+              only some tasks show, like Validation Override.
+            </p>
+          )}
           <div className="agent-verdict">
             {report.decision && <span className="agent-chip">Decision: {report.decision}</span>}
             {report.blocking && <span className={`agent-chip${report.blocking === 'Yes' ? ' is-blocking' : ''}`}>Blocking: {report.blocking}</span>}
@@ -80,6 +92,7 @@ function ReportBody({ job, report, stale, onCopied }: { job: AgentJob; report: P
           {report.sections.map((section, i) => (
             <section key={`${i}-${section.title}`} className="agent-section">
               <h4>{section.title}</h4>
+              {section.intro && <p className="agent-text muted">{section.intro}</p>}
               {section.fields.length > 0 ? (
                 section.fields.map((f) => {
                   const at = position++;
