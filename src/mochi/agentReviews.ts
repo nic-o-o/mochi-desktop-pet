@@ -29,6 +29,8 @@ export interface AgentJob {
   taskUpdatedAtMs: number | null;
   agent: AgentId;
   status: AgentJobStatus;
+  /** The model that ran it: Claude Code reports it; for Codex it is the one in its settings. */
+  model?: string;
   /** Tool calls so far: the only progress an agent reports. */
   steps: number;
   createdAtMs: number;

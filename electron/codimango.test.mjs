@@ -52,7 +52,9 @@ describe('pickRow', () => {
 });
 
 describe('isAllowedLink', () => {
-  it('allows only https Codimango pages and the Alacarte page', () => {
+  it('allows only https Codimango pages, the Alacarte page and SEV pages', () => {
+    expect(isAllowedLink('https://www.internalfb.com/sevmanager/view/728082')).toBe(true);
+    expect(isAllowedLink('https://www.internalfb.com/sevmanager/view/728082/edit')).toBe(false);
     expect(isAllowedLink('https://www.internalfb.com/alacarte')).toBe(true);
     expect(
       isAllowedLink(

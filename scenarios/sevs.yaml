@@ -1,0 +1,65 @@
+# Codimango SEVs: a bubble when one opens and when it's mitigated, and a line at
+# the top of the panel while it's open. The main process reads and filters SEVs
+# (electron/sevs.mjs, unit-tested); here the fake bridge hands over the result
+# (given.sevs, then the `sevs` step for a new read). Format: scenarios/README.md.
+
+fixtures:
+  one_review:
+    reviewing:
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 5, claimed_ago_h: 40, updated_ago_h: 3 }
+
+scenarios:
+  - id: sev-open-bubble
+    title: A newly opened Codimango SEV bubbles once, comes in front of other apps, and the bubble opens the SEV
+    given: { live: one_review }
+    steps:
+      - start
+      - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
+      - expect:
+          bubble: Codimango SEV3 open
+          raised: 1
+          see: [TBR mac_swe lane increased job timeouts. Submissions or validation may fail until it's fixed.]
+          events:
+            - { event: mochi_vpv, surface: bubble, component: bubble, notif_kind: sev_open }
+      - click_bubble
+      - expect: { opened: [/sevmanager/view/728082], bubble: none }
+      - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
+      - expect: { bubble: none, raised: 1 }
+
+  - id: sev-panel-line
+    title: While a SEV is open the panel shows one line for it, and the line opens the SEV
+    given:
+      live: one_review
+      sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 30 }]
+    steps:
+      - start
+      - expect: { bubble: none }
+      - click_pet
+      - expect: { see: ["SEV3 open: TBR mac_swe lane increased job timeouts", ember-turn-timer] }
+      - click: SEV3 open
+      - expect:
+          opened: [/sevmanager/view/728082]
+          events:
+            - { event: mochi_click, surface: glance_panel, component: sev, notif_kind: sev_open }
+
+  - id: sev-mitigated
+    title: When a SEV Mochi told you about is mitigated, it says so and the panel line goes away
+    given: { live: one_review }
+    steps:
+      - start
+      - sevs: [{ id: S726569, level: 2, open: true, title: Trials failing at sandbox creation, opened_ago_h: 2 }]
+      - expect: { bubble: Codimango SEV2 open }
+      - close_bubble
+      - sevs: [{ id: S726569, level: 2, open: false, title: Trials failing at sandbox creation, opened_ago_h: 3, mitigated_ago_h: 0 }]
+      - expect: { bubble: Codimango SEV mitigated, see: [Retry anything it blocked.] }
+      - close_bubble
+      - click_pet
+      - expect: { not_see: [SEV2 open] }
+
+  - id: sev-mitigated-unseen
+    title: A SEV that was opened and mitigated between reads doesn't bubble
+    given: { live: one_review }
+    steps:
+      - start
+      - sevs: [{ id: S727987, level: 3, open: false, title: Harbor result ingest stopped, opened_ago_h: 5, mitigated_ago_h: 4 }]
+      - expect: { bubble: none, raised: 0 }

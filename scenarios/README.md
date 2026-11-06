@@ -47,7 +47,8 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 - `saved`: a fixture name or inline snapshot. Mochi diffs the first fetch against it, which is how "something changed while Mochi was closed" pops a bubble. Leave it out for a first launch.
 - `live`: a fixture, an inline snapshot, `{ error: cli_missing | login_required | offline | error }`, or a list (one per fetch; the last repeats).
 - `sections`: saved section choices, e.g. `{ revisions: false, reviews: true, drafts: true }`.
-- `agents`: agent reviews the shell already has, e.g. `[{ task: r2, agent: claude, status: done, report: accept }]`. Optional `failure` (`skill_missing`, `codimango_login`, `timeout`, `interrupted`), `started_ago_min`, `steps`, `task_updated_ago_h` (the task's last change when the run started).
+- `agents`: agent reviews the shell already has, e.g. `[{ task: r2, agent: claude, status: done, report: accept }]`. Optional `failure` (`skill_missing`, `codimango_login`, `timeout`, `interrupted`), `started_ago_min`, `steps`, `model`, `task_updated_ago_h` (the task's last change when the run started).
+- `sevs`: Codimango SEVs the main process has already read and filtered, same shape as the `sevs` step.
 
 A file can also have `agent_reports:`: report texts by name, written the way the
 review skill answers ("## Review summary", "## Structured form"). `report:` in
@@ -69,6 +70,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `press: <aria-label>` | A control by its accessible label, e.g. `Increase reviewed goal` |
 | `next_fetch: <live>` | Change what the following fetches return |
 | `wake`, `dock_report` | Mac woke up; Dock → Report a Problem |
+| `sevs: [{ id: S1, level: 3, open: true, title: …, opened_ago_h: 1 }]` | A new Codimango SEV read arrives (`mitigated_ago_h` for mitigated ones) |
 | `wait: <ms>` | Let time pass |
 | `agent_progress: { task, agent, minutes, steps }` | An agent run has been going this long |
 | `agent_finishes: { task, agent, report }` | An agent run ends with this report |
@@ -82,6 +84,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `see`, `not_see` | Mochi's UI contains / doesn't contain each string (the mock backdrop page is ignored) |
 | `in_order` | The strings appear in this order (ranking) |
 | `panel` | `open` or `closed` |
+| `raised` | Times Mochi came in front of other apps since start (once per arriving bubble) |
 | `pet_over_view` | `true` when the pet sits above an open full view, so it can be dragged |
 | `bubble` | The bubble contains this text, or `none` |
 | `badge` | Unread count on the bell, or `none` |

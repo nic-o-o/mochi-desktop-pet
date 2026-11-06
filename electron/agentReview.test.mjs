@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { agentCommand, classifyRun, createAgentReviews, findReviewSkill, isTaskName, readLine } from './agentReview.mjs';
+import { agentCommand, classifyRun, codexModel, createAgentReviews, findReviewSkill, isTaskName, readLine } from './agentReview.mjs';
 
 const REPORT = '## Review summary\nDecision: Accept\n\n## Structured form\n### 1. Decision\nAccept';
 const SKILL = '/plugins/team-aai/1.86.204/skills/codimango-review-assistant/SKILL.md';
@@ -57,20 +57,22 @@ describe('createAgentReviews', () => {
 
     fake.runs[0].emit(
       'Claude Code at Meta (banner, not JSON)',
-      { type: 'assistant', message: { content: [{ type: 'tool_use' }, { type: 'text' }, { type: 'tool_use' }] } },
+      { type: 'system', subtype: 'init', model: 'claude-opus-5-5' },
+      { type: 'assistant', message: { model: 'claude-haiku-5-5', content: [{ type: 'tool_use' }, { type: 'text' }, { type: 'tool_use' }] } },
       { type: 'result', subtype: 'success', is_error: false, result: REPORT },
     );
     expect(store.list()[0].steps).toBe(2);
     fake.runs[0].exit();
     await flush();
 
-    expect(store.list()[0]).toMatchObject({ status: 'done', report: REPORT });
+    expect(store.list()[0]).toMatchObject({ status: 'done', report: REPORT, model: 'claude-opus-5-5' });
     expect(finished).toHaveLength(1);
   });
 
   it('reads the Codex report from its -o file', async () => {
-    const store = make({ readFile: (f) => (f.endsWith('report.md') ? REPORT : '') });
+    const store = make({ readFile: (f) => (f.endsWith('report.md') ? REPORT : ''), findCodexModel: () => 'gpt-5.6-sol' });
     store.start({ taskId: 'r1', taskName: 'ember-turn-timer', agents: ['codex'] });
+    expect(store.list()[0].model).toBe('gpt-5.6-sol');
     fake.runs[0].emit({ type: 'item.completed' }, { type: 'item.completed' });
     fake.runs[0].exit();
     await flush();
@@ -181,6 +183,20 @@ describe('readLine', () => {
     expect(readLine('claude', JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true }))).toEqual({ error: 'error_max_turns' });
     expect(readLine('codex', JSON.stringify({ type: 'turn.failed', error: { message: 'quota' } }))).toEqual({ error: 'quota' });
     expect(readLine('codex', JSON.stringify({ type: 'item.started' }))).toEqual({});
+  });
+});
+
+describe('codexModel', () => {
+  const fsWith = (text) => ({
+    readFileSync: () => {
+      if (text === null) throw new Error('ENOENT');
+      return text;
+    },
+  });
+  it('reads the top-level model from config.toml, not one inside a table', () => {
+    expect(codexModel('/h', fsWith('model = "gpt-5.6-sol[1m]"\nmodel_reasoning_effort = "high"\n'), {})).toBe('gpt-5.6-sol[1m]');
+    expect(codexModel('/h', fsWith('approval = "never"\n[profiles.fast]\nmodel = "gpt-mini"\n'), {})).toBeNull();
+    expect(codexModel('/h', fsWith(null), {})).toBeNull();
   });
 });
 

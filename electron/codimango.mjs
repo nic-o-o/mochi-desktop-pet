@@ -143,7 +143,8 @@ export function isAllowedLink(url) {
     const u = new URL(String(url));
     if (u.protocol !== 'https:') return false;
     if (u.hostname === 'codimango.internalmeta.com') return true;
-    return u.hostname === 'www.internalfb.com' && (u.pathname === '/alacarte' || u.pathname.startsWith('/alacarte/'));
+    if (u.hostname !== 'www.internalfb.com') return false;
+    return u.pathname === '/alacarte' || u.pathname.startsWith('/alacarte/') || /^\/sevmanager\/view\/\d+$/.test(u.pathname);
   } catch {
     return false;
   }

@@ -35,6 +35,7 @@ import {
   onReportRequest,
   onSimulateNotification,
   openLink,
+  raisePet,
   reportProblem,
   startAgentReview,
   syncBounds,
@@ -44,6 +45,8 @@ import type { ProblemReportState } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
 import { ALACARTE_URL } from './mochi/SetupCard.tsx';
 import type { SetupKind } from './mochi/SetupCard.tsx';
+import { sevBubbleText, useSevs } from './mochi/sevs.ts';
+import type { SevBubble } from './mochi/sevs.ts';
 import { ExpandedView } from './mochi/ExpandedView.tsx';
 import { elapsedMs, endPanelSession, logClick, logClose, logVpv, mark, startPanelSession, useVpv } from './mochi/usage.ts';
 import type { Mark } from './mochi/usage.ts';
@@ -68,7 +71,7 @@ interface Bubble {
   taskName: string;
   detail: string;
   raisedAtMs: number;
-  kind: Notice['kind'] | 'agent_review';
+  kind: Notice['kind'] | 'agent_review' | SevBubble['kind'];
   /** Codimango page to open instead of the panel (real notifications). */
   url?: string;
   /** Agent review finished: clicking opens that task's report. */
@@ -82,6 +85,9 @@ interface Bubble {
 /* Usage logging: why the panel opened or closed (logging plan). */
 type PanelTrigger = 'pet_click' | 'keyboard' | 'bubble_click' | 'back';
 type PanelCloseReason = 'close_button' | 'pet_click' | 'keyboard' | 'bubble_arrived' | 'hide' | 'expanded_view' | 'other';
+
+/* Bubbles that aren't Codimango task notices. */
+const EXTRA_BUBBLE_ICONS: Partial<Record<NonNullable<Bubble['kind']>, string>> = { agent_review: '🤖', sev_open: '⚠️', sev_mitigated: '✅' };
 
 function bubbleFields(b: Bubble) {
   return { notif_kind: b.kind ?? 'placeholder', task_id: b.taskId, source: b.source, time_on_screen_ms: elapsedMs(b.shownAt) };
@@ -388,9 +394,21 @@ export default function App() {
   const { showNext, showPrev, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice, source) => {
     touch();
     setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined, taskId: n.taskId || undefined, source, shownAt: mark() });
-    if (source === 'arrival') setUnread((u) => u + 1);
-    else setUnread(0);
+    if (source === 'arrival') {
+      setUnread((u) => u + 1);
+      raisePet();
+    } else setUnread(0);
     /* The bubble gets the stage: hide the panel whenever one is up. */
+    panelCloseReason.current = 'bubble_arrived';
+    setPanelOpen(false);
+  });
+
+  /* Codimango SEVs: a bubble when one opens or is mitigated (clicking opens the SEV), a panel line while open. */
+  const openSevs = useSevs((b: SevBubble) => {
+    touch();
+    const { title, detail } = sevBubbleText(b);
+    setBubble({ id: Date.now(), title, taskName: '', detail, raisedAtMs: Date.now(), kind: b.kind, url: b.sev.url, source: 'arrival', shownAt: mark() });
+    raisePet();
     panelCloseReason.current = 'bubble_arrived';
     setPanelOpen(false);
   });
@@ -411,6 +429,7 @@ export default function App() {
       source: 'arrival',
       shownAt: mark(),
     });
+    raisePet();
     panelCloseReason.current = 'bubble_arrived';
     setPanelOpen(false);
   });
@@ -760,7 +779,7 @@ export default function App() {
           >
             <strong className="bubble-title">
               <span className="bubble-icon" aria-hidden="true">
-                {bubble.kind === 'agent_review' ? '🤖' : bubble.kind ? NOTICE_ICONS[bubble.kind] ?? '🔔' : '🔔'}
+                {bubble.kind ? (EXTRA_BUBBLE_ICONS[bubble.kind] ?? NOTICE_ICONS[bubble.kind as NonNullable<Notice['kind']>] ?? '🔔') : '🔔'}
               </span>
               {bubble.title}
             </strong>
@@ -915,6 +934,11 @@ export default function App() {
             setEditingIn(null);
           }}
           onOpenTask={openTaskDetail}
+          sevs={openSevs}
+          onOpenSev={(sev) => {
+            touch();
+            openLink(sev.url);
+          }}
           setup={
             setupKind
               ? {

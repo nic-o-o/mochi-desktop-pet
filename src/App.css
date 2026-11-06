@@ -1444,6 +1444,32 @@ html.mochi-shell .expanded-view {
   color: var(--ink-soft);
 }
 
+.sev-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One quiet line per open SEV: a link to SEV Manager, not a card. */
+.sev-line {
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.sev-line:hover {
+  background: color-mix(in srgb, var(--orange) 22%, transparent);
+}
+
 .glance-freshness.is-stale {
   color: var(--orange);
 }
