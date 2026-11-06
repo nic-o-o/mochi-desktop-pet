@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { collectNewLines, flushSender, loadSharing, setSharing } from './sender.mjs';
+import { collectNewLines, flushSender, loadSharing, setSharing, toLoggerRow } from './sender.mjs';
 
 function writeLog(dir, rows) {
   fs.writeFileSync(path.join(dir, 'events.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
@@ -34,7 +34,9 @@ describe('flushSender', () => {
     const first = await flushSender({ logFile, userDataDir: dir, logger: 'TestConfig', run });
     expect(first).toEqual({ shipped: 2, dropped: 0 });
     expect(calls).toHaveLength(1);
-    expect(calls[0][0]).toContain('TestConfig');
+    expect(calls[0][0]).toEqual(['--logger', 'TestConfig', '--fail-on-error']);
+    const sent = calls[0][1].trim().split('\n').map((l) => JSON.parse(l));
+    expect(sent.map((r) => r[16].str)).toEqual(['a', 'b']);
     const second = await flushSender({ logFile, userDataDir: dir, logger: 'TestConfig', run });
     expect(second).toEqual({ shipped: 0, dropped: 0, reason: 'empty' });
     expect(calls).toHaveLength(1);
@@ -90,6 +92,36 @@ describe('flushSender', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mochi-sender-'));
     const out = await flushSender({ logFile: path.join(dir, 'missing.jsonl'), userDataDir: dir, logger: 'TestConfig', run: async () => true });
     expect(out).toEqual({ shipped: 0, dropped: 0, reason: 'empty' });
+  });
+});
+
+describe('toLoggerRow', () => {
+  it('keys columns by thrift field ID with typed values', () => {
+    const line = JSON.stringify({
+      event_name: 'mochi_resource',
+      unixname: 'debrax',
+      surface: 'pet',
+      memory_mb: 212.6,
+      launched_at_login: true,
+      cpu_percent: 3.5,
+      title: 'not a column',
+      time: '2026-11-04T12:00:00.000Z',
+    });
+    expect(JSON.parse(toLoggerRow(line))).toEqual({
+      1: { str: 'mochi_resource' },
+      2: { i64: Date.parse('2026-11-04T12:00:00.000Z') },
+      3: { str: 'debrax' },
+      9: { str: 'pet' },
+      39: { i64: 1 },
+      40: { i64: 213 },
+      41: { double: 3.5 },
+    });
+  });
+
+  it('rejects lines without an event name or a valid time', () => {
+    expect(toLoggerRow('not json')).toBeNull();
+    expect(toLoggerRow(JSON.stringify({ time: '2026-11-04T12:00:00.000Z' }))).toBeNull();
+    expect(toLoggerRow(JSON.stringify({ event_name: 'mochi_click', time: 'soon' }))).toBeNull();
   });
 });
 
