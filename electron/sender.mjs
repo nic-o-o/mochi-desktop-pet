@@ -1,9 +1,10 @@
 /* Scuba sender (logging plan): ship events.jsonl rows through logger_cat.
  *
- * Local-only until LOGGER_CONFIG is set to Debra's codegen'd
- * AaiMochiEventsLoggerConfig; with it null every flush is a no-op and no
- * subprocess ever runs. Sharing is opt-out (toggle in the Dock menu,
- * persisted in userData): nothing ships while it is off.
+ * Rows go to AaiMochiEventsLoggerConfig (D129586374; Scuba
+ * aai_mochi_events/sandbox). logger_cat takes one Thrift typed-JSON message
+ * per line, keyed by field ID, so each events.jsonl line is converted with
+ * toLoggerRow first. Sharing is opt-out (toggle in the Dock menu, persisted
+ * in userData): nothing ships while it is off.
  *
  * Queue rule from the plan: buffer new lines, send one batch, drop on
  * failure (the offset advances either way so a bad batch never retries
@@ -14,11 +15,52 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/* Set once the LoggerConfig codegen lands; null keeps every Mac local-only. */
-export const LOGGER_CONFIG = null;
+/* null keeps every Mac local-only (flushes become no-ops). */
+export const LOGGER_CONFIG = 'AaiMochiEventsLoggerConfig';
 export const LOGGER_BIN = process.env.MOCHI_LOGGER_BIN ?? 'logger_cat';
 export const FLUSH_MS = 10 * 60_000;
 const SEND_TIMEOUT_MS = 30_000;
+
+/* Thrift field ID and type per column, from aai_mochi_events_logger_config.thrift.
+   1 event_name and 2 event_time_ms are required; time comes from the line's ISO `time`. */
+const STRING_COLUMNS = [
+  'unixname', 'app_session_id', 'panel_session_id', 'app_version', 'app_build', 'os_version',
+  'surface', 'component', 'action', 'trigger', 'sections_on', 'reason', 'section', 'task_id',
+  'badge', 'freshness_state', 'goal', 'notif_kind', 'source', 'kind', 'result', 'status',
+];
+const I64_COLUMNS = [
+  'unread_count', 'time_hidden_ms', 'time_spent_ms', 'position', 'ms_since_panel_open',
+  'hidden_count', 'data_age_ms', 'old_value', 'new_value', 'time_on_screen_ms', 'duration_ms',
+  'reviewing_rows', 'mine_rows', 'enabled', 'launched_at_login', 'memory_mb',
+];
+export const FIELD_IDS = Object.fromEntries([
+  ...STRING_COLUMNS.map((name, i) => [name, [i + 3, 'str']]),
+  ...I64_COLUMNS.map((name, i) => [name, [i + 25, 'i64']]),
+  ['cpu_percent', [41, 'double']],
+]);
+
+/** One events.jsonl line as a logger_cat message, or null if it can't be sent. */
+export function toLoggerRow(line) {
+  let event = null;
+  try {
+    event = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const time = Date.parse(event?.time);
+  if (typeof event?.event_name !== 'string' || !Number.isFinite(time)) return null;
+  const row = { 1: { str: event.event_name }, 2: { i64: time } };
+  for (const [key, value] of Object.entries(event)) {
+    const field = FIELD_IDS[key];
+    if (!field) continue;
+    const [id, type] = field;
+    if (type === 'str' && (typeof value === 'string' || typeof value === 'number')) row[id] = { str: String(value) };
+    else if (type === 'i64' && typeof value === 'boolean') row[id] = { i64: value ? 1 : 0 };
+    else if (type === 'i64' && typeof value === 'number' && Number.isFinite(value)) row[id] = { i64: Math.round(value) };
+    else if (type === 'double' && typeof value === 'number' && Number.isFinite(value)) row[id] = { double: value };
+  }
+  return JSON.stringify(row);
+}
 
 export function senderStateFile(userDataDir) {
   return path.join(userDataDir, 'sharing.json');
@@ -132,9 +174,11 @@ export async function flushSender({ logFile, userDataDir, logger = LOGGER_CONFIG
     if (sent !== state.sent) saveState(userDataDir, { ...state, sent });
     return { shipped: 0, dropped: 0, reason: 'empty' };
   }
-  let ok = false;
+  const rows = lines.map(toLoggerRow).filter(Boolean);
+  let ok = rows.length > 0;
   try {
-    ok = await run(['--logger', logger, '--input-format', 'json-lines'], `${lines.join('\n')}\n`);
+    /* --fail-on-error: without it logger_cat exits 0 even when it rejects rows. */
+    if (ok) ok = await run(['--logger', logger, '--fail-on-error'], `${rows.join('\n')}\n`);
   } catch {
     ok = false;
   }

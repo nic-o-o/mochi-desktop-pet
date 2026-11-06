@@ -287,7 +287,7 @@ app.whenReady().then(() => {
   });
   sevWatch = createSevWatch({ onChange: (sevs) => win?.webContents.send('mochi:sevs', sevs) });
   sevWatch.start();
-  /* Scuba sender: no-op until LOGGER_CONFIG is set; never throws. */
+  /* Scuba sender: no-op while sharing is off; never throws. */
   const flush = () => {
     if (!events) return;
     flushSender({ logFile: events.file, userDataDir: app.getPath('userData') }).catch((e) => {
