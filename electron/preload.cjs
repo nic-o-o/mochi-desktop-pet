@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('mochiShell', {
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
   logEvent: (event) => ipcRenderer.send('mochi:log-event', event),
   usageSummary: () => ipcRenderer.invoke('mochi:usage-summary'),
-  raise: () => ipcRenderer.send('mochi:raise'),
   listAgentReviews: () => ipcRenderer.invoke('mochi:agent-reviews-list'),
   startAgentReview: (req) => ipcRenderer.invoke('mochi:agent-review-start', req),
   cancelAgentReview: (id) => ipcRenderer.invoke('mochi:agent-review-cancel', id),

@@ -35,7 +35,6 @@ import {
   onReportRequest,
   onSimulateNotification,
   openLink,
-  raisePet,
   reportProblem,
   startAgentReview,
   syncBounds,
@@ -394,10 +393,8 @@ export default function App() {
   const { showNext, showPrev, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice, source) => {
     touch();
     setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined, taskId: n.taskId || undefined, source, shownAt: mark() });
-    if (source === 'arrival') {
-      setUnread((u) => u + 1);
-      raisePet();
-    } else setUnread(0);
+    if (source === 'arrival') setUnread((u) => u + 1);
+    else setUnread(0);
     /* The bubble gets the stage: hide the panel whenever one is up. */
     panelCloseReason.current = 'bubble_arrived';
     setPanelOpen(false);
@@ -408,7 +405,6 @@ export default function App() {
     touch();
     const { title, detail } = sevBubbleText(b);
     setBubble({ id: Date.now(), title, taskName: '', detail, raisedAtMs: Date.now(), kind: b.kind, url: b.sev.url, source: 'arrival', shownAt: mark() });
-    raisePet();
     panelCloseReason.current = 'bubble_arrived';
     setPanelOpen(false);
   });
@@ -429,7 +425,6 @@ export default function App() {
       source: 'arrival',
       shownAt: mark(),
     });
-    raisePet();
     panelCloseReason.current = 'bubble_arrived';
     setPanelOpen(false);
   });

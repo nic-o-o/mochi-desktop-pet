@@ -17,6 +17,7 @@ import type { AgentReviewControls } from './AgentRow.tsx';
 import { jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
+import { SEV_LINES_MAX, sevHeadline } from './sevs.ts';
 import type { Sev } from './sevs.ts';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionPrefs } from './sections.ts';
@@ -489,20 +490,22 @@ export function OverviewPanel(props: OverviewPanelProps) {
 
       {props.sevs && props.sevs.length > 0 && (
         <ul className="sev-lines" aria-label="Codimango SEVs">
-          {props.sevs.map((sev) => (
+          {props.sevs.slice(0, SEV_LINES_MAX).map((sev) => (
             <li key={sev.id}>
               <button
                 type="button"
                 className="sev-line"
+                title={`SEV${sev.level} open: ${sev.title}`}
                 onClick={() => {
                   logClick('glance_panel', 'sev', { notif_kind: 'sev_open' });
                   props.onOpenSev?.(sev);
                 }}
               >
-                <span aria-hidden="true">⚠️</span> SEV{sev.level} open: {sev.title}
+                <span aria-hidden="true">⚠️</span> SEV{sev.level} · {sevHeadline(sev.title)}
               </button>
             </li>
           ))}
+          {props.sevs.length > SEV_LINES_MAX && <li className="sev-more">+{props.sevs.length - SEV_LINES_MAX} more open</li>}
         </ul>
       )}
 

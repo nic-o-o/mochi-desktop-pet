@@ -142,7 +142,7 @@ scenarios:
       - agent_progress: { task: r2, agent: claude, minutes: 12, steps: 30 }
       - expect: { see: [Claude Code reviewing · 12 min] }
       - agent_finishes: { task: r2, agent: claude, report: request_changes }
-      - expect: { panel: closed, bubble: Agent review ready, raised: 1, see: [ember-turn-timer, Claude Code finished its review.] }
+      - expect: { panel: closed, bubble: Agent review ready, see: [ember-turn-timer, Claude Code finished its review.] }
       - click_bubble
       - expect:
           see: [Agent review, "Decision: Request changes", "Blocking: Yes", Quality Review Agent, Reviewer Agrees?, Reviewer Confidence, High]
