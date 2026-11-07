@@ -87,30 +87,41 @@ title, opened in the last week; only SEVs opened in the last day bubble. Titles
 about security holes or personal data are left out, so they never pop up on a
 shared screen. If `meta` is missing or the read fails, Mochi stays quiet.
 
-## Install as a Mac app (no terminal)
+## Install as a Mac app (one-click download)
+
+Download **`Mochi.dmg`** from the latest release
+(`github.com/nic-o-o/mochi-desktop-pet/releases/latest`), open it and drag
+**Mochi** to **Applications**, then open Mochi from Spotlight or Launchpad.
+
+> First launch: macOS can't verify the app (ad-hoc signed, not notarized),
+> so it warns it may be malware. Click **Done**, then System Settings →
+> Privacy & Security → **Open Anyway**, and open Mochi again. (Right-click →
+> Open on the app skips the Settings trip.)
+
+To update, quit Mochi first (right-click its Dock icon → Quit), then drag the
+new DMG's Mochi to Applications and choose Replace. Only one Mochi runs at a
+time, so a new copy opened while the old one runs just quits. The packaged app loads its built files,
+so no terminal or Vite server is needed; right-click its Dock icon for
+**Open at Login**.
+Logs go to `~/Library/Logs/Mochi/main.log`.
+
+**Releasing to testers:** cut a version per "Release cadence & version cuts"
+below and push the `vx.y.z` tag — CI builds the DMG and publishes the
+release automatically. (The old Drive-folder flow via `npm run release` is
+retired; the script remains for local rebuilds: `npm run release` alone
+rebuilds the current version.)
+
+### Build it yourself (developers)
 
 ```sh
 npm install
 npm run package
 ```
 
-This builds `out/Mochi.dmg`: open it and drag **Mochi** to **Applications**,
-then open Mochi from Spotlight or Launchpad. Or run `npm run package -- --install`:
-it replaces the installed copy (`/Applications`, else `~/Applications`) and
-restarts a running Mochi on the new build.
-
-**Releasing to testers:** `npm run release -- patch` (or `minor`) bumps the
-version, builds and installs it, then opens the testers' Drive folder and shows
-`out/Mochi.dmg` in Finder: drag it in and choose "Replace existing file" so the
-link stays the same. It prints a note to post for testers. `npm run release`
-alone rebuilds the current version.
-
-To update from the DMG by hand, quit Mochi first (right-click its Dock icon →
-Quit), then drag the new one to Applications and choose Replace. Only one
-Mochi runs at a time, so a new copy opened while the old one runs just quits. The packaged app loads its built files,
-so no terminal or Vite server is needed; right-click its Dock icon for
-**Open at Login**.
-Logs go to `~/Library/Logs/Mochi/main.log`.
+This builds `out/Mochi.dmg` — the same file CI attaches to each
+version-tagged release. Or run `npm run package -- --install`: it replaces
+the installed copy (`/Applications`, else `~/Applications`) and restarts a
+running Mochi on the new build.
 
 ## Release cadence & version cuts
 
