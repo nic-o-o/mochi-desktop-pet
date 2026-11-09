@@ -186,101 +186,6 @@ function describeSubmitError(error?: { kind: string; message?: string }): string
 
 type SubmitPhase = 'idle' | 'confirming' | 'working' | 'done' | 'blocked';
 
-/** Direct-submit button for ready rows: confirm → dry-run preflight → pinned submit. */
-function SubmitButton({ taskId, section, onSubmitted }: { taskId: string; section: string; onSubmitted?: () => void }) {
-  const [phase, setPhase] = useState<SubmitPhase>('idle');
-  const [note, setNote] = useState('');
-  if (!canSubmit()) return null;
-  const fields = { section, task_id: taskId, ms_since_panel_open: msSincePanelOpen() };
-  const run = async () => {
-    setPhase('working');
-    setNote('Checking…');
-    logClick('glance_panel', 'submit_button', { ...fields, action: 'confirm' });
-    const dry = await submitDryRun(taskId);
-    if (!dry) {
-      setPhase('blocked');
-      setNote('Submit needs the desktop shell.');
-      return;
-    }
-    if (!dry.ok) {
-      setPhase('blocked');
-      setNote(describeSubmitError(dry.error));
-      logClick('glance_panel', 'submit_button', { ...fields, action: 'blocked_preflight' });
-      return;
-    }
-    setNote('Submitting…');
-    const sh = await submitSha(taskId);
-    if (!sh?.ok || !sh.sha) {
-      setPhase('blocked');
-      setNote(describeSubmitError(sh?.error));
-      logClick('glance_panel', 'submit_button', { ...fields, action: 'blocked_no_sha' });
-      return;
-    }
-    const done = await submitTask(taskId, sh.sha);
-    if (!done?.ok) {
-      setPhase('blocked');
-      setNote(describeSubmitError(done?.error));
-      logClick('glance_panel', 'submit_button', { ...fields, action: 'blocked_submit' });
-      return;
-    }
-    setPhase('done');
-    setNote('Submitted ✓');
-    logClick('glance_panel', 'submit_button', { ...fields, action: 'submitted' });
-    onSubmitted?.();
-  };
-  if (phase === 'confirming') {
-    return (
-      <div className="agent-row">
-        <fieldset className="agent-picker">
-          <legend>Submit for review</legend>
-          <p className="muted small">Submits this exact validated revision. ATR may auto-accept.</p>
-          <div className="agent-picker-actions">
-            <button type="button" className="btn-secondary" onClick={() => setPhase('idle')}>
-              Cancel
-            </button>
-            <button type="button" className="btn-primary" onClick={() => void run()}>
-              Submit
-            </button>
-          </div>
-        </fieldset>
-      </div>
-    );
-  }
-  if (phase === 'working' || phase === 'done' || phase === 'blocked') {
-    const status = phase === 'working' ? 'running' : phase === 'done' ? 'done' : 'failed';
-    return (
-      <div className="agent-row">
-        <ul className="agent-status-list">
-          <li className={`agent-status agent-${status}`}>{note}</li>
-        </ul>
-        {phase === 'blocked' && (
-          <div className="agent-row-actions">
-            <button type="button" className="btn-link agent-link" onClick={() => setPhase('idle')}>
-              Dismiss
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="agent-row">
-      <div className="agent-row-actions">
-        <button
-          type="button"
-          className="btn-link agent-link"
-          onClick={() => {
-            logClick('glance_panel', 'submit_button', { ...fields, action: 'open_confirm' });
-            setPhase('confirming');
-          }}
-        >
-          Submit
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /** One row; logs a VPV once per panel opening when half of it is on screen for 250 ms. */
 function GlanceRow({
   task: t,
@@ -309,8 +214,50 @@ function GlanceRow({
       : kind === 'draft'
         ? draftRowFlag(t.draftState)
         : pendingRowFlag(t.slaDueMs, nowMs);
-  const fields = { section: SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]], task_id: t.id, position, badge: flag.text };
+  const section = SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]];
+  const fields = { section, task_id: t.id, position, badge: flag.text };
   useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
+  /* Ready drafts get Submit in the flag slot (drafts + ready-for-submission sections). */
+  const showSubmit = kind === 'draft' && t.draftState === 'ready' && canSubmit();
+  const [phase, setPhase] = useState<SubmitPhase>('idle');
+  const [note, setNote] = useState('');
+  const clickFields = { section, task_id: t.id, ms_since_panel_open: msSincePanelOpen() };
+  const runSubmit = async () => {
+    setPhase('working');
+    setNote('Checking…');
+    logClick('glance_panel', 'submit_button', { ...clickFields, action: 'confirm' });
+    const dry = await submitDryRun(t.id);
+    if (!dry) {
+      setPhase('blocked');
+      setNote('Submit needs the desktop shell.');
+      return;
+    }
+    if (!dry.ok) {
+      setPhase('blocked');
+      setNote(describeSubmitError(dry.error));
+      logClick('glance_panel', 'submit_button', { ...clickFields, action: 'blocked_preflight' });
+      return;
+    }
+    setNote('Submitting…');
+    const sh = await submitSha(t.id);
+    if (!sh?.ok || !sh.sha) {
+      setPhase('blocked');
+      setNote(describeSubmitError(sh?.error));
+      logClick('glance_panel', 'submit_button', { ...clickFields, action: 'blocked_no_sha' });
+      return;
+    }
+    const done = await submitTask(t.id, sh.sha);
+    if (!done?.ok) {
+      setPhase('blocked');
+      setNote(describeSubmitError(done?.error));
+      logClick('glance_panel', 'submit_button', { ...clickFields, action: 'blocked_submit' });
+      return;
+    }
+    setPhase('done');
+    setNote('Submitted ✓');
+    logClick('glance_panel', 'submit_button', { ...clickFields, action: 'submitted' });
+    onSubmitted?.();
+  };
   return (
     <li ref={ref} className="glance-row">
       <button
@@ -336,13 +283,55 @@ function GlanceRow({
                 ? `Submitted by ${t.submittedBy}`
                 : `Assigned by ${t.requester}`}
         </span>
-        {eventSection !== 'submittable' && <RowFlag flag={flag} />}
+        {showSubmit ? (
+          phase === 'idle' || phase === 'confirming' ? (
+            <button
+              type="button"
+              className="btn-link agent-link"
+              onClick={() => {
+                logClick('glance_panel', 'submit_button', { ...clickFields, action: 'open_confirm' });
+                setPhase('confirming');
+              }}
+            >
+              Submit
+            </button>
+          ) : (
+            <span className="muted small">{phase === 'done' ? 'Submitted ✓' : note}</span>
+          )
+        ) : (
+          <RowFlag flag={flag} />
+        )}
       </div>
       {kind === 'pending' && agentReview && (
         <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
       )}
-      {kind === 'draft' && t.draftState === 'ready' && (
-        <SubmitButton taskId={t.id} section={SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]]} onSubmitted={onSubmitted} />
+      {showSubmit && phase === 'confirming' && (
+        <div className="agent-row">
+          <fieldset className="agent-picker">
+            <legend>Submit for review</legend>
+            <p className="muted small">Submits this exact validated revision. ATR may auto-accept.</p>
+            <div className="agent-picker-actions">
+              <button type="button" className="btn-secondary" onClick={() => setPhase('idle')}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={() => void runSubmit()}>
+                Submit
+              </button>
+            </div>
+          </fieldset>
+        </div>
+      )}
+      {showSubmit && phase === 'blocked' && (
+        <div className="agent-row">
+          <ul className="agent-status-list">
+            <li className="agent-status agent-failed">{note}</li>
+          </ul>
+          <div className="agent-row-actions">
+            <button type="button" className="btn-link agent-link" onClick={() => setPhase('idle')}>
+              Dismiss
+            </button>
+          </div>
+        </div>
       )}
     </li>
   );
