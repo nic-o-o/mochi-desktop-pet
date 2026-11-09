@@ -230,45 +230,54 @@ function SubmitButton({ taskId, section, onSubmitted }: { taskId: string; sectio
   };
   if (phase === 'confirming') {
     return (
-      <span className="glance-submit-confirm">
-        <span className="muted small">Submit for review? ATR may auto-accept.</span>{' '}
-        <button type="button" className="glance-submit-go" onClick={() => void run()}>
-          Confirm
-        </button>{' '}
-        <button type="button" className="glance-submit-cancel" onClick={() => setPhase('idle')}>
-          Cancel
-        </button>
-      </span>
+      <div className="agent-row">
+        <fieldset className="agent-picker">
+          <legend>Submit for review</legend>
+          <p className="muted small">Submits this exact validated revision. ATR may auto-accept.</p>
+          <div className="agent-picker-actions">
+            <button type="button" className="btn-secondary" onClick={() => setPhase('idle')}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={() => void run()}>
+              Submit
+            </button>
+          </div>
+        </fieldset>
+      </div>
     );
   }
-  if (phase === 'working' || phase === 'done') {
+  if (phase === 'working' || phase === 'done' || phase === 'blocked') {
+    const status = phase === 'working' ? 'running' : phase === 'done' ? 'done' : 'failed';
     return (
-      <span className="muted small">
-        {note}
-      </span>
-    );
-  }
-  if (phase === 'blocked') {
-    return (
-      <span className="glance-submit-confirm">
-        <span className="muted small">{note}</span>{' '}
-        <button type="button" className="glance-submit-cancel" onClick={() => setPhase('idle')}>
-          Dismiss
-        </button>
-      </span>
+      <div className="agent-row">
+        <ul className="agent-status-list">
+          <li className={`agent-status agent-${status}`}>{note}</li>
+        </ul>
+        {phase === 'blocked' && (
+          <div className="agent-row-actions">
+            <button type="button" className="btn-link agent-link" onClick={() => setPhase('idle')}>
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
   return (
-    <button
-      type="button"
-      className="glance-submit"
-      onClick={() => {
-        logClick('glance_panel', 'submit_button', { ...fields, action: 'open_confirm' });
-        setPhase('confirming');
-      }}
-    >
-      Submit
-    </button>
+    <div className="agent-row">
+      <div className="agent-row-actions">
+        <button
+          type="button"
+          className="btn-link agent-link"
+          onClick={() => {
+            logClick('glance_panel', 'submit_button', { ...fields, action: 'open_confirm' });
+            setPhase('confirming');
+          }}
+        >
+          Submit
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -327,7 +336,7 @@ function GlanceRow({
                 ? `Submitted by ${t.submittedBy}`
                 : `Assigned by ${t.requester}`}
         </span>
-        <RowFlag flag={flag} />
+        {eventSection !== 'submittable' && <RowFlag flag={flag} />}
       </div>
       {kind === 'pending' && agentReview && (
         <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
