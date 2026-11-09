@@ -158,6 +158,25 @@ System Settings → Privacy & Security → **Open Anyway** on first launch. If
 the package step can't download Electron behind the proxy, run it as
 `NODE_USE_ENV_PROXY=1 npm run package`.
 
+### Proper signing (kills the Gatekeeper warning)
+
+Needs a paid Apple Developer Program membership ($99/yr) — one person does
+this once, then CI signs every release automatically:
+
+1. Enroll, create a **Developer ID Application** certificate, and export it
+   (`.p12` + password). Also make an **app-specific password** for your
+   Apple ID, and note the **Team ID**.
+2. Add repo secrets (Settings → Secrets → Actions): `APPLE_IDENTITY` (the
+   full "Developer ID Application: Name (TEAMID)" string), `APPLE_ID`,
+   `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID`, plus `MAC_CERT_P12` (base64 of the
+   `.p12`) and `MAC_CERT_PASSWORD` so CI can install the cert.
+3. That's it: the next tag build signs (hardened runtime,
+   `build/entitlements.*.plist`), notarizes the app **and** the DMG, and
+   staples both — first launch opens with no warning. Without the secrets
+   everything falls back to ad-hoc, so unsigned contributors keep working.
+   (Local notarized builds work too: export the same env vars and run
+   `npm run package` on a Mac with the cert installed.)
+
 ## Desktop pet (Electron shell, Mac-first dev prototype)
 
 The same React app runs as a real floating desktop pet: a single SMALL

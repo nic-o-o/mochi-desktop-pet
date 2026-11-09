@@ -29,11 +29,25 @@ jobs:
 
       - run: npm test
 
+      # Developer-ID cert for proper signing. Skipped (ad-hoc fallback)
+      # until the MAC_CERT_* secrets exist — see README "Proper signing".
+      - name: Install signing certificate
+        if: ${{ secrets.MAC_CERT_P12 != '' }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MAC_CERT_P12 }}
+          p12-password: ${{ secrets.MAC_CERT_PASSWORD }}
+
       # Builds out/Mochi.app + out/Mochi.dmg (no --install: nothing to
-      # install on a runner). Ad-hoc signed — first launch needs
-      # System Settings → Privacy & Security → Open Anyway until the app
-      # is Developer-ID signed and notarized.
+      # install on a runner). Signed + notarized when the APPLE_* secrets
+      # exist (see README "Proper signing"); otherwise ad-hoc (first launch
+      # needs System Settings → Privacy & Security → Open Anyway).
       - run: npm run package
+        env:
+          APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - uses: softprops/action-gh-release@v2
         with:
