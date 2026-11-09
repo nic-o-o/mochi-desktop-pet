@@ -352,8 +352,14 @@ export function placeFloating(
   return { x, y };
 }
 
-/** Collapse immediately-repeated sentences (CLI errors sometimes echo twice). */
+/** Collapse echoed CLI errors: adjacent repeats and a whole block sent twice. */
 export function dedupeSentences(message: string): string {
-  const parts = message.split(/(?<=[.!?])\s+/);
-  return parts.filter((p, i) => p !== parts[i - 1]).join(' ');
+  const parts = message.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const single = parts.filter((p, i) => p !== parts[i - 1]);
+  for (let len = 1; len <= Math.floor(single.length / 2); len++) {
+    if (single.length % len !== 0) continue;
+    const block = single.slice(0, len);
+    if (single.every((p, i) => p === block[i % len])) return block.join(' ');
+  }
+  return single.join(' ');
 }

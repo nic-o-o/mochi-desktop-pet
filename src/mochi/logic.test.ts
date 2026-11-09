@@ -447,4 +447,9 @@ describe('dedupeSentences — collapse echoed CLI errors', () => {
   it('leaves single messages alone', () => {
     expect(dedupeSentences('Nothing was submitted')).toBe('Nothing was submitted');
   });
+  it('collapses a whole block sent twice', () => {
+    expect(dedupeSentences('Scan failed. Fix the source. Scan failed. Fix the source.')).toBe(
+      'Scan failed. Fix the source.',
+    );
+  });
 });
