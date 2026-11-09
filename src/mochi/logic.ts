@@ -351,3 +351,9 @@ export function placeFloating(
   }
   return { x, y };
 }
+
+/** Collapse immediately-repeated sentences (CLI errors sometimes echo twice). */
+export function dedupeSentences(message: string): string {
+  const parts = message.split(/(?<=[.!?])\s+/);
+  return parts.filter((p, i) => p !== parts[i - 1]).join(' ');
+}

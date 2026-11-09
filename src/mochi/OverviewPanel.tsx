@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FreshnessState, GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
 import {
   PRIORITY_RANK,
+  dedupeSentences,
   draftRowFlag,
   formatSla,
   freshnessLabel,
@@ -171,7 +172,7 @@ function RowFlag({ flag }: { flag: GlanceFlag }) {
 
 /** Friendly one-liner for a failed submit step. */
 function describeSubmitError(error?: { kind: string; message?: string }): string {
-  if (error?.message) return error.message;
+  if (error?.message) return dedupeSentences(error.message);
   switch (error?.kind) {
     case 'login_required':
       return 'Codimango login expired — run codimango auth setup.';
