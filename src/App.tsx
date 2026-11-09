@@ -929,6 +929,9 @@ export default function App() {
             setEditingIn(null);
           }}
           onOpenTask={openTaskDetail}
+          onSubmitted={() => {
+            void refresh('refresh_button');
+          }}
           sevs={openSevs}
           onOpenSev={(sev) => {
             touch();

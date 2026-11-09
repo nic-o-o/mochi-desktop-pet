@@ -115,6 +115,50 @@ export function listTasks(filter) {
   });
 }
 
+/** One JSON CLI call. Resolves { ok: true, body } or { ok: false, error }. */
+function runJsonCommand(args) {
+  return new Promise((resolve) => {
+    execFile(CODIMANGO_BIN, [...args, '--json'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER }, (err, stdout, stderr) => {
+      if (err) return resolve({ ok: false, error: classifyFailure(err, stdout, stderr) });
+      const body = parseJson(stdout);
+      if (!body || typeof body !== 'object') {
+        return resolve({ ok: false, error: { kind: 'error', message: 'Unexpected codimango output.' } });
+      }
+      resolve({ ok: true, body });
+    });
+  });
+}
+
+/** Read-only submission preflight for one task (never submits). */
+export function submitDryRun(id) {
+  return runJsonCommand(['task', 'submit', String(id), '--dry-run']).then((r) =>
+    r.ok ? { ok: true, preflight: r.body } : r,
+  );
+}
+
+/** Pick the commit SHA to pin a submission to: the validation generation's
+ * revision, falling back to the task's commit. Null when neither is a SHA. */
+export function pickSubmitSha(show) {
+  const sha = show?.validationGeneration?.sourceRevision ?? show?.commitSha ?? null;
+  return typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
+
+/** Current commit SHA for one task (fresh read, so the pin can't go stale). */
+export async function fetchSubmitSha(id) {
+  const r = await runJsonCommand(['task', 'show', String(id)]);
+  if (!r.ok) return r;
+  const sha = pickSubmitSha(r.body);
+  if (!sha) return { ok: false, error: { kind: 'error', message: 'No commit to submit.' } };
+  return { ok: true, sha };
+}
+
+/** Submit one exact validated revision. Never retries, never overrides. */
+export function submitTask(id, sha) {
+  return runJsonCommand(['task', 'submit', String(id), '--expected-commit', String(sha)]).then((r) =>
+    r.ok ? { ok: true, result: r.body } : r,
+  );
+}
+
 let inFlight = null;
 
 /** One refresh. Concurrent callers share the same run. */
