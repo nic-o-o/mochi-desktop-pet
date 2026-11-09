@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, isAllowedLink, pickRow } from './codimango.mjs';
+import { classifyFailure, isAllowedLink, pickRow, pickSubmitSha } from './codimango.mjs';
 
 describe('classifyFailure', () => {
   it('reports a missing CLI', () => {
@@ -66,5 +66,20 @@ describe('isAllowedLink', () => {
     expect(isAllowedLink('http://codimango.internalmeta.com/reviews/1')).toBe(false);
     expect(isAllowedLink('https://evil.example/codimango.internalmeta.com')).toBe(false);
     expect(isAllowedLink('file:///etc/passwd')).toBe(false);
+  });
+});
+
+describe('pickSubmitSha', () => {
+  const sha = '688c80f7de79753f8c6f250be04d65c1b1f79bc6';
+  it('prefers the validation generation revision', () => {
+    expect(pickSubmitSha({ validationGeneration: { sourceRevision: sha }, commitSha: '0'.repeat(40) })).toBe(sha);
+  });
+  it('falls back to the task commit', () => {
+    expect(pickSubmitSha({ commitSha: sha })).toBe(sha);
+  });
+  it('rejects non-SHA values', () => {
+    expect(pickSubmitSha({ validationGeneration: { sourceRevision: 'abc' }, commitSha: null })).toBeNull();
+    expect(pickSubmitSha({})).toBeNull();
+    expect(pickSubmitSha(null)).toBeNull();
   });
 });

@@ -68,6 +68,33 @@ export interface MochiShell {
   cancelAgentReview?: (id: string) => Promise<AgentJob[]>;
   /** Every change to the runs (progress, finish); returns unsubscribe. */
   onAgentReviewsChanged?: (callback: (jobs: AgentJob[]) => void) => () => void;
+  /** Read-only submission preflight for one task (main process). */
+  submitDryRun?: (id: string) => Promise<SubmitDryRunResult>;
+  /** Current commit SHA to pin a submission to (main process). */
+  submitSha?: (id: string) => Promise<SubmitShaResult>;
+  /** Submit one exact validated revision (main process). */
+  submitTask?: (id: string, sha: string) => Promise<SubmitTaskResult>;
+}
+
+/** Dry-run preflight outcome: blockers listed, or ok to submit. */
+export interface SubmitDryRunResult {
+  ok: boolean;
+  preflight?: unknown;
+  error?: { kind: string; message?: string };
+}
+
+/** Commit-SHA outcome for pinning a submission. */
+export interface SubmitShaResult {
+  ok: boolean;
+  sha?: string;
+  error?: { kind: string; message?: string };
+}
+
+/** Submission outcome. */
+export interface SubmitTaskResult {
+  ok: boolean;
+  result?: unknown;
+  error?: { kind: string; message?: string };
 }
 
 /** One usage event: a name from the logging plan plus ID/enum/number fields. */
@@ -160,6 +187,29 @@ export function fetchCodimango(): Promise<CodimangoFetchResult | null> {
   const b = bridge();
   if (!b?.fetchCodimango) return Promise.resolve(null);
   return b.fetchCodimango();
+}
+
+/** Direct submit is shell-only; null outside the desktop shell. */
+export function canSubmit(): boolean {
+  return typeof bridge()?.submitTask !== 'undefined';
+}
+
+export function submitDryRun(id: string): Promise<SubmitDryRunResult | null> {
+  const b = bridge();
+  if (!b?.submitDryRun) return Promise.resolve(null);
+  return b.submitDryRun(id).catch(() => ({ ok: false as const, error: { kind: 'error' as const } }));
+}
+
+export function submitSha(id: string): Promise<SubmitShaResult | null> {
+  const b = bridge();
+  if (!b?.submitSha) return Promise.resolve(null);
+  return b.submitSha(id).catch(() => ({ ok: false as const, error: { kind: 'error' as const } }));
+}
+
+export function submitTask(id: string, sha: string): Promise<SubmitTaskResult | null> {
+  const b = bridge();
+  if (!b?.submitTask) return Promise.resolve(null);
+  return b.submitTask(id, sha).catch(() => ({ ok: false as const, error: { kind: 'error' as const } }));
 }
 
 /** Opens the page in the browser via the shell; in a plain browser, a new tab. */

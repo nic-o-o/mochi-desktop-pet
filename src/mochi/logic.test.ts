@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampPetPosition,
   clampToDisplays,
+  dedupeSentences,
   displayFor,
   placeOnDisplay,
   formatSla,
@@ -433,5 +434,22 @@ describe('multiple displays', () => {
     expect(pos.x).toBeGreaterThanOrEqual(external.x);
     expect(pos.x + 352).toBeLessThanOrEqual(external.x + external.w);
     expect(pos.y + 470).toBeLessThanOrEqual(external.h);
+  });
+});
+
+describe('dedupeSentences — collapse echoed CLI errors', () => {
+  it('drops an immediately-repeated sentence', () => {
+    expect(dedupeSentences('Blocked. Blocked.')).toBe('Blocked.');
+  });
+  it('keeps distinct sentences and non-adjacent repeats', () => {
+    expect(dedupeSentences('Scan failed. Fix the source. Scan failed.')).toBe('Scan failed. Fix the source. Scan failed.');
+  });
+  it('leaves single messages alone', () => {
+    expect(dedupeSentences('Nothing was submitted')).toBe('Nothing was submitted');
+  });
+  it('collapses a whole block sent twice', () => {
+    expect(dedupeSentences('Scan failed. Fix the source. Scan failed. Fix the source.')).toBe(
+      'Scan failed. Fix the source.',
+    );
   });
 });

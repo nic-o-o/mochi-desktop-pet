@@ -27,7 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAgentReviews } from './agentReview.mjs';
-import { fetchCodimango, isAllowedLink } from './codimango.mjs';
+import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
 import { installFileLog } from './logfile.mjs';
@@ -136,6 +136,12 @@ ipcMain.handle('mochi:get-display-bounds', () => allDisplayBounds(screen.getAllD
 
 // Codimango reads go through the user's CLI login (electron/codimango.mjs).
 ipcMain.handle('mochi:fetch-codimango', () => fetchCodimango());
+
+/* Direct submit: each step is one explicit user-confirmed action from the
+   panel. Dry-run preflight first, then the pinned submit — never retried. */
+ipcMain.handle('mochi:submit-dry-run', (_event, id) => submitDryRun(String(id ?? '')));
+ipcMain.handle('mochi:submit-sha', (_event, id) => fetchSubmitSha(String(id ?? '')));
+ipcMain.handle('mochi:submit-task', (_event, id, sha) => submitTask(String(id ?? ''), String(sha ?? '')));
 
 ipcMain.handle('mochi:open-link', (_event, url) => {
   if (!isAllowedLink(url)) return false;

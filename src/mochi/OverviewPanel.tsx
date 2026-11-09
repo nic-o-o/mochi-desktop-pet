@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FreshnessState, GlanceFlag, TaskItem, WeeklyGoals, XY } from './logic.ts';
 import {
   PRIORITY_RANK,
+  dedupeSentences,
   draftRowFlag,
   formatSla,
   freshnessLabel,
@@ -22,6 +23,7 @@ import type { Sev } from './sevs.ts';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionPrefs } from './sections.ts';
 import { SECTION_EVENT_NAME, logClick, logVpv, msSincePanelOpen, useVpv } from './usage.ts';
+import { canSubmit, submitDryRun, submitSha, submitTask } from './shell.ts';
 
 const KIND_SECTION: Record<'revision' | 'pending' | 'draft', SectionKey> = {
   revision: 'revisions',
@@ -58,6 +60,8 @@ interface OverviewPanelProps {
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
   /** "Ask agents" on review rows (desktop shell only). */
   agentReview?: AgentReviewControls;
+  /** A direct submit landed: caller refreshes tasks (desktop shell only). */
+  onSubmitted?: () => void;
   /** Open Codimango SEVs: one line each at the top, most severe first. */
   sevs?: Sev[];
   onOpenSev?: (sev: Sev) => void;
@@ -166,6 +170,23 @@ function RowFlag({ flag }: { flag: GlanceFlag }) {
   return <span className={`glance-flag tone-${flag.tone}`}>{flag.text}</span>;
 }
 
+/** Friendly one-liner for a failed submit step. */
+function describeSubmitError(error?: { kind: string; message?: string }): string {
+  if (error?.message) return dedupeSentences(error.message);
+  switch (error?.kind) {
+    case 'login_required':
+      return 'Codimango login expired — run codimango auth setup.';
+    case 'offline':
+      return 'Offline — will not submit without a connection.';
+    case 'cli_missing':
+      return 'Codimango CLI missing.';
+    default:
+      return 'Submission blocked.';
+  }
+}
+
+type SubmitPhase = 'idle' | 'confirming' | 'working' | 'done' | 'blocked';
+
 /** One row; logs a VPV once per panel opening when half of it is on screen for 250 ms. */
 function GlanceRow({
   task: t,
@@ -175,6 +196,7 @@ function GlanceRow({
   onOpen,
   eventSection,
   agentReview,
+  onSubmitted,
 }: {
   task: TaskItem;
   kind: 'revision' | 'pending' | 'draft';
@@ -184,6 +206,7 @@ function GlanceRow({
   /** Logging section override (ready-for-submission rows share the draft look). */
   eventSection?: SectionKey;
   agentReview?: AgentReviewControls;
+  onSubmitted?: () => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
   const flag =
@@ -192,8 +215,50 @@ function GlanceRow({
       : kind === 'draft'
         ? draftRowFlag(t.draftState)
         : pendingRowFlag(t.slaDueMs, nowMs);
-  const fields = { section: SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]], task_id: t.id, position, badge: flag.text };
+  const section = SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]];
+  const fields = { section, task_id: t.id, position, badge: flag.text };
   useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
+  /* Ready drafts get Submit in the flag slot (drafts + ready-for-submission sections). */
+  const showSubmit = kind === 'draft' && t.draftState === 'ready' && canSubmit();
+  const [phase, setPhase] = useState<SubmitPhase>('idle');
+  const [note, setNote] = useState('');
+  const clickFields = { section, task_id: t.id, ms_since_panel_open: msSincePanelOpen() };
+  const runSubmit = async () => {
+    setPhase('working');
+    setNote('Checking…');
+    logClick('glance_panel', 'submit_button', { ...clickFields, action: 'confirm' });
+    const dry = await submitDryRun(t.id);
+    if (!dry) {
+      setPhase('blocked');
+      setNote('Submit needs the desktop shell.');
+      return;
+    }
+    if (!dry.ok) {
+      setPhase('blocked');
+      setNote(describeSubmitError(dry.error));
+      logClick('glance_panel', 'submit_button', { ...clickFields, action: 'blocked_preflight' });
+      return;
+    }
+    setNote('Submitting…');
+    const sh = await submitSha(t.id);
+    if (!sh?.ok || !sh.sha) {
+      setPhase('blocked');
+      setNote(describeSubmitError(sh?.error));
+      logClick('glance_panel', 'submit_button', { ...clickFields, action: 'blocked_no_sha' });
+      return;
+    }
+    const done = await submitTask(t.id, sh.sha);
+    if (!done?.ok) {
+      setPhase('blocked');
+      setNote(describeSubmitError(done?.error));
+      logClick('glance_panel', 'submit_button', { ...clickFields, action: 'blocked_submit' });
+      return;
+    }
+    setPhase('done');
+    setNote('Submitted ✓');
+    logClick('glance_panel', 'submit_button', { ...clickFields, action: 'submitted' });
+    onSubmitted?.();
+  };
   return (
     <li ref={ref} className="glance-row">
       <button
@@ -219,10 +284,63 @@ function GlanceRow({
                 ? `Submitted by ${t.submittedBy}`
                 : `Assigned by ${t.requester}`}
         </span>
-        <RowFlag flag={flag} />
+        {showSubmit ? (
+          phase === 'idle' || phase === 'confirming' ? (
+            <button
+              type="button"
+              className="btn-link agent-link"
+              onClick={() => {
+                logClick('glance_panel', 'submit_button', { ...clickFields, action: 'open_confirm' });
+                setPhase('confirming');
+              }}
+            >
+              Submit
+            </button>
+          ) : (
+            <span className="muted small">{phase === 'done' ? 'Submitted ✓' : note}</span>
+          )
+        ) : (
+          <RowFlag flag={flag} />
+        )}
       </div>
       {kind === 'pending' && agentReview && (
         <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
+      )}
+      {showSubmit && phase === 'confirming' && (
+        <div className="agent-row">
+          <fieldset className="agent-picker">
+            <legend>Submit for review</legend>
+            <p className="muted small">Submits this exact validated revision. ATR may auto-accept.</p>
+            <div className="agent-picker-actions">
+              <button type="button" className="btn-secondary" onClick={() => setPhase('idle')}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={() => void runSubmit()}>
+                Submit
+              </button>
+            </div>
+          </fieldset>
+        </div>
+      )}
+      {showSubmit && phase === 'blocked' && (
+        <div className="agent-row">
+          <ul className="agent-status-list">
+            <li className="agent-status agent-failed">{note}</li>
+          </ul>
+          <div className="agent-row-actions">
+            <button
+              type="button"
+              className="btn-link agent-link"
+              onClick={() => {
+                logClick('glance_panel', 'submit_button', { ...clickFields, action: 'open_codimango' });
+                setPhase('idle');
+                onOpen(t.id);
+              }}
+            >
+              Submit through Codimango
+            </button>
+          </div>
+        </div>
       )}
     </li>
   );
@@ -238,6 +356,7 @@ function TaskSection({
   eventSection,
   emptyText,
   agentReview,
+  onSubmitted,
 }: {
   title: string;
   tasks: TaskItem[];
@@ -248,6 +367,7 @@ function TaskSection({
   eventSection?: SectionKey;
   emptyText?: string;
   agentReview?: AgentReviewControls;
+  onSubmitted?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   /* Flag-rank order: HI PRI above LOW PRI; Past due above 0d/1d/2d left.
@@ -296,6 +416,7 @@ function TaskSection({
                 onOpen={onOpen}
                 eventSection={eventSection}
                 agentReview={agentReview}
+                onSubmitted={onSubmitted}
               />
             ))}
           </ul>
@@ -557,6 +678,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                   eventSection={lists[key].eventSection}
                   emptyText={lists[key].emptyText}
                   agentReview={props.agentReview}
+                  onSubmitted={props.onSubmitted}
                 />
               </div>
             ))
