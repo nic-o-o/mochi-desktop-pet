@@ -326,6 +326,7 @@ function GlanceRow({
           <ul className="agent-status-list">
             <li className="agent-status agent-failed">{note}</li>
           </ul>
+          <p className="muted small">You can still submit through Codimango by clicking the task title above.</p>
           <div className="agent-row-actions">
             <button type="button" className="btn-link agent-link" onClick={() => setPhase('idle')}>
               Dismiss
