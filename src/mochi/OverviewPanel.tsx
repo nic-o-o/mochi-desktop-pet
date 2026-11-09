@@ -326,10 +326,17 @@ function GlanceRow({
           <ul className="agent-status-list">
             <li className="agent-status agent-failed">{note}</li>
           </ul>
-          <p className="muted small">You can still submit through Codimango by clicking the task title above.</p>
           <div className="agent-row-actions">
-            <button type="button" className="btn-link agent-link" onClick={() => setPhase('idle')}>
-              Dismiss
+            <button
+              type="button"
+              className="btn-link agent-link"
+              onClick={() => {
+                logClick('glance_panel', 'submit_button', { ...clickFields, action: 'open_codimango' });
+                setPhase('idle');
+                onOpen(t.id);
+              }}
+            >
+              Submit through Codimango
             </button>
           </div>
         </div>
