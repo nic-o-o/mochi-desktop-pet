@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { collectNewLines, flushSender, loadSharing, setSharing, toLoggerRow } from './sender.mjs';
+import { collectNewLines, FIELD_IDS, flushSender, loadSharing, setSharing, toLoggerRow } from './sender.mjs';
 
 function writeLog(dir, rows) {
   fs.writeFileSync(path.join(dir, 'events.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
@@ -36,7 +36,8 @@ describe('flushSender', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toEqual(['--logger', 'TestConfig', '--fail-on-error']);
     const sent = calls[0][1].trim().split('\n').map((l) => JSON.parse(l));
-    expect(sent.map((r) => r[16].str)).toEqual(['a', 'b']);
+    const b64 = (v) => Buffer.from(v).toString('base64');
+    expect(sent.map((r) => r[42].str)).toEqual([b64('a'), b64('b')]);
     const second = await flushSender({ logFile, userDataDir: dir, logger: 'TestConfig', run });
     expect(second).toEqual({ shipped: 0, dropped: 0, reason: 'empty' });
     expect(calls).toHaveLength(1);
@@ -96,7 +97,7 @@ describe('flushSender', () => {
 });
 
 describe('toLoggerRow', () => {
-  it('keys columns by thrift field ID with typed values', () => {
+  it('keys columns by the measured input IDs with base64 strings', () => {
     const line = JSON.stringify({
       event_name: 'mochi_resource',
       unixname: 'debrax',
@@ -107,15 +108,22 @@ describe('toLoggerRow', () => {
       title: 'not a column',
       time: '2026-11-04T12:00:00.000Z',
     });
+    const b64 = (v) => Buffer.from(v).toString('base64');
     expect(JSON.parse(toLoggerRow(line))).toEqual({
-      1: { str: 'mochi_resource' },
-      2: { i64: Date.parse('2026-11-04T12:00:00.000Z') },
-      3: { str: 'debrax' },
-      9: { str: 'pet' },
-      39: { i64: 1 },
-      40: { i64: 213 },
-      41: { double: 3.5 },
+      4: { str: b64('mochi_resource') },
+      27: { i64: Date.parse('2026-11-04T12:00:00.000Z') },
+      29: { str: b64('debrax') },
+      35: { str: b64('pet') },
+      21: { i64: 1 },
+      22: { i64: 213 },
+      23: { double: 3.5 },
     });
+  });
+
+  it('maps every event column to a distinct ID', () => {
+    const ids = Object.values(FIELD_IDS).map(([id]) => id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(Object.keys(FIELD_IDS)).toHaveLength(41);
   });
 
   it('rejects lines without an event name or a valid time', () => {

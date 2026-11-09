@@ -1,9 +1,9 @@
 /* Scuba sender (logging plan): ship events.jsonl rows through logger_cat.
  *
- * Rows go to AaiMochiEventsLoggerConfig (D129586374; Scuba
- * aai_mochi_events/sandbox). logger_cat takes one Thrift typed-JSON message
- * per line, keyed by field ID, so each events.jsonl line is converted with
- * toLoggerRow first. Sharing is opt-out (toggle in the Dock menu, persisted
+ * Rows go to AaiMochiEventsLoggerConfig (D129586374; Scuba aai_mochi_events).
+ * logger_cat takes one typed-JSON message per line, keyed by the serving
+ * Logger's input IDs with base64 strings, so each events.jsonl line is
+ * converted with toLoggerRow first. Sharing is opt-out (toggle in the Dock menu, persisted
  * in userData): nothing ships while it is off.
  *
  * Queue rule from the plan: buffer new lines, send one batch, drop on
@@ -21,23 +21,58 @@ export const LOGGER_BIN = process.env.MOCHI_LOGGER_BIN ?? 'logger_cat';
 export const FLUSH_MS = 10 * 60_000;
 const SEND_TIMEOUT_MS = 30_000;
 
-/* Thrift field ID and type per column, from aai_mochi_events_logger_config.thrift.
-   1 event_name and 2 event_time_ms are required; time comes from the line's ISO `time`. */
-const STRING_COLUMNS = [
-  'unixname', 'app_session_id', 'panel_session_id', 'app_version', 'app_build', 'os_version',
-  'surface', 'component', 'action', 'trigger', 'sections_on', 'reason', 'section', 'task_id',
-  'badge', 'freshness_state', 'goal', 'notif_kind', 'source', 'kind', 'result', 'status',
-];
-const I64_COLUMNS = [
-  'unread_count', 'time_hidden_ms', 'time_spent_ms', 'position', 'ms_since_panel_open',
-  'hidden_count', 'data_age_ms', 'old_value', 'new_value', 'time_on_screen_ms', 'duration_ms',
-  'reviewing_rows', 'mine_rows', 'enabled', 'launched_at_login', 'memory_mb',
-];
-export const FIELD_IDS = Object.fromEntries([
-  ...STRING_COLUMNS.map((name, i) => [name, [i + 3, 'str']]),
-  ...I64_COLUMNS.map((name, i) => [name, [i + 25, 'i64']]),
-  ['cpu_percent', [41, 'double']],
-]);
+/* logger_cat input ID and type per column. These are the serving Logger's input
+   IDs, which match neither the thrift IDs nor the Tulip IDs and are in no
+   checked-in file. Measured 2026-11-09 by sending one row per ID and type and
+   reading back which Scuba column each value landed in (Muse's sink, D123801663,
+   did the same). Re-measure after any schema change: a wrong type drops the whole
+   row on the server, and logger_cat still exits 0. */
+export const FIELD_IDS = {
+  event_name: [4, 'str'],
+  new_value: [5, 'i64'],
+  unread_count: [6, 'i64'],
+  time_hidden_ms: [7, 'i64'],
+  time_spent_ms: [8, 'i64'],
+  position: [9, 'i64'],
+  ms_since_panel_open: [10, 'i64'],
+  hidden_count: [11, 'i64'],
+  data_age_ms: [12, 'i64'],
+  old_value: [13, 'i64'],
+  time_on_screen_ms: [14, 'i64'],
+  result: [16, 'str'],
+  duration_ms: [17, 'i64'],
+  reviewing_rows: [18, 'i64'],
+  mine_rows: [19, 'i64'],
+  enabled: [20, 'i64'],
+  launched_at_login: [21, 'i64'],
+  memory_mb: [22, 'i64'],
+  cpu_percent: [23, 'double'],
+  status: [25, 'str'],
+  kind: [26, 'str'],
+  event_time_ms: [27, 'i64'],
+  action: [28, 'str'],
+  unixname: [29, 'str'],
+  app_session_id: [30, 'str'],
+  panel_session_id: [31, 'str'],
+  app_version: [32, 'str'],
+  app_build: [33, 'str'],
+  os_version: [34, 'str'],
+  surface: [35, 'str'],
+  component: [36, 'str'],
+  trigger: [37, 'str'],
+  source: [38, 'str'],
+  sections_on: [39, 'str'],
+  reason: [40, 'str'],
+  section: [41, 'str'],
+  task_id: [42, 'str'],
+  badge: [43, 'str'],
+  freshness_state: [44, 'str'],
+  goal: [45, 'str'],
+  notif_kind: [46, 'str'],
+};
+
+/* logger_cat's typed JSON carries strings base64-encoded. */
+const b64 = (value) => Buffer.from(String(value), 'utf8').toString('base64');
 
 /** One events.jsonl line as a logger_cat message, or null if it can't be sent. */
 export function toLoggerRow(line) {
@@ -49,12 +84,15 @@ export function toLoggerRow(line) {
   }
   const time = Date.parse(event?.time);
   if (typeof event?.event_name !== 'string' || !Number.isFinite(time)) return null;
-  const row = { 1: { str: event.event_name }, 2: { i64: time } };
+  const row = {
+    [FIELD_IDS.event_name[0]]: { str: b64(event.event_name) },
+    [FIELD_IDS.event_time_ms[0]]: { i64: time },
+  };
   for (const [key, value] of Object.entries(event)) {
     const field = FIELD_IDS[key];
     if (!field) continue;
     const [id, type] = field;
-    if (type === 'str' && (typeof value === 'string' || typeof value === 'number')) row[id] = { str: String(value) };
+    if (type === 'str' && (typeof value === 'string' || typeof value === 'number')) row[id] = { str: b64(value) };
     else if (type === 'i64' && typeof value === 'boolean') row[id] = { i64: value ? 1 : 0 };
     else if (type === 'i64' && typeof value === 'number' && Number.isFinite(value)) row[id] = { i64: Math.round(value) };
     else if (type === 'double' && typeof value === 'number' && Number.isFinite(value)) row[id] = { double: value };
@@ -177,7 +215,8 @@ export async function flushSender({ logFile, userDataDir, logger = LOGGER_CONFIG
   const rows = lines.map(toLoggerRow).filter(Boolean);
   let ok = rows.length > 0;
   try {
-    /* --fail-on-error: without it logger_cat exits 0 even when it rejects rows. */
+    /* --fail-on-error only catches rows the local relay can't parse; the server
+       checks IDs and types and drops bad rows silently, so FIELD_IDS must be right. */
     if (ok) ok = await run(['--logger', logger, '--fail-on-error'], `${rows.join('\n')}\n`);
   } catch {
     ok = false;
