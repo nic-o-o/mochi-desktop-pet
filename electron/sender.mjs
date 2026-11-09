@@ -17,7 +17,8 @@ import path from 'node:path';
 
 /* null keeps every Mac local-only (flushes become no-ops). */
 export const LOGGER_CONFIG = 'AaiMochiEventsLoggerConfig';
-export const LOGGER_BIN = process.env.MOCHI_LOGGER_BIN ?? 'logger_cat';
+/* GUI apps on macOS don't inherit the shell PATH, so use the absolute path. */
+export const LOGGER_BIN = process.env.MOCHI_LOGGER_BIN ?? '/usr/local/bin/logger_cat';
 export const FLUSH_MS = 10 * 60_000;
 const SEND_TIMEOUT_MS = 30_000;
 
