@@ -1,9 +1,12 @@
 /* Ask agents to review (main process only).
  *
- * The reviewer is the team-aai `codimango-review-assistant` skill: it reviews a
- * Codimango task at its exact revision and returns "## Review summary" plus
- * "## Structured form" (every visible review-form field). Mochi only launches it
- * and keeps the result; it never submits a review.
+ * The default reviewer is the team-aai `codimango-review-assistant` skill: it
+ * reviews a Codimango task at its exact revision and returns "## Review summary"
+ * plus "## Structured form" (every visible review-form field). People can pick
+ * one of their own skills instead (listReviewSkills): their personal skills in
+ * ~/.claude/skills and installed plugin skills with "review" in the name. The
+ * renderer only ever sends a skill id; the path is resolved here, from disk.
+ * Mochi only launches the skill and keeps the result; it never submits a review.
  *
  * Agents run on this Mac under the user's own logins, the way codimango.mjs uses
  * the codimango CLI: Claude Code (`claude -p`, which loads the skill from the
@@ -40,6 +43,10 @@ export const AGENTS = {
 
 const SKILL = 'codimango-review-assistant';
 const PLUGIN_CACHE = path.join('.claude', 'plugins', 'cache', 'agent-market', 'team-aai');
+const PLUGINS_ROOT = path.join('.claude', 'plugins', 'cache');
+const PERSONAL_SKILLS = path.join('.claude', 'skills');
+export const DEFAULT_SKILL_ID = 'default';
+const SKILL_PART = /^[\w.-]{1,100}$/;
 
 /** Codimango task names are slugs; anything else never reaches a prompt. */
 export function isTaskName(name) {
@@ -72,9 +79,18 @@ export function findReviewSkill(home = os.homedir(), fsImpl = fs) {
   return null;
 }
 
-const HEADLESS_RULES =
+/* Every skill runs under these; only the default skill gets the review-form rules. */
+const SAFETY_RULES =
   'You are running headless for Mochi, a desktop app; nobody can answer questions. ' +
-  'Do not submit the review, change the task, rerun validation, start paid trials, push anything or contact the author. ' +
+  'Do not submit the review, change the task, rerun validation, start paid trials, push anything or contact the author. ';
+
+const CUSTOM_RULES =
+  SAFETY_RULES +
+  'Where the skill would ask the reviewer, choose the conservative option and say so in the report. ' +
+  'Your final message must be the complete review, in markdown.';
+
+const HEADLESS_RULES =
+  SAFETY_RULES +
   'Where the skill would ask the reviewer, choose the conservative option, keep the answer DRAFT and say why under Coverage / limitations. ' +
   'The reviewer copies each field into the live form, so the Structured form must cover every section that form shows for this task, in its order. ' +
   "Work out which conditional sections are visible from the exact task's data, not the fallback snapshot: " +
@@ -86,14 +102,122 @@ const HEADLESS_RULES =
   'If you cannot tell whether a section is shown, include it and say so in its notes. ' +
   'Your final message must be the skill\'s output: "## Review summary", then "## Structured form".';
 
+function readFrontmatter(file, fsImpl) {
+  let text = '';
+  try {
+    text = fsImpl.readFileSync(file, 'utf8').slice(0, 4000);
+  } catch {
+    return {};
+  }
+  const m = /^---\s*\n([\s\S]*?)\n---/.exec(text);
+  if (!m) return {};
+  const field = (key) => {
+    const line = new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(m[1]);
+    return line ? line[1].trim().replace(/^["']|["']$/g, '').slice(0, 300) : undefined;
+  };
+  return { name: field('name'), description: field('description') };
+}
+
+function listDir(dir, fsImpl) {
+  try {
+    return fsImpl.readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** The newest version folder of one installed plugin, or null. */
+function newestVersion(pluginDir, fsImpl) {
+  const versions = listDir(pluginDir, fsImpl).filter((v) => /^\d+(\.\d+)*$/.test(v));
+  return versions.length ? versions.sort(compareVersions).at(-1) : null;
+}
+
+/** The default skill, as a run needs it, or null when team-aai isn't installed. */
+function defaultSkill(home, fsImpl) {
+  const file = findReviewSkill(home, fsImpl);
+  if (!file) return null;
+  return {
+    id: DEFAULT_SKILL_ID,
+    source: 'default',
+    label: 'Codimango review assistant',
+    invoke: `team-aai:${SKILL}`,
+    path: file,
+    root: path.dirname(path.dirname(path.dirname(file))),
+  };
+}
+
+/**
+ * Skills the picker offers, default first: every personal skill, then installed
+ * plugin skills with "review" in the name (the full plugin list runs to hundreds).
+ * Each is { id, source, label, description }; ids are what the renderer sends back.
+ */
+export function listReviewSkills(home = os.homedir(), fsImpl = fs) {
+  const out = [{ id: DEFAULT_SKILL_ID, source: 'default', label: 'Codimango review assistant (default)' }];
+  const personalRoot = path.join(home, PERSONAL_SKILLS);
+  for (const name of listDir(personalRoot, fsImpl).sort()) {
+    if (!SKILL_PART.test(name)) continue;
+    const file = path.join(personalRoot, name, 'SKILL.md');
+    if (!fsImpl.existsSync(file)) continue;
+    const meta = readFrontmatter(file, fsImpl);
+    out.push({ id: `personal:${name}`, source: 'personal', label: name, description: meta.description });
+  }
+  const pluginsRoot = path.join(home, PLUGINS_ROOT);
+  for (const market of listDir(pluginsRoot, fsImpl).sort()) {
+    if (!SKILL_PART.test(market)) continue;
+    for (const plugin of listDir(path.join(pluginsRoot, market), fsImpl).sort()) {
+      if (!SKILL_PART.test(plugin)) continue;
+      const version = newestVersion(path.join(pluginsRoot, market, plugin), fsImpl);
+      if (!version) continue;
+      const skillsDir = path.join(pluginsRoot, market, plugin, version, 'skills');
+      for (const name of listDir(skillsDir, fsImpl).sort()) {
+        if (!SKILL_PART.test(name) || !/review/i.test(name)) continue;
+        if (plugin === 'team-aai' && name === SKILL) continue;
+        const file = path.join(skillsDir, name, 'SKILL.md');
+        if (!fsImpl.existsSync(file)) continue;
+        const meta = readFrontmatter(file, fsImpl);
+        out.push({
+          id: `plugin:${market}:${plugin}:${name}`,
+          source: 'plugin',
+          label: `${plugin}:${name}`,
+          description: meta.description,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** What a run needs for one skill id, resolved from disk; null when it isn't installed. */
+export function resolveReviewSkill(id = DEFAULT_SKILL_ID, home = os.homedir(), fsImpl = fs) {
+  if (!id || id === DEFAULT_SKILL_ID) return defaultSkill(home, fsImpl);
+  const parts = String(id).split(':');
+  if (parts[0] === 'personal' && parts.length === 2 && SKILL_PART.test(parts[1])) {
+    const root = path.join(home, PERSONAL_SKILLS);
+    const file = path.join(root, parts[1], 'SKILL.md');
+    if (!fsImpl.existsSync(file)) return null;
+    return { id, source: 'personal', label: parts[1], invoke: parts[1], path: file, root };
+  }
+  if (parts[0] === 'plugin' && parts.length === 4 && parts.slice(1).every((p) => SKILL_PART.test(p))) {
+    const [, market, plugin, name] = parts;
+    const version = newestVersion(path.join(home, PLUGINS_ROOT, market, plugin), fsImpl);
+    if (!version) return null;
+    const root = path.join(home, PLUGINS_ROOT, market, plugin, version);
+    const file = path.join(root, 'skills', name, 'SKILL.md');
+    if (!fsImpl.existsSync(file)) return null;
+    return { id, source: 'plugin', label: `${plugin}:${name}`, invoke: `${plugin}:${name}`, path: file, root };
+  }
+  return null;
+}
+
 /** The command line for one run. `reportFile` is where Codex writes its last message. */
-export function agentCommand(agent, { taskName, cwd, skillPath }) {
+export function agentCommand(agent, { taskName, cwd, skill }) {
+  const rules = skill.source === 'default' ? HEADLESS_RULES : CUSTOM_RULES;
   if (agent === 'claude') {
     return {
       bin: AGENTS.claude.bin,
       args: [
         '-p',
-        `Use the team-aai:${SKILL} skill to review the Codimango task "${taskName}". ${HEADLESS_RULES}`,
+        `Use the ${skill.invoke} skill to review the Codimango task "${taskName}". ${rules}`,
         '--output-format',
         'stream-json',
         '--verbose',
@@ -106,7 +230,8 @@ export function agentCommand(agent, { taskName, cwd, skillPath }) {
     };
   }
   const reportFile = path.join(cwd, 'report.md');
-  const pluginRoot = path.dirname(path.dirname(path.dirname(skillPath)));
+  // Personal skills sit directly in ~/.claude/skills/<name>; plugin skills under <version>/skills/<name>.
+  const namedAt = skill.source === 'personal' ? `${skill.root}/<name>/SKILL.md` : `${skill.root}/**/skills/<name>/SKILL.md`;
   return {
     bin: AGENTS.codex.bin,
     reportFile,
@@ -123,9 +248,9 @@ export function agentCommand(agent, { taskName, cwd, skillPath }) {
       'sandbox_workspace_write.network_access=true',
       '-o',
       reportFile,
-      `Review the Codimango task "${taskName}" by following the skill in ${skillPath}: read it and the reference files it links, ` +
-        `then follow its workflow and output contract. Skills it names by name live at ${pluginRoot}/**/skills/<name>/SKILL.md. ` +
-        HEADLESS_RULES,
+      `Review the Codimango task "${taskName}" by following the skill in ${skill.path}: read it and the reference files it links, ` +
+        `then follow its workflow and output contract. Skills it names by name live at ${namedAt}. ` +
+        rules,
     ],
   };
 }
@@ -171,10 +296,10 @@ const FAILURES = {
     message: `${label} needs you to sign in.`,
     fix: agent === 'codex' ? 'codex login' : 'claude',
   }),
-  skill_missing: () => ({
-    message: "The Codimango review skill isn't installed.",
-    fix: 'claude plugin install team-aai@agent-market',
-  }),
+  skill_missing: (_label, _agent, skillLabel) =>
+    skillLabel
+      ? { message: `The skill ${skillLabel} isn't installed on this Mac anymore. Pick another skill and ask again.` }
+      : { message: "The Codimango review skill isn't installed.", fix: 'claude plugin install team-aai@agent-market' },
   codimango_login: () => ({ message: 'Codimango login missing or expired.', fix: 'codimango auth setup' }),
   offline: (label) => ({ message: `${label} couldn't reach its service (VPN or network?).` }),
   timeout: () => ({ message: `The review took longer than ${TIMEOUT_MS / 60_000} minutes and was stopped.` }),
@@ -185,7 +310,7 @@ const FAILURES = {
 
 export function failure(kind, agent, detail) {
   const label = AGENTS[agent]?.label ?? agent;
-  const known = FAILURES[kind]?.(label, agent);
+  const known = FAILURES[kind]?.(label, agent, kind === 'skill_missing' ? detail : undefined);
   if (known) return { kind, ...known };
   const first = String(detail ?? '').trim().split('\n').find((l) => l.trim()) ?? '';
   return { kind: 'error', message: first.slice(0, 300) || `${label} stopped with an error.` };
@@ -263,7 +388,7 @@ export function codexModel(home = os.homedir(), fsImpl = fs, env = process.env) 
 export function createAgentReviews({
   dir,
   run = spawnAgent,
-  findSkill = () => findReviewSkill(),
+  findSkill = (id) => resolveReviewSkill(id),
   findCodexModel = () => codexModel(),
   makeTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mochi-review-')),
   removeDir = (d) => fs.rmSync(d, { recursive: true, force: true }),
@@ -322,13 +447,15 @@ export function createAgentReviews({
   }
 
   function begin(job) {
-    const skillPath = findSkill();
-    if (!skillPath) {
-      finish(job, { status: 'failed', failure: failure('skill_missing', job.agent) });
+    const skillId = job.skill?.id ?? DEFAULT_SKILL_ID;
+    const skill = findSkill(skillId);
+    if (!skill) {
+      const custom = skillId !== DEFAULT_SKILL_ID ? job.skill?.label ?? skillId : undefined;
+      finish(job, { status: 'failed', failure: failure('skill_missing', job.agent, custom) });
       return;
     }
     const cwd = makeTempDir();
-    const cmd = agentCommand(job.agent, { taskName: job.taskName, cwd, skillPath });
+    const cmd = agentCommand(job.agent, { taskName: job.taskName, cwd, skill });
     let report = '';
     let lastError = '';
     let timedOut = false;
@@ -380,8 +507,13 @@ export function createAgentReviews({
   return {
     list,
     /** Queue one run per agent for a task; an agent already reviewing that task is skipped. */
-    start({ taskId, taskName, taskUpdatedAtMs, agents }) {
+    start({ taskId, taskName, taskUpdatedAtMs, agents, skillId = DEFAULT_SKILL_ID }) {
       if (!isTaskName(taskName)) return list();
+      const id = typeof skillId === 'string' && skillId.length <= 300 ? skillId : DEFAULT_SKILL_ID;
+      const skill = id === DEFAULT_SKILL_ID ? null : findSkill(id);
+      // A skill that has gone missing is kept on the job, so the run fails saying so
+      // instead of quietly reviewing with a different skill.
+      const chosen = id === DEFAULT_SKILL_ID ? null : skill ? { id, label: skill.label, source: skill.source } : { id, label: id.split(':').pop() };
       for (const agent of new Set(agents)) {
         if (!AGENTS[agent]) continue;
         const prior = list().filter((j) => j.taskId === taskId && j.agent === agent);
@@ -393,6 +525,7 @@ export function createAgentReviews({
           taskName,
           taskUpdatedAtMs: Number.isFinite(taskUpdatedAtMs) ? taskUpdatedAtMs : null,
           agent,
+          ...(chosen ? { skill: chosen } : {}),
           status: 'queued',
           steps: 0,
           createdAtMs: now(),

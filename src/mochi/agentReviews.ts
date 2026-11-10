@@ -21,6 +21,36 @@ export interface AgentFailure {
   fix?: string;
 }
 
+/** A skill the picker offers. Ids come from the main process, which resolves the path. */
+export interface ReviewSkill {
+  id: string;
+  source: 'default' | 'personal' | 'plugin';
+  label: string;
+  description?: string;
+}
+
+export const DEFAULT_SKILL_ID = 'default';
+const SKILL_STORAGE_KEY = 'mochi.reviewSkill';
+
+/** The skill picked last time, if it is still offered; otherwise the default. */
+export function rememberedSkill(skills: ReviewSkill[]): string {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(SKILL_STORAGE_KEY);
+  } catch {
+    /* storage unavailable: use the default */
+  }
+  return saved && skills.some((s) => s.id === saved) ? saved : DEFAULT_SKILL_ID;
+}
+
+export function rememberSkill(id: string): void {
+  try {
+    localStorage.setItem(SKILL_STORAGE_KEY, id);
+  } catch {
+    /* storage unavailable: nothing to remember */
+  }
+}
+
 export interface AgentJob {
   id: string;
   taskId: string;
@@ -28,6 +58,8 @@ export interface AgentJob {
   /** The task's updatedAt when the run started: a later change makes the report stale. */
   taskUpdatedAtMs: number | null;
   agent: AgentId;
+  /** Set when the run uses one of the person's own skills instead of the default. */
+  skill?: { id: string; label: string; source?: string };
   status: AgentJobStatus;
   /** The model that ran it: Claude Code reports it; for Codex it is the one in its settings. */
   model?: string;
@@ -46,6 +78,8 @@ export interface AgentReviewStart {
   taskName: string;
   taskUpdatedAtMs?: number;
   agents: AgentId[];
+  /** Omitted for the default skill. */
+  skillId?: string;
 }
 
 /** One run per agent for a task (the store keeps only the latest), in agent order. */
@@ -62,9 +96,9 @@ export function minutesLabel(fromMs: number, nowMs: number): string {
   return min < 1 ? 'under a minute' : `${min} min`;
 }
 
-/** Row wording: "Claude Code reviewing · 12 min", "Codex · report ready". */
+/** Row wording: "Claude Code reviewing · 12 min", "Codex · my-skill · report ready". */
 export function jobLine(job: AgentJob, nowMs: number): string {
-  const label = AGENT_LABELS[job.agent];
+  const label = job.skill ? `${AGENT_LABELS[job.agent]} · ${job.skill.label}` : AGENT_LABELS[job.agent];
   if (job.status === 'queued') return `${label} waiting to start`;
   if (job.status === 'running') return `${label} reviewing · ${minutesLabel(job.startedAtMs ?? job.createdAtMs, nowMs)}`;
   if (job.status === 'done') return `${label} · report ready`;

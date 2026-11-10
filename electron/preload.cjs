@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
   listAgentReviews: () => ipcRenderer.invoke('mochi:agent-reviews-list'),
   startAgentReview: (req) => ipcRenderer.invoke('mochi:agent-review-start', req),
   cancelAgentReview: (id) => ipcRenderer.invoke('mochi:agent-review-cancel', id),
+  listReviewSkills: () => ipcRenderer.invoke('mochi:review-skills-list'),
   onAgentReviewsChanged: (callback) => {
     const listener = (_event, jobs) => callback(jobs);
     ipcRenderer.on('mochi:agent-reviews', listener);

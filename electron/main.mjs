@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAgentReviews } from './agentReview.mjs';
+import { createAgentReviews, listReviewSkills } from './agentReview.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
@@ -181,8 +181,12 @@ ipcMain.handle('mochi:agent-review-start', (_event, req) =>
     taskName: String(req?.taskName ?? ''),
     taskUpdatedAtMs: Number(req?.taskUpdatedAtMs),
     agents: Array.isArray(req?.agents) ? req.agents.map(String) : [],
+    skillId: typeof req?.skillId === 'string' ? req.skillId : undefined,
   }) ?? [],
 );
+
+// Skills the Ask agents picker offers (ids and labels only; paths stay in this process).
+ipcMain.handle('mochi:review-skills-list', () => listReviewSkills());
 
 ipcMain.handle('mochi:agent-review-cancel', (_event, id) => agentReviews?.cancel(String(id)) ?? []);
 

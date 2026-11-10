@@ -1605,6 +1605,30 @@ html.mochi-shell .expanded-view {
   margin: 4px 0;
 }
 
+.agent-skill {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 4px;
+}
+
+.agent-skill select {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 4px;
+  border: 1px solid #d9d6f2;
+  border-radius: 6px;
+  background: #fff;
+  max-width: 100%;
+}
+
+.agent-skill-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .agent-picker-actions {
   display: flex;
   justify-content: flex-end;
