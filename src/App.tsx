@@ -963,6 +963,8 @@ export default function App() {
             saveNotifyPrefs(next);
           }}
           highlightTaskId={highlightTaskId}
+          onShowNotifications={cycleNotification}
+          unread={unread}
           reviewsCompleted={weekly.reviewsCompleted}
           submissionsCompleted={weekly.submissionsCompleted}
           goals={goals}

@@ -51,6 +51,10 @@ interface OverviewPanelProps {
   onNotifyChange: (next: NotifyPrefs) => void;
   /** Row to highlight and scroll to (the notification that opened the panel). */
   highlightTaskId?: string | null;
+  /** Header bell: show the notification bubbles (latest first), like the pet's bell. */
+  onShowNotifications?: () => void;
+  /** Unread notifications, for the header bell's count. */
+  unread?: number;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
   onCopyStats?: () => Promise<boolean>;
   /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
@@ -639,6 +643,26 @@ export function OverviewPanel(props: OverviewPanelProps) {
       <header className="panel-header glance-header">
         <h2>Your week at a glance</h2>
         <div className="glance-header-actions">
+          {props.onShowNotifications && !props.setup && (
+            <button
+              type="button"
+              className="icon-btn panel-bell"
+              onClick={() => {
+                logClick('glance_panel', 'notifications', { unread_count: props.unread ?? 0 });
+                props.onShowNotifications?.();
+              }}
+              aria-label={props.unread ? `Show notifications, ${props.unread} unread` : 'Show notifications'}
+              title="Show notifications"
+            >
+              <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden="true" focusable="false">
+                <path
+                  d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.2 4.2-1.9 4.9-.3.3 0 .6.4.6h11.9c.5 0 .8-.3.5-.6-.7-.7-1.9-1.9-1.9-4.9A4.5 4.5 0 0 0 8 1.5ZM6.6 13.5a1.5 1.5 0 0 0 2.8 0H6.6Z"
+                  fill="currentColor"
+                />
+              </svg>
+              {props.unread ? <span className="panel-bell-count">{props.unread > 9 ? '9+' : props.unread}</span> : null}
+            </button>
+          )}
           {!props.setup && (
             <SectionFilter
               prefs={props.sections}
