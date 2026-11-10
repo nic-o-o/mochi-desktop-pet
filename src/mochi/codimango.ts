@@ -56,7 +56,21 @@ export interface CodimangoRow {
   /** Drafts with passing validation only: why `task submit-status` blocks the
    * submit ([] = submittable). Null or absent when it wasn't checked. */
   submitBlockers?: string[] | null;
+  /** Commit the task is at; the canary scan result only counts for this commit. */
+  commitSha?: string | null;
+  /** Stored benchmark canary scan result (qualitativeResult.benchmarkCanaryScanResult). */
+  canaryScan?: CodimangoCanaryScan | null;
 }
+
+export interface CodimangoCanaryScan {
+  outcome: string;
+  commitSha: string | null;
+  scannerVersion: string | null;
+  retryable: boolean;
+}
+
+/* Codimango only trusts results from its current scanner; it ignores older ones. */
+export const CANARY_SCANNER_VERSION = 'canary-scan-v1';
 
 /** What one refresh returns: your reviews feed and your own tasks. */
 export interface CodimangoSnapshot {
@@ -258,8 +272,25 @@ const DRAFT_PRIORITY: Record<DraftState, TaskPriority> = {
   new: 'low',
 };
 
+/** Why Codimango won't take this draft yet, beyond validation: submit-status
+ * blockers plus an incomplete canary scan at the current commit, which the
+ * submission page shows as "Justification Required" or "Scan Incomplete". */
+export function submitBlockers(row: CodimangoRow): string[] {
+  const out = [...(row.submitBlockers ?? [])];
+  const scan = row.canaryScan;
+  if (
+    scan?.outcome === 'incomplete' &&
+    scan.scannerVersion === CANARY_SCANNER_VERSION &&
+    !!scan.commitSha &&
+    scan.commitSha === row.commitSha
+  ) {
+    out.push(scan.retryable ? 'Canary scan pending' : 'Canary scan incomplete');
+  }
+  return out;
+}
+
 function draftState(row: CodimangoRow): DraftState {
-  if (row.validationStatus === 'passing') return row.submitBlockers?.length ? 'blocked' : 'ready';
+  if (row.validationStatus === 'passing') return submitBlockers(row).length ? 'blocked' : 'ready';
   if (row.validationStatus === 'failed') return 'failing';
   if (row.validationStatus === 'pending') return 'running';
   return 'new';
@@ -267,7 +298,7 @@ function draftState(row: CodimangoRow): DraftState {
 
 /** "Provenance SUSPECT", "TBR infra error +1" — why a passing draft can't be submitted. */
 export function blockerSummary(row: CodimangoRow): string | undefined {
-  const names = (row.submitBlockers ?? []).map(checkName);
+  const names = submitBlockers(row).map(checkName);
   if (names.length === 0) return undefined;
   return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
 }

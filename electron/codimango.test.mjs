@@ -123,3 +123,30 @@ describe('addSubmitBlockers', () => {
     expect(rows.map((r) => r.submitBlockers)).toEqual([['Provenance SUSPECT'], undefined, undefined, null]);
   });
 });
+
+describe('pickRow canary scan', () => {
+  it('keeps only the canary scan fields from qualitativeResult', () => {
+    const row = pickRow({
+      id: 1,
+      commitSha: 'abc',
+      qualitativeResult: {
+        contaminationV2: { checks: [] },
+        benchmarkCanaryScanResult: {
+          commitSha: 'abc',
+          outcome: 'incomplete',
+          reason: 'read_budget_exhausted',
+          retryable: false,
+          scannerVersion: 'canary-scan-v1',
+        },
+      },
+    });
+    expect(row.commitSha).toBe('abc');
+    expect(row.canaryScan).toEqual({
+      outcome: 'incomplete',
+      commitSha: 'abc',
+      scannerVersion: 'canary-scan-v1',
+      retryable: false,
+    });
+    expect(pickRow({ id: 2 }).canaryScan).toBeNull();
+  });
+});

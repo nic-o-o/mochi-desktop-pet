@@ -346,6 +346,40 @@ describe('draft rows', () => {
     expect(sortTasks(items).map((t) => t.id).slice(-1)).toEqual(['suspect']);
   });
 
+  it('blocks a passing draft whose canary scan is incomplete at its current commit', () => {
+    const scan = (over = {}) => ({
+      outcome: 'incomplete',
+      commitSha: 'abc',
+      scannerVersion: 'canary-scan-v1',
+      retryable: false,
+      ...over,
+    });
+    const items = toTaskItems(
+      snap(
+        [],
+        [
+          draft('stuck', { validationStatus: 'passing', submitBlockers: [], commitSha: 'abc', canaryScan: scan() }),
+          draft('retry', { validationStatus: 'passing', commitSha: 'abc', canaryScan: scan({ retryable: true }) }),
+          draft('clean', { validationStatus: 'passing', commitSha: 'abc', canaryScan: scan({ outcome: 'clean' }) }),
+          draft('old-commit', { validationStatus: 'passing', commitSha: 'def', canaryScan: scan() }),
+          draft('old-scanner', {
+            validationStatus: 'passing',
+            commitSha: 'abc',
+            canaryScan: scan({ scannerVersion: 'canary-scan-v0' }),
+          }),
+        ],
+      ),
+      NOW,
+    );
+    const byId = Object.fromEntries(items.map((t) => [t.id, t]));
+    expect(byId.stuck.draftState).toBe('blocked');
+    expect(byId.stuck.checkSummary).toBe('Canary scan incomplete');
+    expect(byId.retry.checkSummary).toBe('Canary scan pending');
+    expect(byId.clean.draftState).toBe('ready');
+    expect(byId['old-commit'].draftState).toBe('ready');
+    expect(byId['old-scanner'].draftState).toBe('ready');
+  });
+
   it('uses short check names for blockers', () => {
     const [item] = toTaskItems(
       snap([], [draft('b', { validationStatus: 'passing', submitBlockers: ['Metacode or Opus pass/fail balance'] })]),
