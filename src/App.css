@@ -1764,3 +1764,13 @@ html.mochi-shell .expanded-view {
   margin-bottom: 10px;
   color: var(--ink-soft);
 }
+
+.agent-skill-error {
+  color: #b42318;
+}
+
+.agent-skill-remove {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 0;
+}

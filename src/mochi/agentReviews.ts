@@ -24,7 +24,7 @@ export interface AgentFailure {
 /** A skill the picker offers. Ids come from the main process, which resolves the path. */
 export interface ReviewSkill {
   id: string;
-  source: 'default' | 'personal' | 'plugin';
+  source: 'default' | 'added' | 'personal' | 'plugin';
   label: string;
   description?: string;
 }

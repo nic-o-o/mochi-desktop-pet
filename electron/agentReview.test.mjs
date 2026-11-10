@@ -9,6 +9,8 @@ import {
   createAgentReviews,
   findReviewSkill,
   isTaskName,
+  addedSkillId,
+  createAddedSkills,
   listReviewSkills,
   readLine,
   resolveReviewSkill,
@@ -305,22 +307,49 @@ describe('listReviewSkills / resolveReviewSkill', () => {
     write(path.join(cache, 'agent-market/team-aai/2.0.37/skills/codimango-review-assistant/SKILL.md'));
     write(path.join(cache, 'agent-market/team-aai/2.0.37/skills/review-task-tbench-v2/SKILL.md'));
     write(path.join(cache, 'agent-market/team-aai/2.0.37/skills/aai-idea/SKILL.md'));
+    write(path.join(cache, 'agent-market/team-aai/2.0.37/skills/task-check/SKILL.md'), '---\nname: task-check\ndescription: Peer review a task\n---');
     write(path.join(cache, 'agent-market/team-aai/1.0.0/skills/old-review/SKILL.md'));
     return home;
   };
 
-  it('offers the default, every personal skill, and plugin skills named review from the newest version', () => {
+  it('offers the default and only skills named for review, from the newest plugin version', () => {
     const home = setup();
     const skills = listReviewSkills(home);
     expect(skills.map((s) => s.id)).toEqual([
       'default',
       'personal:my-review',
-      'personal:notes',
       'plugin:agent-market:team-aai:review-task-tbench-v2',
     ]);
     expect(skills[1]).toMatchObject({ source: 'personal', label: 'my-review', description: 'My own review steps' });
-    expect(skills[3].label).toBe('team-aai:review-task-tbench-v2');
+    expect(skills[2].label).toBe('team-aai:review-task-tbench-v2');
     expect(skills.every((s) => !('path' in s))).toBe(true);
+  });
+
+  it('adds a picked skill folder or SKILL.md, lists it first, and forgets it on remove', () => {
+    const home = setup();
+    const elsewhere = path.join(home, 'work/team-skills/careful-check');
+    write(path.join(elsewhere, 'SKILL.md'), '---\nname: careful-check\ndescription: Our team checklist\n---');
+    const store = createAddedSkills(path.join(home, 'review-skills.json'));
+    expect(store.add(path.join(home, 'work'))).toBeNull();
+    expect(store.add('/does/not/exist')).toBeNull();
+    const id = store.add(elsewhere);
+    expect(id).toBe(addedSkillId(path.join(elsewhere, 'SKILL.md')));
+    expect(store.add(path.join(elsewhere, 'SKILL.md'))).toBe(id);
+    expect(store.list()).toHaveLength(1);
+
+    const skills = listReviewSkills(home, fs, store.list());
+    expect(skills[1]).toEqual({ id, source: 'added', label: 'careful-check', description: 'Our team checklist' });
+    const resolved = resolveReviewSkill(id, home, fs, store.list());
+    expect(resolved).toMatchObject({ source: 'added', path: path.join(elsewhere, 'SKILL.md') });
+    expect(resolved.invoke).toBeUndefined();
+    expect(resolveReviewSkill(id, home, fs, [])).toBeNull();
+
+    const claude = agentCommand('claude', { taskName: 'task-a', cwd: '/tmp/x', skill: resolved });
+    expect(claude.args[1]).toContain(`by following the skill in ${path.join(elsewhere, 'SKILL.md')}`);
+    expect(claude.args[1]).toContain('complete review, in markdown');
+
+    store.remove(id);
+    expect(store.list()).toEqual([]);
   });
 
   it('resolves ids to paths on disk and rejects anything else', () => {

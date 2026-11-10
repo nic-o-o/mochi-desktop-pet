@@ -3,9 +3,11 @@
  * The default reviewer is the team-aai `codimango-review-assistant` skill: it
  * reviews a Codimango task at its exact revision and returns "## Review summary"
  * plus "## Structured form" (every visible review-form field). People can pick
- * one of their own skills instead (listReviewSkills): their personal skills in
- * ~/.claude/skills and installed plugin skills with "review" in the name. The
- * renderer only ever sends a skill id; the path is resolved here, from disk.
+ * one of their own skills instead (listReviewSkills): personal skills in
+ * ~/.claude/skills and installed plugin skills with "review" in the name, plus
+ * any skill folder they add with a file picker
+ * (kept in userData/review-skills.json). The renderer only ever sends a skill
+ * id; the path is resolved here, from disk.
  * Mochi only launches the skill and keeps the result; it never submits a review.
  *
  * Agents run on this Mac under the user's own logins, the way codimango.mjs uses
@@ -23,7 +25,7 @@
  * codimango_login, offline, timeout, no_report, interrupted, cancelled, error.
  */
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -146,18 +148,57 @@ function defaultSkill(home, fsImpl) {
   };
 }
 
+/* Only skills named for reviewing are offered; the rest (emulators, design
+   tools, ...) are noise in the picker. Names, not descriptions: plenty of
+   descriptions mention "review" in passing. Anything else can be added by hand. */
+const namedForReview = (name) => /review/i.test(name);
+
+/** A folder or SKILL.md someone picked → the SKILL.md path, or null if it isn't a skill. */
+export function skillFileFrom(picked, fsImpl = fs) {
+  if (typeof picked !== 'string' || !picked) return null;
+  let stat;
+  try {
+    stat = fsImpl.statSync(picked);
+  } catch {
+    return null;
+  }
+  const file = stat.isDirectory() ? path.join(picked, 'SKILL.md') : picked;
+  if (path.basename(file) !== 'SKILL.md') return null;
+  try {
+    return fsImpl.statSync(file).isFile() ? path.resolve(file) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stable id for an added skill: its path hashed, so the path never goes to the renderer. */
+export const addedSkillId = (file) => `added:${createHash('sha256').update(file).digest('hex').slice(0, 16)}`;
+
+function addedSkill(file, fsImpl) {
+  const meta = readFrontmatter(file, fsImpl);
+  const label = (meta.name && SKILL_PART.test(meta.name) ? meta.name : path.basename(path.dirname(file))).slice(0, 100);
+  return { id: addedSkillId(file), source: 'added', label, description: meta.description, path: file, root: path.dirname(path.dirname(file)) };
+}
+
 /**
- * Skills the picker offers, default first: every personal skill, then installed
- * plugin skills with "review" in the name (the full plugin list runs to hundreds).
- * Each is { id, source, label, description }; ids are what the renderer sends back.
+ * Skills the picker offers, default first: the skills added with the file picker,
+ * then personal and installed plugin skills named for review (the full plugin
+ * list runs to hundreds). Each is { id, source, label, description }; ids are what
+ * the renderer sends back. `added` is the list of picked SKILL.md paths.
  */
-export function listReviewSkills(home = os.homedir(), fsImpl = fs) {
+export function listReviewSkills(home = os.homedir(), fsImpl = fs, added = []) {
   const out = [{ id: DEFAULT_SKILL_ID, source: 'default', label: 'Codimango review assistant (default)' }];
+  for (const file of added) {
+    if (!fsImpl.existsSync(file)) continue;
+    const { id, source, label, description } = addedSkill(file, fsImpl);
+    out.push({ id, source, label, description });
+  }
   const personalRoot = path.join(home, PERSONAL_SKILLS);
   for (const name of listDir(personalRoot, fsImpl).sort()) {
     if (!SKILL_PART.test(name)) continue;
     const file = path.join(personalRoot, name, 'SKILL.md');
     if (!fsImpl.existsSync(file)) continue;
+    if (!namedForReview(name)) continue;
     const meta = readFrontmatter(file, fsImpl);
     out.push({ id: `personal:${name}`, source: 'personal', label: name, description: meta.description });
   }
@@ -170,10 +211,11 @@ export function listReviewSkills(home = os.homedir(), fsImpl = fs) {
       if (!version) continue;
       const skillsDir = path.join(pluginsRoot, market, plugin, version, 'skills');
       for (const name of listDir(skillsDir, fsImpl).sort()) {
-        if (!SKILL_PART.test(name) || !/review/i.test(name)) continue;
+        if (!SKILL_PART.test(name)) continue;
         if (plugin === 'team-aai' && name === SKILL) continue;
         const file = path.join(skillsDir, name, 'SKILL.md');
         if (!fsImpl.existsSync(file)) continue;
+        if (!namedForReview(name)) continue;
         const meta = readFrontmatter(file, fsImpl);
         out.push({
           id: `plugin:${market}:${plugin}:${name}`,
@@ -188,8 +230,12 @@ export function listReviewSkills(home = os.homedir(), fsImpl = fs) {
 }
 
 /** What a run needs for one skill id, resolved from disk; null when it isn't installed. */
-export function resolveReviewSkill(id = DEFAULT_SKILL_ID, home = os.homedir(), fsImpl = fs) {
+export function resolveReviewSkill(id = DEFAULT_SKILL_ID, home = os.homedir(), fsImpl = fs, added = []) {
   if (!id || id === DEFAULT_SKILL_ID) return defaultSkill(home, fsImpl);
+  if (String(id).startsWith('added:')) {
+    const file = added.find((f) => addedSkillId(f) === id);
+    return file && fsImpl.existsSync(file) ? addedSkill(file, fsImpl) : null;
+  }
   const parts = String(id).split(':');
   if (parts[0] === 'personal' && parts.length === 2 && SKILL_PART.test(parts[1])) {
     const root = path.join(home, PERSONAL_SKILLS);
@@ -212,12 +258,16 @@ export function resolveReviewSkill(id = DEFAULT_SKILL_ID, home = os.homedir(), f
 /** The command line for one run. `reportFile` is where Codex writes its last message. */
 export function agentCommand(agent, { taskName, cwd, skill }) {
   const rules = skill.source === 'default' ? HEADLESS_RULES : CUSTOM_RULES;
+  // An added skill isn't installed, so Claude can't call it by name: point it at the file.
+  const claudeTask = skill.invoke
+    ? `Use the ${skill.invoke} skill to review the Codimango task "${taskName}".`
+    : `Review the Codimango task "${taskName}" by following the skill in ${skill.path}: read it and the reference files it links, then follow its workflow and output contract.`;
   if (agent === 'claude') {
     return {
       bin: AGENTS.claude.bin,
       args: [
         '-p',
-        `Use the ${skill.invoke} skill to review the Codimango task "${taskName}". ${rules}`,
+        `${claudeTask} ${rules}`,
         '--output-format',
         'stream-json',
         '--verbose',
@@ -231,7 +281,8 @@ export function agentCommand(agent, { taskName, cwd, skill }) {
   }
   const reportFile = path.join(cwd, 'report.md');
   // Personal skills sit directly in ~/.claude/skills/<name>; plugin skills under <version>/skills/<name>.
-  const namedAt = skill.source === 'personal' ? `${skill.root}/<name>/SKILL.md` : `${skill.root}/**/skills/<name>/SKILL.md`;
+  const namedAt =
+    skill.source === 'personal' || skill.source === 'added' ? `${skill.root}/<name>/SKILL.md` : `${skill.root}/**/skills/<name>/SKILL.md`;
   return {
     bin: AGENTS.codex.bin,
     reportFile,
@@ -359,6 +410,33 @@ export function spawnAgent({ bin, args, cwd }, onLine) {
 }
 
 const ACTIVE = new Set(['queued', 'running']);
+
+/** The skills people added with the file picker: a JSON list of SKILL.md paths. */
+export function createAddedSkills(file, fsImpl = fs) {
+  const read = () => {
+    try {
+      const list = JSON.parse(fsImpl.readFileSync(file, 'utf8'));
+      return Array.isArray(list) ? list.filter((f) => typeof f === 'string' && path.basename(f) === 'SKILL.md') : [];
+    } catch {
+      return [];
+    }
+  };
+  const write = (list) => fsImpl.writeFileSync(file, JSON.stringify(list));
+  return {
+    list: read,
+    /** Add a picked folder or SKILL.md; resolves the new id, or null when it isn't a skill. */
+    add(picked) {
+      const skillFile = skillFileFrom(picked, fsImpl);
+      if (!skillFile) return null;
+      const list = read();
+      if (!list.includes(skillFile)) write([...list, skillFile]);
+      return addedSkillId(skillFile);
+    },
+    remove(id) {
+      write(read().filter((f) => addedSkillId(f) !== id));
+    },
+  };
+}
 
 /**
  * The job store and scheduler. Everything that touches the system is

@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { AgentId, AgentJob, ReviewSkill } from './agentReviews.ts';
 import { AGENT_IDS, AGENT_LABELS, DEFAULT_SKILL_ID, isActive, jobLine, rememberSkill, rememberedSkill } from './agentReviews.ts';
-import { listReviewSkills } from './shell.ts';
+import { addReviewSkill, canAddReviewSkill, listReviewSkills, removeReviewSkill } from './shell.ts';
 import { logClick, logClose } from './usage.ts';
 
 /** What the panel needs to offer agent reviews on "Waiting for your review" rows. */
@@ -11,12 +11,14 @@ export interface AgentReviewControls {
   onOpenReport: (taskId: string) => void;
 }
 
-/* Your own skills first, then the (long) list of installed plugin review skills. */
-const SKILL_GROUPS: Array<{ source: ReviewSkill['source']; label?: string }> = [
-  { source: 'default' },
-  { source: 'personal', label: 'Your skills' },
-  { source: 'plugin', label: 'Plugin review skills' },
+/* Your own review skills first (added, then personal), then installed plugin review skills. */
+const SKILL_GROUPS: Array<{ sources: Array<ReviewSkill['source']>; label?: string }> = [
+  { sources: ['default'] },
+  { sources: ['added', 'personal'], label: 'Your review skills' },
+  { sources: ['plugin'], label: 'Plugin review skills' },
 ];
+/* The menu's last entry opens the file picker instead of selecting a skill. */
+const ADD_SKILL = '__add__';
 
 /**
  * Pick agents and a skill for one review. Claude Code is ticked by default; Start
@@ -40,6 +42,28 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
     };
   }, []);
   const skill = skills.find((s) => s.id === skillId);
+  const [skillNote, setSkillNote] = useState('');
+  const pickSkill = (value: string) => {
+    setSkillNote('');
+    if (value !== ADD_SKILL) {
+      setSkillId(value);
+      return;
+    }
+    logClick('agent_review', 'add_skill', { task_id: taskId });
+    void addReviewSkill().then((got) => {
+      if (!got) return; // cancelled
+      setSkills(got.skills);
+      if (got.id) setSkillId(got.id);
+      else setSkillNote("That folder has no SKILL.md, so it isn't a skill.");
+    });
+  };
+  const removeSkill = () => {
+    void removeReviewSkill(skillId).then((list) => {
+      if (!list) return;
+      setSkills(list);
+      setSkillId(DEFAULT_SKILL_ID);
+    });
+  };
   const toggle = (agent: AgentId) =>
     setChosen((prev) => {
       const next = new Set(prev);
@@ -56,12 +80,12 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
           {AGENT_LABELS[agent]}
         </label>
       ))}
-      {skills.length > 1 && (
+      {(skills.length > 1 || canAddReviewSkill()) && (
         <label className="agent-skill">
           <span className="small">Skill</span>
-          <select value={skillId} onChange={(e) => setSkillId(e.target.value)}>
-            {SKILL_GROUPS.map(({ source, label }) => {
-              const group = skills.filter((s) => s.source === source);
+          <select value={skillId} onChange={(e) => pickSkill(e.target.value)}>
+            {SKILL_GROUPS.map(({ sources, label }) => {
+              const group = skills.filter((s) => sources.includes(s.source));
               if (group.length === 0) return null;
               const options = group.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -69,15 +93,23 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
                 </option>
               ));
               return label ? (
-                <optgroup key={source} label={label}>
+                <optgroup key={label} label={label}>
                   {options}
                 </optgroup>
               ) : (
                 options
               );
             })}
+            {canAddReviewSkill() && <option value={ADD_SKILL}>Add a skill…</option>}
           </select>
           {skill?.description && skill.source !== 'default' && <span className="muted small agent-skill-note">{skill.description}</span>}
+          {skillNote && <span className="small agent-skill-error">{skillNote}</span>}
+          {skill?.source === 'added' && (
+            <button type="button" className="btn-link agent-skill-remove" onClick={removeSkill}>
+              Remove from list
+            </button>
+          )}
+          <span className="muted small">Lists skills with “review” in the name. Use Add a skill… for any other.</span>
         </label>
       )}
       <p className="muted small" id={`${uid}-note`}>

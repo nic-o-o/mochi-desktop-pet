@@ -21,12 +21,12 @@
  * to events.jsonl in the same folder (electron/events.mjs). "Ask agents to
  * review" runs Claude Code or Codex in the background (electron/agentReview.mjs).
  */
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAgentReviews, listReviewSkills } from './agentReview.mjs';
+import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewSkill } from './agentReview.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
@@ -49,6 +49,8 @@ let syncedOnce = false;
 let events = null;
 /* Agent review jobs (electron/agentReview.mjs); created once the app is ready. */
 let agentReviews = null;
+/* Review skills added with the file picker (userData/review-skills.json). */
+let addedSkills = null;
 /** Codimango SEVs (bubble and panel line), read every ten minutes. */
 let sevWatch = null;
 
@@ -186,7 +188,27 @@ ipcMain.handle('mochi:agent-review-start', (_event, req) =>
 );
 
 // Skills the Ask agents picker offers (ids and labels only; paths stay in this process).
-ipcMain.handle('mochi:review-skills-list', () => listReviewSkills());
+ipcMain.handle('mochi:review-skills-list', () => listReviewSkills(os.homedir(), undefined, addedSkills?.list() ?? []));
+
+// "Add a skill…": the person picks a skill folder or SKILL.md; resolves { id, skills } or null.
+ipcMain.handle('mochi:review-skill-add', async () => {
+  if (!addedSkills) return null;
+  const picked = await dialog.showOpenDialog(win ?? undefined, {
+    title: 'Add a review skill',
+    message: 'Choose a skill folder (one with a SKILL.md) or its SKILL.md file.',
+    buttonLabel: 'Add skill',
+    defaultPath: path.join(os.homedir(), '.claude', 'skills'),
+    properties: ['openFile', 'openDirectory'],
+  });
+  if (picked.canceled || picked.filePaths.length === 0) return null;
+  const id = addedSkills.add(picked.filePaths[0]);
+  return { id, skills: listReviewSkills(os.homedir(), undefined, addedSkills.list()) };
+});
+
+ipcMain.handle('mochi:review-skill-remove', (_event, id) => {
+  if (typeof id === 'string') addedSkills?.remove(id);
+  return listReviewSkills(os.homedir(), undefined, addedSkills?.list() ?? []);
+});
 
 ipcMain.handle('mochi:agent-review-cancel', (_event, id) => agentReviews?.cancel(String(id)) ?? []);
 
@@ -276,8 +298,10 @@ app.whenReady().then(() => {
     unixname: os.userInfo().username,
   });
   events.log({ event_name: 'mochi_app_start', launched_at_login: app.getLoginItemSettings().wasOpenedAtLogin === true });
+  addedSkills = createAddedSkills(path.join(app.getPath('userData'), 'review-skills.json'));
   agentReviews = createAgentReviews({
     dir: path.join(app.getPath('userData'), 'agent-reviews'),
+    findSkill: (id) => resolveReviewSkill(id, os.homedir(), undefined, addedSkills.list()),
     onChange: (jobs) => win?.webContents.send('mochi:agent-reviews', jobs),
     onFinished: (job) =>
       events?.log({

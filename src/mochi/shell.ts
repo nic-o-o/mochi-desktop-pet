@@ -68,6 +68,10 @@ export interface MochiShell {
   cancelAgentReview?: (id: string) => Promise<AgentJob[]>;
   /** Skills the Ask agents picker offers, default first (main process). */
   listReviewSkills?: () => Promise<ReviewSkill[]>;
+  /** File picker for a skill folder; resolves the new id (null if it wasn't a skill) and the list, or null if cancelled. */
+  addReviewSkill?: () => Promise<{ id: string | null; skills: ReviewSkill[] } | null>;
+  /** Forget an added skill; resolves the updated list. */
+  removeReviewSkill?: (id: string) => Promise<ReviewSkill[]>;
   /** Every change to the runs (progress, finish); returns unsubscribe. */
   onAgentReviewsChanged?: (callback: (jobs: AgentJob[]) => void) => () => void;
   /** Read-only submission preflight for one task (main process). */
@@ -259,6 +263,22 @@ export function listReviewSkills(): Promise<ReviewSkill[]> {
     .listReviewSkills()
     .then((skills) => (Array.isArray(skills) && skills.length ? skills : fallback))
     .catch(() => fallback);
+}
+
+export function canAddReviewSkill(): boolean {
+  return typeof bridge()?.addReviewSkill === 'function';
+}
+
+export function addReviewSkill(): Promise<{ id: string | null; skills: ReviewSkill[] } | null> {
+  const b = bridge();
+  if (!b?.addReviewSkill) return Promise.resolve(null);
+  return b.addReviewSkill().catch(() => null);
+}
+
+export function removeReviewSkill(id: string): Promise<ReviewSkill[] | null> {
+  const b = bridge();
+  if (!b?.removeReviewSkill) return Promise.resolve(null);
+  return b.removeReviewSkill(id).catch(() => null);
 }
 
 export function cancelAgentReview(id: string): Promise<AgentJob[] | null> {
