@@ -20,8 +20,10 @@ import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
 import { SEV_LINES_MAX, sevHeadline } from './sevs.ts';
 import type { Sev } from './sevs.ts';
-import { SECTIONS } from './sections.ts';
-import type { SectionKey, SectionPrefs } from './sections.ts';
+import { SECTIONS, moveSection } from './sections.ts';
+import type { SectionKey, SectionOrder, SectionPrefs } from './sections.ts';
+import { NOTIFY_KINDS } from './notifyPrefs.ts';
+import type { NotifyPrefs } from './notifyPrefs.ts';
 import { SECTION_EVENT_NAME, logClick, logVpv, msSincePanelOpen, useVpv } from './usage.ts';
 import { canSubmit, submitDryRun, submitSha, submitTask } from './shell.ts';
 
@@ -41,6 +43,14 @@ interface OverviewPanelProps {
   /** Which sections show (header filter menu); saved by the caller. */
   sections: SectionPrefs;
   onSectionsChange: (next: SectionPrefs) => void;
+  /** Section order, top first (filter menu arrows); saved by the caller. */
+  sectionOrder: SectionOrder;
+  onSectionOrderChange: (next: SectionOrder) => void;
+  /** Which notification kinds may pop the bubble (filter menu); saved by the caller. */
+  notify: NotifyPrefs;
+  onNotifyChange: (next: NotifyPrefs) => void;
+  /** Row to highlight and scroll to (the notification that opened the panel). */
+  highlightTaskId?: string | null;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
   onCopyStats?: () => Promise<boolean>;
   /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
@@ -197,10 +207,13 @@ function GlanceRow({
   eventSection,
   agentReview,
   onSubmitted,
+  highlighted = false,
 }: {
   task: TaskItem;
   kind: 'revision' | 'pending' | 'draft';
   position: number;
+  /** The task a clicked notification is about: flashed and scrolled into view. */
+  highlighted?: boolean;
   nowMs: number;
   onOpen: (id: string) => void;
   /** Logging section override (ready-for-submission rows share the draft look). */
@@ -209,6 +222,9 @@ function GlanceRow({
   onSubmitted?: () => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (highlighted) ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [highlighted]);
   const flag =
     kind === 'revision'
       ? revisionRowFlag(t.priority)
@@ -260,7 +276,7 @@ function GlanceRow({
     onSubmitted?.();
   };
   return (
-    <li ref={ref} className="glance-row">
+    <li ref={ref} className={highlighted ? 'glance-row is-highlighted' : 'glance-row'}>
       <button
         type="button"
         className="glance-title"
@@ -357,9 +373,11 @@ function TaskSection({
   emptyText,
   agentReview,
   onSubmitted,
+  highlightTaskId,
 }: {
   title: string;
   tasks: TaskItem[];
+  highlightTaskId?: string | null;
   nowMs: number;
   kind: 'revision' | 'pending' | 'draft';
   onOpen: (id: string) => void;
@@ -369,7 +387,8 @@ function TaskSection({
   agentReview?: AgentReviewControls;
   onSubmitted?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  /* A highlighted task below the first row opens the section so it can be seen. */
+  const [expanded, setExpanded] = useState(() => !!highlightTaskId && tasks.some((t) => t.id === highlightTaskId));
   /* Flag-rank order: HI PRI above LOW PRI; Past due above 0d/1d/2d left.
      Stable, so priority-then-SLA order survives inside each bucket. */
   const ordered = useMemo(() => {
@@ -417,6 +436,7 @@ function TaskSection({
                 eventSection={eventSection}
                 agentReview={agentReview}
                 onSubmitted={onSubmitted}
+                highlighted={t.id === highlightTaskId}
               />
             ))}
           </ul>
@@ -443,17 +463,25 @@ function TaskSection({
   );
 }
 
-/** Header menu: checkboxes for which sections the panel lists (at least one stays on). */
+/** Header menu: which sections the panel lists and in what order (at least one stays on), and which notifications pop. */
 function SectionFilter({
   prefs,
   counts,
   onChange,
+  order,
+  onOrderChange,
+  notify,
+  onNotifyChange,
   onCopyStats,
   onReportProblem,
 }: {
   prefs: SectionPrefs;
   counts: Record<SectionKey, number>;
   onChange: (next: SectionPrefs) => void;
+  order: SectionOrder;
+  onOrderChange: (next: SectionOrder) => void;
+  notify: NotifyPrefs;
+  onNotifyChange: (next: NotifyPrefs) => void;
   onCopyStats?: () => Promise<boolean>;
   onReportProblem?: () => Promise<boolean>;
 }) {
@@ -488,24 +516,61 @@ function SectionFilter({
       {open && (
         <div className="section-menu" role="group" aria-label="Sections to show">
           <p className="section-menu-title">Show in panel</p>
-          {SECTIONS.map(({ key, label }) => {
+          {order.map((key, i) => {
+            const label = SECTIONS.find((s) => s.key === key)?.label ?? key;
             const last = prefs[key] && onCount === 1;
+            const move = (delta: -1 | 1) => {
+              logClick('glance_panel', 'section_order', { section: SECTION_EVENT_NAME[key], action: delta < 0 ? 'up' : 'down' });
+              onOrderChange(moveSection(order, key, delta));
+            };
             return (
-              <label key={key} className="section-option">
-                <input
-                  type="checkbox"
-                  checked={prefs[key]}
-                  disabled={last}
-                  onChange={(e) => {
-                    logClick('glance_panel', 'section_filter', { section: SECTION_EVENT_NAME[key], enabled: e.target.checked });
-                    onChange({ ...prefs, [key]: e.target.checked });
-                  }}
-                />
-                <span>{label}</span>
-                <span className="section-count">{counts[key]}</span>
-              </label>
+              <div key={key} className="section-option-row">
+                <label className="section-option">
+                  <input
+                    type="checkbox"
+                    checked={prefs[key]}
+                    disabled={last}
+                    onChange={(e) => {
+                      logClick('glance_panel', 'section_filter', { section: SECTION_EVENT_NAME[key], enabled: e.target.checked });
+                      onChange({ ...prefs, [key]: e.target.checked });
+                    }}
+                  />
+                  <span>{label}</span>
+                  <span className="section-count">{counts[key]}</span>
+                </label>
+                <span className="section-move">
+                  <button type="button" className="section-move-btn" disabled={i === 0} onClick={() => move(-1)} aria-label={`Move ${label} up`} title="Move up">
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="section-move-btn"
+                    disabled={i === order.length - 1}
+                    onClick={() => move(1)}
+                    aria-label={`Move ${label} down`}
+                    title="Move down"
+                  >
+                    ↓
+                  </button>
+                </span>
+              </div>
             );
           })}
+          <p className="section-menu-title section-menu-subtitle">Notify me about</p>
+          {NOTIFY_KINDS.map(({ key, label }) => (
+            <label key={key} className="section-option">
+              <input
+                type="checkbox"
+                checked={notify[key]}
+                onChange={(e) => {
+                  logClick('glance_panel', 'notify_filter', { notif_kind: key, enabled: e.target.checked });
+                  onNotifyChange({ ...notify, [key]: e.target.checked });
+                }}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          <p className="muted small section-menu-note">Switched-off kinds don&apos;t pop up; the bell still shows them.</p>
           {onCopyStats && (
             <button
               type="button"
@@ -560,10 +625,10 @@ export function OverviewPanel(props: OverviewPanelProps) {
     },
   };
   /* Sections with no tasks are hidden entirely — each only appears when at least one task exists.
-     Ready for submission pins to the top otherwise. */
-  const shownSections = SECTIONS.filter(({ key }) => props.sections[key] && lists[key].tasks.length > 0).sort(
-    (a, b) => (a.key === 'submittable' ? -1 : b.key === 'submittable' ? 1 : 0),
-  );
+     Order is the person's (filter menu arrows); the default pins Ready for submission first. */
+  const shownSections = props.sectionOrder
+    .map((key) => SECTIONS.find((s) => s.key === key))
+    .filter((s): s is (typeof SECTIONS)[number] => !!s && props.sections[s.key] && lists[s.key].tasks.length > 0);
   return (
     <section
       className="float-panel overview-panel"
@@ -584,6 +649,10 @@ export function OverviewPanel(props: OverviewPanelProps) {
                 submittable: props.submittable.length,
               }}
               onChange={props.onSectionsChange}
+              order={props.sectionOrder}
+              onOrderChange={props.onSectionOrderChange}
+              notify={props.notify}
+              onNotifyChange={props.onNotifyChange}
               onCopyStats={props.onCopyStats}
               onReportProblem={props.onReportProblem}
             />
@@ -679,6 +748,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                   emptyText={lists[key].emptyText}
                   agentReview={props.agentReview}
                   onSubmitted={props.onSubmitted}
+                  highlightTaskId={props.highlightTaskId}
                 />
               </div>
             ))

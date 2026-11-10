@@ -47,7 +47,7 @@ fixtures:
 
 scenarios:
   - id: notif-review-assigned
-    title: A new review pops a bubble; clicking it opens the review and clears the badge
+    title: A new review pops a bubble; clicking it opens the panel showing that review and clears the badge
     given: { saved: quiet_day, live: new_review_assigned }
     steps:
       - start
@@ -59,11 +59,27 @@ scenarios:
             - { event: mochi_vpv, surface: bubble, component: bubble, notif_kind: review_assigned, task_id: r2, source: arrival }
       - click_bubble
       - expect:
-          opened: [/reviews/r2]
+          panel: open
+          see: [Waiting for your review, ember-turn-timer]
           bubble: none
           badge: none
           events:
             - { event: mochi_click, surface: bubble, component: bubble, notif_kind: review_assigned, task_id: r2, source: arrival }
+
+  - id: notif-open-in-codimango
+    title: The bubble's "Open in Codimango" link opens the review page directly
+    given: { saved: quiet_day, live: new_review_assigned }
+    steps:
+      - start
+      - expect: { bubble: Review Assigned }
+      - click: Open in Codimango ↗
+      - expect:
+          opened: [/reviews/r2]
+          panel: closed
+          bubble: none
+          badge: none
+          events:
+            - { event: mochi_click, surface: bubble, component: open_link, notif_kind: review_assigned, task_id: r2 }
 
   - id: notif-own-verdict-quiet
     title: Your own verdict on a review is saved to history but does not pop
@@ -90,7 +106,29 @@ scenarios:
       - start
       - expect: { bubble: "Validation failed (Solvability & difficulty)." }
       - click_bubble
-      - expect: { opened: [/submissions/d1] }
+      - expect: { panel: open, bubble: none }
+
+  - id: notif-kind-switched-off
+    title: A notification kind switched off in the menu doesn't pop, but the bell still shows it
+    given: { saved: quiet_day, live: draft_failed_validation, notify: { validation_failed: false } }
+    steps:
+      - start
+      - expect: { bubble: none, badge: none }
+      - click_bell
+      - expect: { bubble: "Validation failed (Solvability & difficulty)." }
+
+  - id: notif-switch-in-menu
+    title: The menu lists notification kinds, all on by default, and logs a switch
+    given: { live: draft_failed_validation }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - expect: { see: [Notify me about, Validation failed, Review assigned to you, Codimango SEVs, Agent review finished] }
+      - toggle_section: Validation failed
+      - expect:
+          events:
+            - { event: mochi_click, surface: glance_panel, component: notify_filter, notif_kind: validation_failed, enabled: false }
 
   - id: notif-first-launch-silent
     title: First launch (nothing saved) builds history without popping anything

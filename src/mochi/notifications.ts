@@ -325,6 +325,8 @@ export function useNotificationHistory(
   snapshot: CodimangoSnapshot | null,
   nowMs: number,
   onArrive: (notice: Notice, source: 'arrival' | 'replay') => void,
+  /** Kinds switched off in the filter menu: kept in history, never popped. */
+  allowed: (kind: NoticeKind | undefined) => boolean = () => true,
 ) {
   const [history, setHistory] = useState<Notice[]>(loadNotificationHistory);
   const [prevSnapshot, setPrevSnapshot] = useState<CodimangoSnapshot | null>(null);
@@ -351,7 +353,7 @@ export function useNotificationHistory(
         const fresh = diffNotifications(prevSnapshot, snapshot, nowMs);
         if (fresh.length > 0) {
           setHistory((h) => saveNotificationHistory([...fresh.slice().reverse(), ...h]));
-          const loud = fresh.filter((n) => !n.quiet);
+          const loud = fresh.filter((n) => !n.quiet && allowed(n.kind));
           if (loud.length > 0) setPendingArrival(loud[loud.length - 1]);
         }
       }
