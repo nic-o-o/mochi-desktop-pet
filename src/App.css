@@ -1774,3 +1774,29 @@ html.mochi-shell .expanded-view {
   font-size: 12px;
   padding: 0;
 }
+
+.agent-skill-pick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agent-skill-pick select {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-skill-star {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: #c9a227;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.agent-skill-star:hover {
+  background: var(--accent-soft);
+}

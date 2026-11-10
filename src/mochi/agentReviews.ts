@@ -43,6 +43,30 @@ export function rememberedSkill(skills: ReviewSkill[]): string {
   return saved && skills.some((s) => s.id === saved) ? saved : DEFAULT_SKILL_ID;
 }
 
+const STARRED_STORAGE_KEY = 'mochi.reviewSkill.starred';
+
+/** Skills the person starred in the picker (shown first). */
+export function loadStarredSkills(): string[] {
+  try {
+    const list: unknown = JSON.parse(localStorage.getItem(STARRED_STORAGE_KEY) ?? '[]');
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Star or unstar one skill; returns the new list. The default skill is never starred. */
+export function toggleStarredSkill(starred: string[], id: string): string[] {
+  if (id === DEFAULT_SKILL_ID) return starred;
+  const next = starred.includes(id) ? starred.filter((s) => s !== id) : [...starred, id];
+  try {
+    localStorage.setItem(STARRED_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable: stars last for this session */
+  }
+  return next;
+}
+
 export function rememberSkill(id: string): void {
   try {
     localStorage.setItem(SKILL_STORAGE_KEY, id);

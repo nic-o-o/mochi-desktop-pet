@@ -1,6 +1,16 @@
 import { useEffect, useId, useState } from 'react';
 import type { AgentId, AgentJob, ReviewSkill } from './agentReviews.ts';
-import { AGENT_IDS, AGENT_LABELS, DEFAULT_SKILL_ID, isActive, jobLine, rememberSkill, rememberedSkill } from './agentReviews.ts';
+import {
+  AGENT_IDS,
+  AGENT_LABELS,
+  DEFAULT_SKILL_ID,
+  isActive,
+  jobLine,
+  loadStarredSkills,
+  rememberSkill,
+  rememberedSkill,
+  toggleStarredSkill,
+} from './agentReviews.ts';
 import { addReviewSkill, canAddReviewSkill, listReviewSkills, removeReviewSkill } from './shell.ts';
 import { logClick, logClose } from './usage.ts';
 
@@ -11,7 +21,7 @@ export interface AgentReviewControls {
   onOpenReport: (taskId: string) => void;
 }
 
-/* Your own review skills first (added, then personal), then installed plugin review skills. */
+/* Starred first, then your own review skills (added, then personal), then installed plugin review skills. */
 const SKILL_GROUPS: Array<{ sources: Array<ReviewSkill['source']>; label?: string }> = [
   { sources: ['default'] },
   { sources: ['added', 'personal'], label: 'Your review skills' },
@@ -42,6 +52,9 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
     };
   }, []);
   const skill = skills.find((s) => s.id === skillId);
+  const [starred, setStarred] = useState<string[]>(loadStarredSkills);
+  const isStarred = starred.includes(skillId);
+  const starredSkills = starred.map((id) => skills.find((s) => s.id === id)).filter((s): s is ReviewSkill => !!s);
   const [skillNote, setSkillNote] = useState('');
   const pickSkill = (value: string) => {
     setSkillNote('');
@@ -83,9 +96,19 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
       {(skills.length > 1 || canAddReviewSkill()) && (
         <label className="agent-skill">
           <span className="small">Skill</span>
+          <span className="agent-skill-pick">
           <select value={skillId} onChange={(e) => pickSkill(e.target.value)}>
+            {starredSkills.length > 0 && (
+              <optgroup label="Starred">
+                {starredSkills.map((s) => (
+                  <option key={`star-${s.id}`} value={s.id}>
+                    ★ {s.label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
             {SKILL_GROUPS.map(({ sources, label }) => {
-              const group = skills.filter((s) => sources.includes(s.source));
+              const group = skills.filter((s) => sources.includes(s.source) && !(label && starred.includes(s.id)));
               if (group.length === 0) return null;
               const options = group.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -102,6 +125,19 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
             })}
             {canAddReviewSkill() && <option value={ADD_SKILL}>Add a skill…</option>}
           </select>
+          {skillId !== DEFAULT_SKILL_ID && (
+            <button
+              type="button"
+              className="agent-skill-star"
+              aria-pressed={isStarred}
+              aria-label={isStarred ? `Unstar ${skill?.label ?? 'skill'}` : `Star ${skill?.label ?? 'skill'}`}
+              title={isStarred ? 'Unstar' : 'Star: list it first'}
+              onClick={() => setStarred((prev) => toggleStarredSkill(prev, skillId))}
+            >
+              {isStarred ? '★' : '☆'}
+            </button>
+          )}
+          </span>
           {skill?.description && skill.source !== 'default' && <span className="muted small agent-skill-note">{skill.description}</span>}
           {skillNote && <span className="small agent-skill-error">{skillNote}</span>}
           {skill?.source === 'added' && (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentJob } from './agentReviews.ts';
-import { isStale, jobLine, jobsForTask, newlyFinished, rememberSkill, rememberedSkill } from './agentReviews.ts';
+import { isStale, jobLine, jobsForTask, loadStarredSkills, newlyFinished, rememberSkill, rememberedSkill, toggleStarredSkill } from './agentReviews.ts';
 import type { ReviewSkill } from './agentReviews.ts';
 import type { TaskItem } from './logic.ts';
 
@@ -83,5 +83,27 @@ describe('isStale', () => {
     expect(isStale(job({ taskUpdatedAtMs: NOW }), task)).toBe(false);
     expect(isStale(job({ taskUpdatedAtMs: null }), task)).toBe(false);
     expect(isStale(job({}), undefined)).toBe(false);
+  });
+});
+
+describe('starred skills', () => {
+  it('stars and unstars, never the default, and survives a reload', () => {
+    const store = new Map<string, string>();
+    const original = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+    });
+    try {
+      let starred = loadStarredSkills();
+      expect(starred).toEqual([]);
+      starred = toggleStarredSkill(starred, 'plugin:m:p:a-review');
+      starred = toggleStarredSkill(starred, 'default');
+      expect(starred).toEqual(['plugin:m:p:a-review']);
+      expect(loadStarredSkills()).toEqual(['plugin:m:p:a-review']);
+      expect(toggleStarredSkill(starred, 'plugin:m:p:a-review')).toEqual([]);
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: original });
+    }
   });
 });
