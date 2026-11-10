@@ -21,12 +21,131 @@ export interface AgentReviewControls {
   onOpenReport: (taskId: string) => void;
 }
 
-/* Starred first, then your own review skills (added, then personal), then installed plugin review skills. */
-const SKILL_GROUPS: Array<{ sources: Array<ReviewSkill['source']>; label?: string }> = [
-  { sources: ['default'] },
+/* Default, then starred, then your own review skills (added, then personal), then
+   installed plugin review skills. A starred skill moves out of its usual group. */
+const SKILL_GROUPS: Array<{ sources: Array<ReviewSkill['source']>; label: string }> = [
   { sources: ['added', 'personal'], label: 'Your review skills' },
   { sources: ['plugin'], label: 'Plugin review skills' },
 ];
+
+/**
+ * The skill chooser: the current skill on a button; open, a filterable list where
+ * every skill line ends in a star (☆ → yellow ★) and starred skills are listed first.
+ */
+export function SkillPicker({
+  skills,
+  value,
+  starred,
+  canAdd,
+  onPick,
+  onAdd,
+  onToggleStar,
+}: {
+  skills: ReviewSkill[];
+  value: string;
+  starred: string[];
+  canAdd: boolean;
+  onPick: (id: string) => void;
+  onAdd: () => void;
+  onToggleStar: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const current = skills.find((s) => s.id === value);
+  const q = query.trim().toLowerCase();
+  const matches = (s: ReviewSkill) => !q || s.label.toLowerCase().includes(q);
+  const groups: Array<{ label?: string; items: ReviewSkill[] }> = [
+    { items: skills.filter((s) => s.source === 'default' && matches(s)) },
+    {
+      label: 'Starred',
+      items: starred.map((id) => skills.find((s) => s.id === id)).filter((s): s is ReviewSkill => !!s && matches(s)),
+    },
+    ...SKILL_GROUPS.map(({ sources, label }) => ({
+      label,
+      items: skills.filter((s) => sources.includes(s.source) && !starred.includes(s.id) && matches(s)),
+    })),
+  ].filter((g) => g.items.length > 0);
+  const close = () => {
+    setOpen(false);
+    setQuery('');
+  };
+  return (
+    <div className="skill-picker">
+      <button type="button" className="skill-picker-current" aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
+        <span className="skill-picker-label">{current?.label ?? 'Codimango review assistant (default)'}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="skill-list">
+          <input
+            className="skill-filter"
+            type="search"
+            placeholder="Filter skills…"
+            aria-label="Filter skills"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
+          <ul className="skill-rows" aria-label="Review skills">
+            {groups.map((g) => (
+              <li key={g.label ?? 'default'} className="skill-group">
+                {g.label && <span className="skill-group-label">{g.label}</span>}
+                <ul>
+                  {g.items.map((s) => {
+                    const isStarred = starred.includes(s.id);
+                    return (
+                      <li key={s.id} className={s.id === value ? 'skill-row is-current' : 'skill-row'}>
+                        <button
+                          type="button"
+                          className="skill-row-pick"
+                          aria-current={s.id === value ? 'true' : undefined}
+                          title={s.description}
+                          onClick={() => {
+                            onPick(s.id);
+                            close();
+                          }}
+                        >
+                          {s.label}
+                        </button>
+                        {s.source !== 'default' && (
+                          <button
+                            type="button"
+                            className={isStarred ? 'skill-star is-starred' : 'skill-star'}
+                            aria-pressed={isStarred}
+                            aria-label={isStarred ? `Unstar ${s.label}` : `Star ${s.label}`}
+                            title={isStarred ? 'Unstar' : 'Star: list it first'}
+                            onClick={() => onToggleStar(s.id)}
+                          >
+                            {isStarred ? '★' : '☆'}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))}
+          </ul>
+          {groups.length === 0 && <p className="muted small skill-empty">No skills match.</p>}
+          {canAdd && (
+            <button
+              type="button"
+              className="skill-add"
+              onClick={() => {
+                close();
+                onAdd();
+              }}
+            >
+              Add a skill…
+            </button>
+          )}
+          <p className="muted small skill-hint">Lists skills with “review” in the name. Add a skill… for any other.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* The menu's last entry opens the file picker instead of selecting a skill. */
 const ADD_SKILL = '__add__';
 
@@ -53,8 +172,6 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
   }, []);
   const skill = skills.find((s) => s.id === skillId);
   const [starred, setStarred] = useState<string[]>(loadStarredSkills);
-  const isStarred = starred.includes(skillId);
-  const starredSkills = starred.map((id) => skills.find((s) => s.id === id)).filter((s): s is ReviewSkill => !!s);
   const [skillNote, setSkillNote] = useState('');
   const pickSkill = (value: string) => {
     setSkillNote('');
@@ -94,50 +211,17 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
         </label>
       ))}
       {(skills.length > 1 || canAddReviewSkill()) && (
-        <label className="agent-skill">
+        <div className="agent-skill">
           <span className="small">Skill</span>
-          <span className="agent-skill-pick">
-          <select value={skillId} onChange={(e) => pickSkill(e.target.value)}>
-            {starredSkills.length > 0 && (
-              <optgroup label="Starred">
-                {starredSkills.map((s) => (
-                  <option key={`star-${s.id}`} value={s.id}>
-                    ★ {s.label}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {SKILL_GROUPS.map(({ sources, label }) => {
-              const group = skills.filter((s) => sources.includes(s.source) && !(label && starred.includes(s.id)));
-              if (group.length === 0) return null;
-              const options = group.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ));
-              return label ? (
-                <optgroup key={label} label={label}>
-                  {options}
-                </optgroup>
-              ) : (
-                options
-              );
-            })}
-            {canAddReviewSkill() && <option value={ADD_SKILL}>Add a skill…</option>}
-          </select>
-          {skillId !== DEFAULT_SKILL_ID && (
-            <button
-              type="button"
-              className="agent-skill-star"
-              aria-pressed={isStarred}
-              aria-label={isStarred ? `Unstar ${skill?.label ?? 'skill'}` : `Star ${skill?.label ?? 'skill'}`}
-              title={isStarred ? 'Unstar' : 'Star: list it first'}
-              onClick={() => setStarred((prev) => toggleStarredSkill(prev, skillId))}
-            >
-              {isStarred ? '★' : '☆'}
-            </button>
-          )}
-          </span>
+          <SkillPicker
+            skills={skills}
+            value={skillId}
+            starred={starred}
+            canAdd={canAddReviewSkill()}
+            onPick={pickSkill}
+            onAdd={() => pickSkill(ADD_SKILL)}
+            onToggleStar={(id) => setStarred((prev) => toggleStarredSkill(prev, id))}
+          />
           {skill?.description && skill.source !== 'default' && <span className="muted small agent-skill-note">{skill.description}</span>}
           {skillNote && <span className="small agent-skill-error">{skillNote}</span>}
           {skill?.source === 'added' && (
@@ -145,8 +229,7 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
               Remove from list
             </button>
           )}
-          <span className="muted small">Lists skills with “review” in the name. Use Add a skill… for any other.</span>
-        </label>
+        </div>
       )}
       <p className="muted small" id={`${uid}-note`}>
         Runs on this Mac and usually takes 15–30 minutes. Nothing is submitted: you read the report and decide.
