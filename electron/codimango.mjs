@@ -11,6 +11,8 @@
  * (e.g. Provenance SUSPECT), 1P SOTA holds and TBR infra errors also gate it.
  * So each draft whose validation passes also gets `task submit-status` (about
  * 2 s, run in parallel), and its blockers ride along as `submitBlockers`.
+ * submit-status doesn't see the benchmark canary scan (only the submit route
+ * rechecks it), so the row also carries that scan result as `canaryScan`.
  *
  * Failures come back as one of: cli_missing (not installed), login_required
  * (no or expired Nest token: run `codimango auth setup`), offline, error.
@@ -44,6 +46,7 @@ const ROW_FIELDS = [
   'staleArchiveWarnedAt',
   'oraclePassCount',
   'oracleTotalCount',
+  'commitSha',
 ];
 
 /** Keep only what the panel mapping reads (CodimangoRow in src/mochi/codimango.ts). */
@@ -57,6 +60,17 @@ export function pickRow(task) {
         advisory: d?.advisory === true,
       }))
     : null;
+  // The benchmark canary scan result is the one part of qualitativeResult the panel reads.
+  const scan = task.qualitativeResult?.benchmarkCanaryScanResult;
+  row.canaryScan =
+    scan && typeof scan === 'object'
+      ? {
+          outcome: String(scan.outcome ?? ''),
+          commitSha: scan.commitSha ?? null,
+          scannerVersion: scan.scannerVersion ?? null,
+          retryable: scan.retryable === true,
+        }
+      : null;
   return row;
 }
 
