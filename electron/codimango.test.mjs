@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, isAllowedLink, pickRow, pickSubmitSha } from './codimango.mjs';
+import { addSubmitBlockers, classifyFailure, isAllowedLink, pickRow, pickSubmitBlockers, pickSubmitSha } from './codimango.mjs';
 
 describe('classifyFailure', () => {
   it('reports a missing CLI', () => {
@@ -81,5 +81,45 @@ describe('pickSubmitSha', () => {
     expect(pickSubmitSha({ validationGeneration: { sourceRevision: 'abc' }, commitSha: null })).toBeNull();
     expect(pickSubmitSha({})).toBeNull();
     expect(pickSubmitSha(null)).toBeNull();
+  });
+});
+
+describe('pickSubmitBlockers', () => {
+  it('is empty when submit-status clears the task', () => {
+    expect(pickSubmitBlockers({ blocked: false, blockers: [], tbrInfraError: false, validationPending: false })).toEqual([]);
+  });
+  it('lists blocker labels, TBR infra errors and pending validation', () => {
+    expect(
+      pickSubmitBlockers({
+        blocked: true,
+        blockers: [{ label: 'Provenance SUSPECT', status: 'warn' }],
+        tbrInfraError: true,
+        validationPending: true,
+      }),
+    ).toEqual(['Provenance SUSPECT', 'TBR infra error', 'Validation still running']);
+  });
+  it('still blocks when blocked comes without labels', () => {
+    expect(pickSubmitBlockers({ blocked: true, blockers: [] })).toEqual(['Blocked']);
+  });
+  it('returns null for unexpected output', () => {
+    expect(pickSubmitBlockers(null)).toBeNull();
+  });
+});
+
+describe('addSubmitBlockers', () => {
+  it('checks only your drafts whose validation passes', async () => {
+    const rows = [
+      { id: '1', status: 'draft', validationStatus: 'passing' },
+      { id: '2', status: 'draft', validationStatus: 'failed' },
+      { id: '3', status: 'submitted', validationStatus: 'passing' },
+      { id: '4', status: 'draft', validationStatus: 'passing' },
+    ];
+    const asked = [];
+    await addSubmitBlockers(rows, async (id) => {
+      asked.push(id);
+      return id === '4' ? null : ['Provenance SUSPECT'];
+    });
+    expect(asked).toEqual(['1', '4']);
+    expect(rows.map((r) => r.submitBlockers)).toEqual([['Provenance SUSPECT'], undefined, undefined, null]);
   });
 });

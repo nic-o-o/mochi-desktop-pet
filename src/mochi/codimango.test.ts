@@ -320,6 +320,40 @@ describe('draft rows', () => {
     expect(draftRowFlag('new').text).toBe('NEW');
   });
 
+  it('marks passing drafts that submit-status blocks as BLOCKED, not ready', () => {
+    const items = toTaskItems(
+      snap(
+        [],
+        [
+          draft('clear', { validationStatus: 'passing', submitBlockers: [], updatedAt: iso(NOW - DAY) }),
+          draft('unchecked', { validationStatus: 'passing', updatedAt: iso(NOW - DAY) }),
+          draft('suspect', {
+            validationStatus: 'passing',
+            submitBlockers: ['Provenance SUSPECT', 'TBR infra error'],
+            updatedAt: iso(NOW - DAY),
+          }),
+        ],
+      ),
+      NOW,
+    );
+    const byId = Object.fromEntries(items.map((t) => [t.id, t]));
+    expect(byId.clear.draftState).toBe('ready');
+    expect(byId.unchecked.draftState).toBe('ready');
+    expect(byId.suspect.draftState).toBe('blocked');
+    expect(byId.suspect.checkSummary).toBe('Provenance SUSPECT +1');
+    expect(byId.suspect.subtitle).toBe('Validation passing · blocked: Provenance SUSPECT +1 · updated 1d ago');
+    expect(draftRowFlag('blocked')).toEqual({ text: 'BLOCKED', tone: 'light' });
+    expect(sortTasks(items).map((t) => t.id).slice(-1)).toEqual(['suspect']);
+  });
+
+  it('uses short check names for blockers', () => {
+    const [item] = toTaskItems(
+      snap([], [draft('b', { validationStatus: 'passing', submitBlockers: ['Metacode or Opus pass/fail balance'] })]),
+      NOW,
+    );
+    expect(item.checkSummary).toBe('Solvability & difficulty');
+  });
+
   it('does not count drafts toward reviews or revisions', () => {
     const items = toTaskItems(snap([], [draft('d1', { validationStatus: 'passing' })]), NOW);
     expect(items.map((t) => t.status)).toEqual(['draft']);

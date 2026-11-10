@@ -7,6 +7,11 @@
  * picked down to the fields src/mochi/codimango.ts maps, so the renderer gets
  * a few KB instead of ~4 MB.
  *
+ * Passing validation doesn't mean a draft can be submitted: blocking signals
+ * (e.g. Provenance SUSPECT), 1P SOTA holds and TBR infra errors also gate it.
+ * So each draft whose validation passes also gets `task submit-status` (about
+ * 2 s, run in parallel), and its blockers ride along as `submitBlockers`.
+ *
  * Failures come back as one of: cli_missing (not installed), login_required
  * (no or expired Nest token: run `codimango auth setup`), offline, error.
  */
@@ -159,6 +164,33 @@ export function submitTask(id, sha) {
   );
 }
 
+/** Why `task submit-status` says a task can't be submitted yet; [] when it can. */
+export function pickSubmitBlockers(status) {
+  if (!status || typeof status !== 'object') return null;
+  const labels = (Array.isArray(status.blockers) ? status.blockers : [])
+    .map((b) => String(b?.label ?? '').trim())
+    .filter(Boolean);
+  if (status.tbrInfraError === true) labels.push('TBR infra error');
+  if (status.validationPending === true) labels.push('Validation still running');
+  if (status.blocked === true && labels.length === 0) labels.push('Blocked');
+  return labels;
+}
+
+/** Blockers for one task, or null when the check itself failed (row keeps its validation status). */
+export function fetchSubmitBlockers(id) {
+  return runJsonCommand(['task', 'submit-status', String(id)]).then((r) => (r.ok ? pickSubmitBlockers(r.body) : null));
+}
+
+/** Attach `submitBlockers` to your drafts whose validation passes. */
+export async function addSubmitBlockers(rows, fetchBlockers = fetchSubmitBlockers) {
+  const passing = rows.filter((r) => r.status === 'draft' && r.validationStatus === 'passing');
+  const results = await Promise.all(passing.map((r) => fetchBlockers(r.id)));
+  passing.forEach((r, i) => {
+    r.submitBlockers = results[i];
+  });
+  return rows;
+}
+
 let inFlight = null;
 
 /** One refresh. Concurrent callers share the same run. */
@@ -168,6 +200,7 @@ export function fetchCodimango() {
     const [reviewing, mine] = await Promise.all([listTasks('reviewing'), listTasks('mine')]);
     if (!reviewing.ok) return reviewing;
     if (!mine.ok) return mine;
+    await addSubmitBlockers(mine.rows);
     console.log(
       `[mochi] codimango refresh: ${reviewing.rows.length} reviewing, ${mine.rows.length} mine in ${Date.now() - started}ms`,
     );
