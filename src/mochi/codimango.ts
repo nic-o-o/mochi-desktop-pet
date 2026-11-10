@@ -10,8 +10,9 @@
  *     pending task with no push for 14 days is warned, then archived 14 days later):
  *     archive warning sent → urgent; validation failing 10+ days → urgent;
  *     failing → high; pending or passing → normal (oldest send-back first).
- *   Drafts (optional section) — ready to submit (validation passing) first,
- *     then failing, running, not yet validated; most recently updated first.
+ *   Drafts (optional section) — ready to submit (validation passing and
+ *     `task submit-status` not blocked) first, then failing or blocked, running,
+ *     not yet validated; most recently updated first.
  */
 import type { DraftState, TaskItem, TaskPriority } from './logic.ts';
 
@@ -52,6 +53,9 @@ export interface CodimangoRow {
   validationDetails: CodimangoValidationDetail[] | null;
   oraclePassCount: number | null;
   oracleTotalCount: number | null;
+  /** Drafts with passing validation only: why `task submit-status` blocks the
+   * submit ([] = submittable). Null or absent when it wasn't checked. */
+  submitBlockers?: string[] | null;
 }
 
 /** What one refresh returns: your reviews feed and your own tasks. */
@@ -249,15 +253,23 @@ function revisionItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | nul
 const DRAFT_PRIORITY: Record<DraftState, TaskPriority> = {
   ready: 'high',
   failing: 'normal',
+  blocked: 'normal',
   running: 'low',
   new: 'low',
 };
 
 function draftState(row: CodimangoRow): DraftState {
-  if (row.validationStatus === 'passing') return 'ready';
+  if (row.validationStatus === 'passing') return row.submitBlockers?.length ? 'blocked' : 'ready';
   if (row.validationStatus === 'failed') return 'failing';
   if (row.validationStatus === 'pending') return 'running';
   return 'new';
+}
+
+/** "Provenance SUSPECT", "TBR infra error +1" — why a passing draft can't be submitted. */
+export function blockerSummary(row: CodimangoRow): string | undefined {
+  const names = (row.submitBlockers ?? []).map(checkName);
+  if (names.length === 0) return undefined;
+  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
 }
 
 /** Your tasks still in draft (not submitted for review). */
@@ -265,15 +277,18 @@ function draftItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | null {
   if (row.status !== 'draft') return null;
   const state = draftState(row);
   const updatedMs = ms(row.updatedAt) ?? 0;
-  const checkSummary = state === 'failing' ? failedCheckSummary(row) : undefined;
+  const checkSummary =
+    state === 'failing' ? failedCheckSummary(row) : state === 'blocked' ? blockerSummary(row) : undefined;
   const lead =
     state === 'ready'
       ? 'Validation passing · ready to submit'
       : state === 'failing'
         ? `Validation failed${checkSummary ? ` · ${checkSummary}` : ''}`
-        : state === 'running'
-          ? 'Validation running'
-          : 'Not validated yet';
+        : state === 'blocked'
+          ? `Validation passing · blocked: ${checkSummary}`
+          : state === 'running'
+            ? 'Validation running'
+            : 'Not validated yet';
   return {
     id: row.id,
     title: row.name,

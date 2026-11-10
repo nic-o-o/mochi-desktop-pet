@@ -34,8 +34,9 @@ export function resolvePetState(input: PetStateInput): PetState {
 export type TaskPriority = 'urgent' | 'high' | 'normal' | 'low';
 export type TaskStatus = 'pending_review' | 'revision_required' | 'draft';
 
-/** Draft rows: where validation stands (READY = passing, can be submitted). */
-export type DraftState = 'ready' | 'failing' | 'running' | 'new';
+/** Draft rows: where validation stands (READY = passing, can be submitted;
+ * BLOCKED = passing, but Codimango won't accept the submit yet). */
+export type DraftState = 'ready' | 'failing' | 'blocked' | 'running' | 'new';
 
 export interface TaskItem {
   id: string;
@@ -135,6 +136,8 @@ export function draftRowFlag(state: DraftState | undefined): GlanceFlag {
       return { text: 'READY', tone: 'ok' };
     case 'failing':
       return { text: 'FAILING', tone: 'light' };
+    case 'blocked':
+      return { text: 'BLOCKED', tone: 'light' };
     case 'running':
       return { text: 'RUNNING', tone: 'light' };
     default:
@@ -142,7 +145,7 @@ export function draftRowFlag(state: DraftState | undefined): GlanceFlag {
   }
 }
 
-/** "Ready for submission": drafts whose validation passes (submittable). Never mutates the input. */
+/** "Ready for submission": drafts Codimango would accept now. Never mutates the input. */
 export function submittableDrafts(tasks: TaskItem[]): TaskItem[] {
   return tasks.filter((t) => t.status === 'draft' && t.draftState === 'ready');
 }

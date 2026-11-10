@@ -232,7 +232,13 @@ describe('submittableDrafts — ready-for-submission lists passing drafts only',
   });
 
   it('keeps ready drafts and drops every other draft state', () => {
-    const tasks = [draft('ready-1', 'ready'), draft('failing', 'failing'), draft('running', 'running'), draft('new', 'new')];
+    const tasks = [
+      draft('ready-1', 'ready'),
+      draft('failing', 'failing'),
+      draft('blocked', 'blocked'),
+      draft('running', 'running'),
+      draft('new', 'new'),
+    ];
     expect(submittableDrafts(tasks).map((t) => t.id)).toEqual(['ready-1']);
   });
 
