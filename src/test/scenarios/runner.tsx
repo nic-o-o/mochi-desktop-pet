@@ -381,6 +381,14 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'open_menu':
           fireEvent.click(mustFind('[aria-label="Choose sections"]', 'the ≡ menu button'));
           break;
+        case 'drag_section': {
+          const { label, dy } = arg as { label: string; dy: number };
+          const handle = mustFind(`[aria-label="Drag ${label} to reorder"]`, 'the section drag handle');
+          fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 10 });
+          fireEvent.pointerMove(handle, { pointerId: 1, clientX: 10, clientY: 10 + dy });
+          fireEvent.pointerUp(handle, { pointerId: 1, clientX: 10, clientY: 10 + dy });
+          break;
+        }
         case 'refresh_now':
           fireEvent.click(mustFind('[aria-label="Refresh now"]', 'the ↻ button'));
           break;

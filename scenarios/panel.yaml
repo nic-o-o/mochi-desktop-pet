@@ -130,19 +130,18 @@ scenarios:
           not_see: [Codimango is not connected]
 
   - id: panel-section-order
-    title: The ≡ menu arrows reorder sections, and the order is kept
+    title: The main panel drag handle reorders sections, and the order is kept
     given: { live: busy_week }
     steps:
       - start
       - click_pet
-      - open_menu
-      - press: Move Waiting for your review up
-      - press: Move Waiting for your review up
+      - drag_section: { label: Waiting for your review, dy: -40 }
+      - drag_section: { label: Waiting for your review, dy: -40 }
       - expect:
           events:
-            - { event: mochi_click, surface: glance_panel, component: section_order, section: waiting_review, action: up }
-      - open_menu
-      - expect: { in_order: [Waiting for your review, Ready for submission, Needs revision] }
+            - { event: mochi_click, surface: glance_panel, component: section_order, section: waiting_review, action: drag, from: 2, to: 1 }
+            - { event: mochi_click, surface: glance_panel, component: section_order, section: waiting_review, action: drag, from: 1, to: 0 }
+          in_order: [Waiting for your review, Ready for submission, Needs revision]
 
   - id: panel-section-order-saved
     title: A saved section order is used on launch
