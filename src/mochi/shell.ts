@@ -2,7 +2,7 @@
  * In a plain browser `window.mochiShell` is undefined and every function here
  * is a no-op, so `npm run dev` behaves exactly as before.
  */
-import type { AgentJob, AgentReviewStart } from './agentReviews.ts';
+import type { AgentJob, AgentReviewStart, ReviewSkill } from './agentReviews.ts';
 import type { CodimangoFetchResult } from './codimango.ts';
 import type { Sev } from './sevs.ts';
 
@@ -66,6 +66,12 @@ export interface MochiShell {
   startAgentReview?: (req: AgentReviewStart) => Promise<AgentJob[]>;
   /** Stop a queued or running review; resolves the updated list. */
   cancelAgentReview?: (id: string) => Promise<AgentJob[]>;
+  /** Skills the Ask agents picker offers, default first (main process). */
+  listReviewSkills?: () => Promise<ReviewSkill[]>;
+  /** File picker for a skill folder; resolves the new id (null if it wasn't a skill) and the list, or null if cancelled. */
+  addReviewSkill?: () => Promise<{ id: string | null; skills: ReviewSkill[] } | null>;
+  /** Forget an added skill; resolves the updated list. */
+  removeReviewSkill?: (id: string) => Promise<ReviewSkill[]>;
   /** Every change to the runs (progress, finish); returns unsubscribe. */
   onAgentReviewsChanged?: (callback: (jobs: AgentJob[]) => void) => () => void;
   /** Read-only submission preflight for one task (main process). */
@@ -246,6 +252,33 @@ export function startAgentReview(req: AgentReviewStart): Promise<AgentJob[] | nu
   const b = bridge();
   if (!b?.startAgentReview) return Promise.resolve(null);
   return b.startAgentReview(req).catch(() => null);
+}
+
+/** Skills for the picker; just the default when the bridge can't list them. */
+export function listReviewSkills(): Promise<ReviewSkill[]> {
+  const fallback: ReviewSkill[] = [{ id: 'default', source: 'default', label: 'Codimango review assistant (default)' }];
+  const b = bridge();
+  if (!b?.listReviewSkills) return Promise.resolve(fallback);
+  return b
+    .listReviewSkills()
+    .then((skills) => (Array.isArray(skills) && skills.length ? skills : fallback))
+    .catch(() => fallback);
+}
+
+export function canAddReviewSkill(): boolean {
+  return typeof bridge()?.addReviewSkill === 'function';
+}
+
+export function addReviewSkill(): Promise<{ id: string | null; skills: ReviewSkill[] } | null> {
+  const b = bridge();
+  if (!b?.addReviewSkill) return Promise.resolve(null);
+  return b.addReviewSkill().catch(() => null);
+}
+
+export function removeReviewSkill(id: string): Promise<ReviewSkill[] | null> {
+  const b = bridge();
+  if (!b?.removeReviewSkill) return Promise.resolve(null);
+  return b.removeReviewSkill(id).catch(() => null);
 }
 
 export function cancelAgentReview(id: string): Promise<AgentJob[] | null> {
