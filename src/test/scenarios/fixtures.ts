@@ -19,6 +19,8 @@ export interface ShorthandRow {
   status?: string;
   validation?: 'passing' | 'failed' | 'pending' | null;
   failed_checks?: string[];
+  /** Required checks that errored (infra), e.g. the solvability trials. */
+  errored_checks?: string[];
   /** "passed/total", e.g. "1/3". */
   oracle?: string;
   due_in_h?: number;
@@ -62,7 +64,13 @@ export function toRow(s: ShorthandRow, now: number, feed: 'reviewing' | 'mine'):
     validationStatus: s.validation ?? null,
     validationFailedSince: ago(now, s.failing_since_d, DAY),
     staleArchiveWarnedAt: ago(now, s.warned_ago_d, DAY),
-    validationDetails: s.failed_checks ? s.failed_checks.map((label) => ({ label, status: 'failed' })) : null,
+    validationDetails:
+      s.failed_checks || s.errored_checks
+        ? [
+            ...(s.failed_checks ?? []).map((label) => ({ label, status: 'failed' })),
+            ...(s.errored_checks ?? []).map((label) => ({ label, status: 'error' })),
+          ]
+        : null,
     oraclePassCount: oPass,
     oracleTotalCount: oTotal,
   };
