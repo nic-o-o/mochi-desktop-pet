@@ -49,13 +49,11 @@ interface OverviewPanelProps {
   /** Section order, top first (main panel drag handles); saved by the caller. */
   sectionOrder: SectionOrder;
   onSectionOrderChange: (next: SectionOrder) => void;
-  /** Which notification kinds may pop the bubble (filter menu); saved by the caller. */
+  /** Which notification kinds may pop the bubble (bell menu); saved by the caller. */
   notify: NotifyPrefs;
   onNotifyChange: (next: NotifyPrefs) => void;
   /** Row to highlight and scroll to (the notification that opened the panel). */
   highlightTaskId?: string | null;
-  /** Header bell: show the notification bubbles (latest first), like the pet's bell. */
-  onShowNotifications?: () => void;
   /** Unread notifications, for the header bell's count. */
   unread?: number;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
@@ -478,16 +476,22 @@ function TaskSection({
   );
 }
 
+/** Checked items first, unchecked items at the bottom, each side keeping its
+ * order. Display only — it never rewrites the saved order or prefs. */
+function partitionEnabled<T>(items: readonly T[], enabled: (item: T) => boolean): T[] {
+  return [...items.filter(enabled), ...items.filter((item) => !enabled(item))];
+}
+
 /** Header menu: which sections the panel lists — in the order set by dragging the
- * section headers in the main panel — and which notifications pop. At least one
- * section stays on. Reordering lives on the main panel, not here. */
+ * section headers in the main panel. At least one section stays on. Reordering
+ * lives on the main panel, not here; notification kinds live behind the bell. */
 export function SectionFilter({
   prefs,
   counts,
   onChange,
   order,
-  notify,
-  onNotifyChange,
+  open,
+  onOpenChange,
   onCopyStats,
   onReportProblem,
   onCustomize,
@@ -496,13 +500,12 @@ export function SectionFilter({
   counts: Record<SectionKey, number>;
   onChange: (next: SectionPrefs) => void;
   order: SectionOrder;
-  notify: NotifyPrefs;
-  onNotifyChange: (next: NotifyPrefs) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onCopyStats?: () => Promise<boolean>;
   onReportProblem?: () => Promise<boolean>;
   onCustomize?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [reportState, setReportState] = useState<'idle' | 'sent' | 'failed'>('idle');
   useEffect(() => {
     if (reportState === 'idle') return;
@@ -516,11 +519,7 @@ export function SectionFilter({
     return () => window.clearTimeout(id);
   }, [copyState]);
   const onCount = SECTIONS.filter(({ key }) => prefs[key]).length;
-  /* Display-only partition: checked items first, unchecked items greyed at the
-     bottom of their own group, each side keeping its saved order. The saved
-     section order and notification prefs are not rewritten by this sorting. */
-  const shownSections = [...order.filter((key) => prefs[key]), ...order.filter((key) => !prefs[key])];
-  const shownNotify = [...NOTIFY_KINDS.filter(({ key }) => notify[key]), ...NOTIFY_KINDS.filter(({ key }) => !notify[key])];
+  const shownSections = partitionEnabled(order, (key) => prefs[key]);
 
   return (
     <div className="section-filter">
@@ -530,7 +529,7 @@ export function SectionFilter({
         aria-label="Choose sections"
         aria-expanded={open}
         title="Choose sections"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => onOpenChange(!open)}
       >
         <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6}>
           <path d="M2 3.5h12M4.5 8h7M7 12.5h2" strokeLinecap="round" />
@@ -560,21 +559,6 @@ export function SectionFilter({
               </div>
             );
           })}
-          <p className="section-menu-title section-menu-subtitle">Notify me about</p>
-          {shownNotify.map(({ key, label }) => (
-            <label key={key} className={`section-option${notify[key] ? '' : ' is-off'}`}>
-              <input
-                type="checkbox"
-                checked={notify[key]}
-                onChange={(e) => {
-                  logClick('glance_panel', 'notify_filter', { notif_kind: key, enabled: e.target.checked });
-                  onNotifyChange({ ...notify, [key]: e.target.checked });
-                }}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-          <p className="muted small section-menu-note">Switched-off kinds don&apos;t pop up; the bell still shows them.</p>
           {onCopyStats && (
             <button
               type="button"
@@ -594,7 +578,7 @@ export function SectionFilter({
               className="section-menu-action"
               onClick={() => {
                 logClick('glance_panel', 'customize');
-                setOpen(false);
+                onOpenChange(false);
                 onCustomize();
               }}
             >
@@ -624,6 +608,67 @@ export function SectionFilter({
   );
 }
 
+/** Header bell menu: which notification kinds may pop the bubble. It opens like
+ * the filter menu, anchored to the bell. Past notices still replay from the
+ * pet's bell and the shortcut, whatever is switched off here. */
+export function NotifyMenu({
+  notify,
+  onNotifyChange,
+  open,
+  onOpenChange,
+  unread,
+}: {
+  notify: NotifyPrefs;
+  onNotifyChange: (next: NotifyPrefs) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  unread?: number;
+}) {
+  const shownNotify = partitionEnabled(NOTIFY_KINDS, ({ key }) => notify[key]);
+  return (
+    <div className="notify-filter">
+      <button
+        type="button"
+        className="icon-btn panel-bell"
+        aria-label="Notification settings"
+        aria-expanded={open}
+        title="Notification settings"
+        onClick={() => {
+          logClick('glance_panel', 'notify_menu', { unread_count: unread ?? 0 });
+          onOpenChange(!open);
+        }}
+      >
+        <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden="true" focusable="false">
+          <path
+            d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.2 4.2-1.9 4.9-.3.3 0 .6.4.6h11.9c.5 0 .8-.3.5-.6-.7-.7-1.9-1.9-1.9-4.9A4.5 4.5 0 0 0 8 1.5ZM6.6 13.5a1.5 1.5 0 0 0 2.8 0H6.6Z"
+            fill="currentColor"
+          />
+        </svg>
+        {unread ? <span className="panel-bell-count">{unread > 9 ? '9+' : unread}</span> : null}
+      </button>
+      {open && (
+        <div className="section-menu" role="group" aria-label="Notify me about">
+          <p className="section-menu-title">Notify me about</p>
+          {shownNotify.map(({ key, label }) => (
+            <label key={key} className={`section-option${notify[key] ? '' : ' is-off'}`}>
+              <input
+                type="checkbox"
+                checked={notify[key]}
+                onChange={(e) => {
+                  logClick('glance_panel', 'notify_filter', { notif_kind: key, enabled: e.target.checked });
+                  onNotifyChange({ ...notify, [key]: e.target.checked });
+                }}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          <p className="muted small section-menu-note">Switched-off kinds don&apos;t pop up; the pet bell replays past ones.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** "Your week at a glance" — compact floating overview next to the pet. */
 export function OverviewPanel(props: OverviewPanelProps) {
   const { goals, reviewsCompleted, submissionsCompleted } = props;
@@ -646,6 +691,8 @@ export function OverviewPanel(props: OverviewPanelProps) {
   const shownSections = props.sectionOrder
     .map((key) => SECTIONS.find((s) => s.key === key))
     .filter((s): s is (typeof SECTIONS)[number] => !!s && props.sections[s.key] && lists[s.key].tasks.length > 0);
+  /* One header menu open at a time: the filter menu or the bell's notify menu. */
+  const [openMenu, setOpenMenu] = useState<'sections' | 'notify' | null>(null);
   /* Dragging a section header reorders the shown sections; the filter menu
      follows this order. Hidden sections keep their places. */
   const sectionsRef = useRef<HTMLDivElement | null>(null);
@@ -665,25 +712,14 @@ export function OverviewPanel(props: OverviewPanelProps) {
       <header className="panel-header glance-header">
         <h2>Your week at a glance</h2>
         <div className="glance-header-actions">
-          {props.onShowNotifications && !props.setup && (
-            <button
-              type="button"
-              className="icon-btn panel-bell"
-              onClick={() => {
-                logClick('glance_panel', 'notifications', { unread_count: props.unread ?? 0 });
-                props.onShowNotifications?.();
-              }}
-              aria-label={props.unread ? `Show notifications, ${props.unread} unread` : 'Show notifications'}
-              title="Show notifications"
-            >
-              <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden="true" focusable="false">
-                <path
-                  d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.2 4.2-1.9 4.9-.3.3 0 .6.4.6h11.9c.5 0 .8-.3.5-.6-.7-.7-1.9-1.9-1.9-4.9A4.5 4.5 0 0 0 8 1.5ZM6.6 13.5a1.5 1.5 0 0 0 2.8 0H6.6Z"
-                  fill="currentColor"
-                />
-              </svg>
-              {props.unread ? <span className="panel-bell-count">{props.unread > 9 ? '9+' : props.unread}</span> : null}
-            </button>
+          {!props.setup && (
+            <NotifyMenu
+              notify={props.notify}
+              onNotifyChange={props.onNotifyChange}
+              open={openMenu === 'notify'}
+              onOpenChange={(next) => setOpenMenu(next ? 'notify' : null)}
+              unread={props.unread}
+            />
           )}
           {!props.setup && (
             <SectionFilter
@@ -696,8 +732,8 @@ export function OverviewPanel(props: OverviewPanelProps) {
               }}
               onChange={props.onSectionsChange}
               order={props.sectionOrder}
-              notify={props.notify}
-              onNotifyChange={props.onNotifyChange}
+              open={openMenu === 'sections'}
+              onOpenChange={(next) => setOpenMenu(next ? 'sections' : null)}
               onCopyStats={props.onCopyStats}
               onCustomize={props.onCustomize}
               onReportProblem={props.onReportProblem}

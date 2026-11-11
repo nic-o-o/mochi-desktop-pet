@@ -66,7 +66,8 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `click_bell`, `click_bubble`, `click_bubble_task`, `close_bubble` | Bell, bubble body, the bubble's underlined task name, bubble × |
 | `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
-| `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section or notification kind by its label |
+| `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section by its label |
+| `open_notify_menu` | Bell menu (again to close); tick or untick a notification kind by its label with `toggle_section` |
 | `drag_section: { label: Waiting for your review, dy: -40 }` | Drag a section header's handle that far up (negative) or down in the main panel |
 | `refresh_now` | ↻ on the freshness line |
 | `click: <text>` | Any button or link showing that text |

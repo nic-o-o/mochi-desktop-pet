@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OverviewPanel } from './OverviewPanel.tsx';
 import { DEFAULT_NOTIFY } from './notifyPrefs.ts';
+import type { NotifyPrefs } from './notifyPrefs.ts';
 import { DEFAULT_SECTIONS, DEFAULT_SECTION_ORDER } from './sections.ts';
 import type { SectionOrder, SectionPrefs } from './sections.ts';
 import type { TaskItem } from './logic.ts';
@@ -31,6 +32,7 @@ const READY = task('s1', { title: 'Ready one', status: 'draft', draftState: 'rea
 function Harness() {
   const [order, setOrder] = useState<SectionOrder>(DEFAULT_SECTION_ORDER);
   const [prefs, setPrefs] = useState<SectionPrefs>(DEFAULT_SECTIONS);
+  const [notify, setNotify] = useState<NotifyPrefs>(DEFAULT_NOTIFY);
   return (
     <OverviewPanel
       position={{ x: 0, y: 0 }}
@@ -42,8 +44,9 @@ function Harness() {
       onSectionsChange={setPrefs}
       sectionOrder={order}
       onSectionOrderChange={setOrder}
-      notify={DEFAULT_NOTIFY}
-      onNotifyChange={() => {}}
+      notify={notify}
+      onNotifyChange={setNotify}
+      unread={2}
       reviewsCompleted={0}
       submissionsCompleted={0}
       goals={{ reviewGoal: 5, submissionGoal: 2 }}
@@ -137,5 +140,39 @@ describe('OverviewPanel section drag handles', () => {
     expect(rows[0]).toContain('Waiting for your review');
     expect(rows[1]).toContain('Ready for submission');
     expect(rows[2]).toContain('Needs revision');
+  });
+
+  it('opens the notify menu from the bell without closing the panel or showing bubbles', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Notification settings' }));
+    expect(screen.getByText('Notify me about')).toBeTruthy();
+    expect(screen.getByText('Validation failed')).toBeTruthy();
+    expect(screen.getByText('Your week at a glance')).toBeTruthy();
+    expect(headingOrder()).toEqual(['Ready for submission', 'Needs revision', 'Waiting for your review']);
+    fireEvent.click(screen.getByRole('button', { name: 'Notification settings' }));
+    expect(screen.queryByText('Notify me about')).toBeNull();
+  });
+
+  it('keeps only one header menu open: the bell closes the filter menu', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose sections' }));
+    expect(screen.getByText('Show in panel')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Notification settings' }));
+    expect(screen.queryByText('Show in panel')).toBeNull();
+    expect(screen.getByText('Notify me about')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Notification settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose sections' }));
+    expect(screen.getByText('Show in panel')).toBeTruthy();
+    expect(screen.queryByText('Notify me about')).toBeNull();
+  });
+
+  it('toggles a notification kind from the bell menu and it drops to the bottom', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Notification settings' }));
+    const input = screen.getByText('Validation passed').closest('label')!.querySelector('input')!;
+    fireEvent.click(input);
+    const kinds = [...document.querySelectorAll('.section-menu > .section-option')].map((label) => label.textContent ?? '');
+    expect(kinds.at(-1)).toContain('Validation passed');
+    expect(document.querySelector('.section-menu > .section-option.is-off')).toBeTruthy();
   });
 });

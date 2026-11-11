@@ -3,23 +3,19 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SectionFilter } from './OverviewPanel.tsx';
-import { DEFAULT_NOTIFY, NOTIFY_KINDS } from './notifyPrefs.ts';
-import type { NotifyPrefs } from './notifyPrefs.ts';
 import { DEFAULT_SECTIONS, DEFAULT_SECTION_ORDER, SECTIONS } from './sections.ts';
 import type { SectionOrder, SectionPrefs } from './sections.ts';
 
 function Harness({
   initialOrder = DEFAULT_SECTION_ORDER,
   initialPrefs = DEFAULT_SECTIONS,
-  initialNotify = DEFAULT_NOTIFY,
 }: {
   initialOrder?: SectionOrder;
   initialPrefs?: SectionPrefs;
-  initialNotify?: NotifyPrefs;
 }) {
   const [order, setOrder] = useState<SectionOrder>(initialOrder);
   const [prefs, setPrefs] = useState<SectionPrefs>(initialPrefs);
-  const [notify, setNotify] = useState<NotifyPrefs>(initialNotify);
+  const [open, setOpen] = useState(false);
   return (
     <>
       <button type="button" onClick={() => setOrder(['reviews', 'submittable', 'revisions', 'drafts'])}>
@@ -30,8 +26,8 @@ function Harness({
         counts={{ revisions: 1, reviews: 2, drafts: 0, submittable: 3 }}
         onChange={setPrefs}
         order={order}
-        notify={notify}
-        onNotifyChange={setNotify}
+        open={open}
+        onOpenChange={setOpen}
       />
     </>
   );
@@ -53,22 +49,6 @@ function rowByKey(key: string): Element {
   const row = [...document.querySelectorAll('.section-option-row')].find((r) => r.textContent?.includes(SECTIONS.find((s) => s.key === key)?.label ?? key));
   if (!row) throw new Error(`no section row for ${key}`);
   return row;
-}
-
-function notifyLabels(): string[] {
-  return [...document.querySelectorAll('.section-menu > .section-option')].map((label) => {
-    const kind = NOTIFY_KINDS.find(({ label: text }) => label.textContent?.includes(text));
-    if (!kind) throw new Error(`label without a known notify kind: ${label.textContent}`);
-    return kind.key;
-  });
-}
-
-function notifyLabelByKey(key: string): Element {
-  const label = [...document.querySelectorAll('.section-menu > .section-option')].find((l) =>
-    l.textContent?.includes(NOTIFY_KINDS.find((k) => k.key === key)?.label ?? key),
-  );
-  if (!label) throw new Error(`no notify label for ${key}`);
-  return label;
 }
 
 function clickCheckbox(labelText: string) {
@@ -103,8 +83,8 @@ describe('SectionFilter', () => {
         counts={{ revisions: 1, reviews: 2, drafts: 0, submittable: 3 }}
         onChange={onChange}
         order={DEFAULT_SECTION_ORDER}
-        notify={DEFAULT_NOTIFY}
-        onNotifyChange={() => {}}
+        open
+        onOpenChange={() => {}}
       />,
     );
     openMenu();
@@ -146,37 +126,11 @@ describe('SectionFilter', () => {
     expect(rowByKey('reviews').className).not.toContain('is-off');
   });
 
-  it('moves unselected notification kinds to the bottom, greyed, keeping their order', () => {
-    render(
-      <Harness
-        initialNotify={{ ...DEFAULT_NOTIFY, validation_passed: false, sev: false }}
-      />,
-    );
-    openMenu();
-    expect(notifyLabels()).toEqual([
-      'validation_failed',
-      'needs_revision',
-      'accepted',
-      'rejected',
-      'review_assigned',
-      'review_started',
-      'agent_review',
-      'validation_passed',
-      'sev',
-    ]);
-    expect(notifyLabelByKey('validation_passed').className).toContain('is-off');
-    expect(notifyLabelByKey('sev').className).toContain('is-off');
-    expect(notifyLabelByKey('validation_failed').className).not.toContain('is-off');
-  });
-
-  it('moves a notification kind down when unchecked and back up when checked again', () => {
+  it('contains no notification kinds: those live behind the bell', () => {
     render(<Harness />);
     openMenu();
-    clickCheckbox('Validation passed');
-    expect(notifyLabels().at(-1)).toBe('validation_passed');
-    expect(notifyLabelByKey('validation_passed').className).toContain('is-off');
-    clickCheckbox('Validation passed');
-    expect(notifyLabels()[1]).toBe('validation_passed');
-    expect(notifyLabelByKey('validation_passed').className).not.toContain('is-off');
+    expect(screen.queryByText('Notify me about')).toBeNull();
+    expect(screen.queryByText('Validation failed')).toBeNull();
+    expect(screen.getByText('Show in panel')).toBeTruthy();
   });
 });
