@@ -15,6 +15,20 @@ describe('notification switches', () => {
     expect('made_up' in prefs).toBe(false);
   });
 
+  it('labels each switch with its bubble title; SEV and agent review share one switch for two titles', () => {
+    expect(NOTIFY_KINDS.map(({ key, label }) => [key, label])).toEqual([
+      ['validation_failed', 'Validation failed'],
+      ['validation_passed', 'Validation passed'],
+      ['needs_revision', 'Changes Requested'],
+      ['accepted', 'Task Accepted'],
+      ['rejected', 'Task Rejected'],
+      ['review_assigned', 'Review Assigned'],
+      ['review_started', 'Review Started'],
+      ['sev', 'Codimango SEV'],
+      ['agent_review', 'Agent review'],
+    ]);
+  });
+
   it('maps bubble kinds to switches; SEV opened and mitigated share one', () => {
     expect(notifyKindOf('sev_open')).toBe('sev');
     expect(notifyKindOf('sev_mitigated')).toBe('sev');

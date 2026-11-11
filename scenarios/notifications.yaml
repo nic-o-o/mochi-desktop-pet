@@ -126,7 +126,7 @@ scenarios:
       - expect:
           bubble: none
           panel: open
-          see: [Notify me about, Validation failed, Task rejected]
+          see: [Notify me about, Validation failed, Task Rejected]
           events:
             - { event: mochi_click, surface: glance_panel, component: notify_menu }
 
@@ -186,7 +186,7 @@ scenarios:
       - start
       - click_pet
       - open_notify_menu
-      - expect: { see: [Notify me about, Validation failed, Review assigned to you, Codimango SEVs, Agent review finished] }
+      - expect: { see: [Notify me about, Validation failed, Review Assigned, Codimango SEV, Agent review] }
       - toggle_section: Validation failed
       - expect:
           events:

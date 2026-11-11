@@ -13,13 +13,13 @@ export const NOTIFY_STORAGE_KEY = 'mochi.notify.v1';
 export const NOTIFY_KINDS: { key: NotifyKind; label: string }[] = [
   { key: 'validation_failed', label: 'Validation failed' },
   { key: 'validation_passed', label: 'Validation passed' },
-  { key: 'needs_revision', label: 'Sent back for revision' },
-  { key: 'accepted', label: 'Task accepted' },
-  { key: 'rejected', label: 'Task rejected' },
-  { key: 'review_assigned', label: 'Review assigned to you' },
-  { key: 'review_started', label: 'Review started on your task' },
-  { key: 'sev', label: 'Codimango SEVs' },
-  { key: 'agent_review', label: 'Agent review finished' },
+  { key: 'needs_revision', label: 'Changes Requested' },
+  { key: 'accepted', label: 'Task Accepted' },
+  { key: 'rejected', label: 'Task Rejected' },
+  { key: 'review_assigned', label: 'Review Assigned' },
+  { key: 'review_started', label: 'Review Started' },
+  { key: 'sev', label: 'Codimango SEV' },
+  { key: 'agent_review', label: 'Agent review' },
 ];
 
 export const DEFAULT_NOTIFY: NotifyPrefs = Object.fromEntries(NOTIFY_KINDS.map(({ key }) => [key, true])) as NotifyPrefs;
@@ -54,7 +54,7 @@ export function saveNotifyPrefs(prefs: NotifyPrefs): void {
   }
 }
 
-/** SEV bubbles come as sev_open / sev_mitigated; both follow the one "Codimango SEVs" switch. */
+/** SEV bubbles come as sev_open / sev_mitigated; both follow the one "Codimango SEV" switch. */
 export function notifyKindOf(kind: string | undefined): NotifyKind | null {
   if (!kind) return null;
   if (kind.startsWith('sev_')) return 'sev';
