@@ -1777,6 +1777,14 @@ html.mochi-shell .expanded-view {
   min-width: 0;
 }
 
+/* Unchecked lines sit at the bottom of their group, greyed as a whole line
+   (label, count, and checkbox alike), but stay clickable to turn back on. */
+.section-option-row.is-off,
+.section-option.is-off {
+  color: var(--ink-soft);
+  opacity: 0.65;
+}
+
 /* Drag handle: parked in the panel's 16px left gutter, so the title starts at
    the same left edge as every other part of the panel. It spans the full
    height of its section, with the grip centered vertically, and takes no
