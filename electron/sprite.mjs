@@ -13,11 +13,18 @@
  */
 
 export const SPRITE_SIZE = 248;
+/* Models return 1024–1600px images; the cutout runs on a smaller copy (fast, and plenty for a 248px sprite). */
+const WORK_SIZE = 512;
 const TOLERANCE = 48;
 /* Share of pixels the fill must remove for the cut to count as a cutout. */
 const MIN_REMOVED = 0.08;
 const MAX_REMOVED = 0.97;
 const PAD = 6;
+
+/** True when every corner is fully transparent: the image arrived cut out. */
+export function alreadyCutOut({ width, height, data }) {
+  return [0, width - 1, (height - 1) * width, height * width - 1].every((p) => data[p * 4 + 3] === 0);
+}
 
 /** Average colour of the four corners: the background the fill removes. */
 function cornerColor({ width, height, data }) {
@@ -146,11 +153,12 @@ export function cropToSquare(img, box) {
  * `codec` = { decode(png) → {width, height, data RGBA}, encode(img) → png, resize(png, size) → png }.
  */
 export function makeSprite(png, codec) {
-  const img = codec.decode(png);
+  const img = codec.decode(codec.resize(png, WORK_SIZE));
   const original = new Uint8ClampedArray(img.data);
-  const share = removeBackground(img);
+  /* Already transparent (a model that can draw without a background): nothing to cut. */
+  const share = alreadyCutOut(img) ? null : removeBackground(img);
   let framed = false;
-  if (share < MIN_REMOVED || share > MAX_REMOVED) {
+  if (share !== null && (share < MIN_REMOVED || share > MAX_REMOVED)) {
     img.data.set(original);
     circleFrame(img);
     framed = true;
