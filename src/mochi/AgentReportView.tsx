@@ -185,9 +185,9 @@ export function AgentReportView(props: AgentReportViewProps) {
               ))}
             </div>
           )}
-          {active?.model && (
+          {(active?.model || active?.skill) && (
             <p className="muted small agent-model">
-              {AGENT_LABELS[active.agent]} · {active.model}
+              {[AGENT_LABELS[active.agent], active.model, active.skill && `skill: ${active.skill.label}`].filter(Boolean).join(' · ')}
             </p>
           )}
           {disagree && (

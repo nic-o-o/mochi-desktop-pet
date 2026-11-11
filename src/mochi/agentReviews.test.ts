@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentJob } from './agentReviews.ts';
-import { isStale, jobLine, jobsForTask, newlyFinished } from './agentReviews.ts';
+import { isStale, jobLine, jobsForTask, loadStarredSkills, newlyFinished, rememberSkill, rememberedSkill, toggleStarredSkill } from './agentReviews.ts';
+import type { ReviewSkill } from './agentReviews.ts';
 import type { TaskItem } from './logic.ts';
 
 const NOW = 1_800_000_000_000;
@@ -25,6 +26,33 @@ describe('jobLine', () => {
     expect(jobLine(job({ status: 'done' }), NOW)).toBe('Claude Code · report ready');
     expect(jobLine(job({ status: 'failed', failure: { kind: 'timeout', message: '' } }), NOW)).toBe('Claude Code · failed');
     expect(jobLine(job({ status: 'failed', failure: { kind: 'cancelled', message: '' } }), NOW)).toBe('Claude Code · stopped');
+  });
+});
+
+describe('skills', () => {
+  it('names a chosen skill in the row', () => {
+    expect(jobLine(job({ status: 'done', skill: { id: 'personal:mine', label: 'mine' } }), NOW)).toBe('Claude Code · mine · report ready');
+  });
+
+  it('remembers the last skill only while it is still offered', () => {
+    const skills: ReviewSkill[] = [
+      { id: 'default', source: 'default', label: 'Codimango review assistant (default)' },
+      { id: 'personal:mine', source: 'personal', label: 'mine' },
+    ];
+    const store = new Map<string, string>();
+    const original = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+    });
+    try {
+      expect(rememberedSkill(skills)).toBe('default');
+      rememberSkill('personal:mine');
+      expect(rememberedSkill(skills)).toBe('personal:mine');
+      expect(rememberedSkill(skills.slice(0, 1))).toBe('default');
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: original });
+    }
   });
 });
 
@@ -55,5 +83,27 @@ describe('isStale', () => {
     expect(isStale(job({ taskUpdatedAtMs: NOW }), task)).toBe(false);
     expect(isStale(job({ taskUpdatedAtMs: null }), task)).toBe(false);
     expect(isStale(job({}), undefined)).toBe(false);
+  });
+});
+
+describe('starred skills', () => {
+  it('stars and unstars, never the default, and survives a reload', () => {
+    const store = new Map<string, string>();
+    const original = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+    });
+    try {
+      let starred = loadStarredSkills();
+      expect(starred).toEqual([]);
+      starred = toggleStarredSkill(starred, 'plugin:m:p:a-review');
+      starred = toggleStarredSkill(starred, 'default');
+      expect(starred).toEqual(['plugin:m:p:a-review']);
+      expect(loadStarredSkills()).toEqual(['plugin:m:p:a-review']);
+      expect(toggleStarredSkill(starred, 'plugin:m:p:a-review')).toEqual([]);
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: original });
+    }
   });
 });

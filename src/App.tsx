@@ -448,12 +448,13 @@ export default function App() {
     setPanelOpen(false);
   });
 
-  function runReview(taskId: string, agents: AgentId[]) {
+  function runReview(taskId: string, agents: AgentId[], skillId: string) {
     touch();
     const task = sortedTasks.find((t) => t.id === taskId);
     const taskName = task?.title ?? agentReviews.jobs.find((j) => j.taskId === taskId)?.taskName;
     if (!taskName) return;
-    void startAgentReview({ taskId, taskName, taskUpdatedAtMs: task?.updatedAtMs, agents }).then(
+    const skill = skillId === 'default' ? {} : { skillId };
+    void startAgentReview({ taskId, taskName, taskUpdatedAtMs: task?.updatedAtMs, agents, ...skill }).then(
       (jobs) => jobs && agentReviews.apply(jobs),
     );
   }
@@ -1045,7 +1046,14 @@ export default function App() {
             task={sortedTasks.find((t) => t.id === reportTaskId)}
             jobs={jobsForTask(agentReviews.jobs, reportTaskId)}
             nowMs={nowMs}
-            onRunAgain={(agent) => runReview(reportTaskId, [agent])}
+            onRunAgain={(agent) =>
+              runReview(
+                reportTaskId,
+                [agent],
+                // Same skill as the run being repeated.
+                jobsForTask(agentReviews.jobs, reportTaskId).find((j) => j.agent === agent)?.skill?.id ?? 'default',
+              )
+            }
             onCancel={cancelReview}
             onOpenCodimango={() => openLink(sortedTasks.find((t) => t.id === reportTaskId)?.url ?? reviewUrl(reportTaskId))}
             onClose={closeExpanded}

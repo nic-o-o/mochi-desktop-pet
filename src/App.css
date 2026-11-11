@@ -1608,6 +1608,21 @@ html.mochi-shell .expanded-view {
   margin: 4px 0;
 }
 
+.agent-skill {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 4px;
+}
+
+
+.agent-skill-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .agent-picker-actions {
   display: flex;
   justify-content: flex-end;
@@ -1852,4 +1867,163 @@ html.mochi-shell .expanded-view {
   font-weight: 700;
   line-height: 14px;
   text-align: center;
+}
+
+.agent-skill-error {
+  color: #b42318;
+}
+
+.agent-skill-remove {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 0;
+}
+
+
+/* Skill chooser: current skill on a button, then a filterable list with a star per line. */
+.skill-picker {
+  position: relative;
+}
+
+.skill-picker-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid #d9d6f2;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.skill-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-list {
+  margin-top: 4px;
+  padding: 6px;
+  border: 1px solid #d9d6f2;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.skill-filter {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #d9d6f2;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.skill-rows,
+.skill-rows ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.skill-rows {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.skill-group-label {
+  display: block;
+  margin: 6px 4px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.skill-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.skill-row:hover {
+  background: var(--accent-soft);
+}
+
+.skill-row-pick {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 6px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The chosen skill gets a check in a fixed-width gutter, like a menu. */
+.skill-check {
+  display: inline-block;
+  width: 14px;
+  color: var(--accent, #5b4bd5);
+  font-weight: 700;
+}
+
+.skill-star {
+  flex: none;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 6px;
+  color: #a39e96;
+  cursor: pointer;
+}
+
+.skill-star:hover {
+  color: #e0a800;
+}
+
+.skill-star.is-starred {
+  color: #e0a800;
+}
+
+.skill-add {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  border: none;
+  border-top: 1px solid #eee9f8;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 6px 2px;
+  color: var(--accent, #5b4bd5);
+  cursor: pointer;
+}
+
+.skill-empty,
+.skill-hint {
+  margin: 4px 6px 0;
+}
+
+.agent-picker-label {
+  display: block;
+  margin: 6px 0 2px;
+  font-weight: 600;
+}
+
+.agent-both-note {
+  margin: 2px 0 6px;
 }
