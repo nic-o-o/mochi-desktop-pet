@@ -14,8 +14,8 @@ const CX = 74;
 const CY = 70;
 /* Body scale — the pet shrinks toward the center while the ring stays put. */
 const BODY_SCALE = 0.85;
-/* A custom look's square, in body coordinates: about the classic body's width plus ears. */
-const LOOK_SIZE = 88;
+/* A custom look's square, in body coordinates, centred in the ring with even room on every side. */
+const LOOK_SIZE = 82;
 /* Single split ring: green fills the upper half, orange the lower half.
    Arc ends stop short of the 3/9 o'clock joints so the round caps meet
    with a small gap instead of overlapping. */
@@ -80,7 +80,7 @@ export function MochiPet({ state, reviewFrac, subFrac, look }: MochiPetProps) {
         {look ? (
           <>
             {/* custom look: the sprite fills the body area; the zz and sweat drop still show */}
-            <image href={look} x={CX - LOOK_SIZE / 2} y={CY - LOOK_SIZE / 2 + 4} width={LOOK_SIZE} height={LOOK_SIZE} preserveAspectRatio="xMidYMid meet" />
+            <image href={look} x={CX - LOOK_SIZE / 2} y={CY - LOOK_SIZE / 2} width={LOOK_SIZE} height={LOOK_SIZE} preserveAspectRatio="xMidYMid meet" />
             {state === 'sleepy' && (
               <g>
                 <text x={100} y={40} fontSize={16} fill="#8a7f72" fontWeight="bold">z</text>

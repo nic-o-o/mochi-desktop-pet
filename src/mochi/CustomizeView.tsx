@@ -178,14 +178,14 @@ export function CustomizeView(props: CustomizeViewProps) {
                       setMoodAt(0);
                     }}
                   >
-                    <img src={c.image} alt="" />
+                    <img src={c.image} alt="" draggable={false} />
                   </button>
                 ))}
               </div>
               {picked && (
                 <div className="customize-preview">
                   <div className="customize-preview-pet" aria-label={`Preview, ${PREVIEW_MOODS[moodAt]}`}>
-                    <MochiPet state={PREVIEW_MOODS[moodAt]} reviewFrac={props.reviewFrac} subFrac={props.subFrac} look={picked.image} />
+                    <MochiPet key={picked.id} state={PREVIEW_MOODS[moodAt]} reviewFrac={props.reviewFrac} subFrac={props.subFrac} look={picked.image} />
                   </div>
                   <div>
                     <p className="small">This is how your Mochi moves through its moods.</p>
@@ -218,7 +218,7 @@ export function CustomizeView(props: CustomizeViewProps) {
             {looks.looks.map((look) => (
               <div key={look.id} className={look.id === looks.currentId ? 'customize-look is-current' : 'customize-look'}>
                 <button type="button" className="customize-look-pick" aria-pressed={look.id === looks.currentId} onClick={() => void switchTo(look.id)} title={look.prompt}>
-                  <img src={look.image} alt={look.prompt} />
+                  <img src={look.image} alt={look.prompt} draggable={false} />
                 </button>
                 <button type="button" className="customize-look-delete" onClick={() => void remove(look)} aria-label={`Delete ${look.prompt}`} title="Delete">
                   ×
