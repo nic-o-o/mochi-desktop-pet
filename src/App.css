@@ -405,6 +405,11 @@ body {
   text-underline-offset: 2px;
 }
 
+/* No page of its own to open (e.g. an agent report): the name isn't a link. */
+.bubble-task.is-plain {
+  text-decoration: none;
+}
+
 .bubble-icon {
   margin-right: 6px;
 }
