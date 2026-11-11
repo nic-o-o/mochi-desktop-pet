@@ -9,6 +9,7 @@ import App from '../../App.tsx';
 import type { AgentId, AgentJob, AgentReviewStart } from '../../mochi/agentReviews.ts';
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
 import type { Sev } from '../../mochi/sevs.ts';
+import type { LooksState, PetLook } from '../../mochi/looks.ts';
 import type { ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
 import { resetUsageForTests } from '../../mochi/usage.ts';
 import { toSnapshot } from './fixtures.ts';
@@ -45,6 +46,8 @@ export interface Expectation {
   event_count?: { match: ExpectedEvent; count: number };
   /** Agent reviews started so far, as `task:agent` (e.g. `r2:claude`), cumulative. */
   agents_started?: string[];
+  /** What the pet shows: a `custom` look or the `classic` Mochi. */
+  pet_look?: 'custom' | 'classic';
 }
 
 export type ExpectedEvent = { event?: string } & Record<string, string | number | boolean>;
@@ -105,6 +108,8 @@ export interface Scenario {
     agents?: GivenAgentJob[];
     /** Codimango SEVs the main process has already read. */
     sevs?: GivenSev[];
+    /** Customize Mochi: whether this build can draw pets, saved looks by description, and which is current. */
+    customize?: { available?: boolean; looks?: string[]; current?: number };
   };
   steps: Step[];
 }
@@ -129,7 +134,14 @@ interface Harness {
   agentStarts: AgentReviewStart[];
   agentListener?: (jobs: AgentJob[]) => void;
   sevListener?: (sevs: Sev[]) => void;
+  looks: LooksState;
 }
+
+/* A 1×1 PNG: stands in for every drawn pet. */
+const TINY_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+const lookFor = (prompt: string, i: number): PetLook => ({ id: `look-${i}`, createdAtMs: 1000 + i, prompt, image: TINY_PNG });
+const DRAW_ERRORS = ['refused', 'busy', 'limit', 'offline', 'error'] as const;
 
 const FAILURE_MESSAGES: Record<FailureKind, string> = {
   cli_missing: 'The codimango CLI is not installed.',
@@ -269,7 +281,24 @@ function findByText(label: string): HTMLElement {
 /** Run one scenario; throws on the first step or expectation that fails. */
 export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<void> {
   const now = Date.now();
-  const h: Harness = { opened: [], clipboard: [], reports: [], events: [], fetchCalls: 0, queue: [], agentJobs: [], agentStarts: [] };
+  const given = sc.given?.customize;
+  const givenLooks = (given?.looks ?? []).map(lookFor);
+  const h: Harness = {
+    opened: [],
+    clipboard: [],
+    reports: [],
+    events: [],
+    fetchCalls: 0,
+    queue: [],
+    agentJobs: [],
+    agentStarts: [],
+    looks: {
+      available: given?.available ?? true,
+      looks: givenLooks,
+      currentId: given?.current !== undefined ? (givenLooks[given.current]?.id ?? null) : null,
+    },
+  };
+  const storeState = () => ({ looks: h.looks.looks, currentId: h.looks.currentId });
   h.agentJobs = (sc.given?.agents ?? []).map((g, i) => givenJob(file, sc, g, now, i));
   const lives = sc.given?.live === undefined ? [] : Array.isArray(sc.given.live) ? sc.given.live : [sc.given.live];
   h.queue = lives.map((l) => resolveLive(l, file.fixtures, now));
@@ -317,6 +346,30 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         ];
       }
       return Promise.resolve(h.agentJobs);
+    },
+    looksState: () => Promise.resolve(h.looks),
+    /* Like the fake generator: three candidates, or the error named by "#kind" in the text. */
+    generatePet: async (text) => {
+      await new Promise((r) => setTimeout(r, 10));
+      const forced = DRAW_ERRORS.find((k) => text.includes(`#${k}`));
+      if (forced) return { ok: false, error: { kind: forced } };
+      if (!text.trim()) return { ok: false, error: { kind: 'empty' } };
+      return { ok: true, candidates: [0, 1, 2].map((i) => ({ id: `cand-${i}::${text}`, image: TINY_PNG, framed: false })) };
+    },
+    cancelPetGenerate: () => Promise.resolve(),
+    keepLook: (candidateId) => {
+      const prompt = candidateId.split('::')[1] ?? '';
+      const look = lookFor(prompt, h.looks.looks.length + 100);
+      h.looks = { ...h.looks, looks: [look, ...h.looks.looks], currentId: look.id };
+      return Promise.resolve(storeState());
+    },
+    setCurrentLook: (id) => {
+      h.looks = { ...h.looks, currentId: id };
+      return Promise.resolve(storeState());
+    },
+    deleteLook: (id) => {
+      h.looks = { ...h.looks, looks: h.looks.looks.filter((l) => l.id !== id), currentId: h.looks.currentId === id ? null : h.looks.currentId };
+      return Promise.resolve(storeState());
     },
     cancelAgentReview: (id) => {
       h.agentJobs = h.agentJobs.map((j) => (j.id === id ? { ...j, status: 'failed', endedAtMs: Date.now(), failure: agentFailure('cancelled') } : j));
@@ -402,6 +455,14 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'click':
           fireEvent.click(findByText(String(arg)));
           break;
+        case 'fill': {
+          // fill: { label: Describe your Mochi, text: a sleepy cat } types into that field.
+          const { label, text } = arg as { label: string; text: string };
+          const field = findByText(label).querySelector('textarea, input') as HTMLTextAreaElement | HTMLInputElement | null;
+          if (!field) throw new Error(`Step failed: "${label}" has no text field`);
+          fireEvent.change(field, { target: { value: text } });
+          break;
+        }
         case 'press':
           fireEvent.click(mustFind(`[aria-label="${String(arg)}"]`, `"${String(arg)}"`));
           break;
@@ -501,6 +562,10 @@ async function checkExpectation(e: Expectation, h: Harness) {
       if (e.event_count) {
         const n = h.events.filter((ev) => matches(ev, e.event_count!.match)).length;
         expect(n, `events matching ${JSON.stringify(e.event_count.match)}`).toBe(e.event_count.count);
+      }
+      if (e.pet_look) {
+        const img = q('.pet-pressable .mochi-svg image');
+        expect(img ? 'custom' : 'classic', 'what the pet shows').toBe(e.pet_look);
       }
       for (const want of e.agents_started ?? []) {
         const started = h.agentStarts.flatMap((r) => r.agents.map((a) => `${r.taskId}:${a}`));

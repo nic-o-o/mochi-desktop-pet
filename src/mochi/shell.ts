@@ -5,6 +5,9 @@
 import type { AgentJob, AgentReviewStart, ReviewSkill } from './agentReviews.ts';
 import type { CodimangoFetchResult } from './codimango.ts';
 import type { Sev } from './sevs.ts';
+import type { GenerateResult, LooksState, PetLook } from './looks.ts';
+
+type LooksStoreState = { looks: PetLook[]; currentId: string | null };
 
 export interface DisplayBounds {
   x: number;
@@ -44,6 +47,18 @@ export interface MochiShell {
   onSystemResumed?: (callback: () => void) => () => void;
   /** Dock menu "Report a Problem…" asks the renderer to start a report; returns unsubscribe. */
   onReportRequest?: (callback: () => void) => () => void;
+  /** Customize Mochi (main process): saved looks and whether pets can be drawn. */
+  looksState?: () => Promise<LooksState>;
+  /** Draw candidates for a description. */
+  generatePet?: (text: string) => Promise<GenerateResult>;
+  cancelPetGenerate?: () => Promise<void>;
+  /** Save a candidate as a look and make it the pet. */
+  keepLook?: (candidateId: string) => Promise<LooksStoreState | null>;
+  /** A saved look, or null for the classic Mochi. */
+  setCurrentLook?: (id: string | null) => Promise<LooksStoreState | null>;
+  deleteLook?: (id: string) => Promise<LooksStoreState | null>;
+  /** Dock menu → Customize Mochi…; returns unsubscribe. */
+  onOpenCustomize?: (callback: () => void) => () => void;
   /** Copy diagnostics (plus version, OS, log tail) and open #mochi-dogfood-feedback in Slack. */
   reportProblem?: (state: ProblemReportState) => Promise<boolean>;
   /** Read your reviews and tasks through the codimango CLI login (main process). */
@@ -153,6 +168,44 @@ export function onSystemResumed(callback: () => void): () => void {
   const b = bridge();
   if (!b?.onSystemResumed) return () => {};
   return b.onSystemResumed(callback);
+}
+
+export function looksState(): Promise<LooksState | null> {
+  const b = bridge();
+  if (!b?.looksState) return Promise.resolve(null);
+  return b.looksState().catch(() => null);
+}
+
+export function generatePet(text: string): Promise<GenerateResult> {
+  const b = bridge();
+  if (!b?.generatePet) return Promise.resolve({ ok: false, error: { kind: 'error' } });
+  return b.generatePet(text).catch(() => ({ ok: false, error: { kind: 'error' } }));
+}
+
+export function cancelPetGenerate(): void {
+  void bridge()?.cancelPetGenerate?.().catch(() => {});
+}
+
+export function keepLook(candidateId: string): Promise<LooksStoreState | null> {
+  const b = bridge();
+  if (!b?.keepLook) return Promise.resolve(null);
+  return b.keepLook(candidateId).catch(() => null);
+}
+
+export function setCurrentLook(id: string | null): Promise<LooksStoreState | null> {
+  const b = bridge();
+  if (!b?.setCurrentLook) return Promise.resolve(null);
+  return b.setCurrentLook(id).catch(() => null);
+}
+
+export function deleteLook(id: string): Promise<LooksStoreState | null> {
+  const b = bridge();
+  if (!b?.deleteLook) return Promise.resolve(null);
+  return b.deleteLook(id).catch(() => null);
+}
+
+export function onOpenCustomize(callback: () => void): () => void {
+  return bridge()?.onOpenCustomize?.(callback) ?? (() => {});
 }
 
 export function onReportRequest(callback: () => void): () => void {

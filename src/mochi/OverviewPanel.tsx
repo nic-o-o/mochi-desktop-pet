@@ -62,6 +62,8 @@ interface OverviewPanelProps {
   onCopyStats?: () => Promise<boolean>;
   /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
   onReportProblem?: () => Promise<boolean>;
+  /** Opens Customize Mochi (filter menu footer); only when this build can draw pets. */
+  onCustomize?: () => void;
   reviewsCompleted: number;
   submissionsCompleted: number;
   goals: WeeklyGoals;
@@ -488,6 +490,7 @@ export function SectionFilter({
   onNotifyChange,
   onCopyStats,
   onReportProblem,
+  onCustomize,
 }: {
   prefs: SectionPrefs;
   counts: Record<SectionKey, number>;
@@ -497,6 +500,7 @@ export function SectionFilter({
   onNotifyChange: (next: NotifyPrefs) => void;
   onCopyStats?: () => Promise<boolean>;
   onReportProblem?: () => Promise<boolean>;
+  onCustomize?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [reportState, setReportState] = useState<'idle' | 'sent' | 'failed'>('idle');
@@ -577,6 +581,19 @@ export function SectionFilter({
               title="Copies your review speed before and since installing Mochi, to send to the Mochi team"
             >
               {copyState === 'copied' ? 'Copied ✓' : copyState === 'failed' ? "Couldn't copy" : 'Copy my review stats'}
+            </button>
+          )}
+          {onCustomize && (
+            <button
+              type="button"
+              className="section-menu-action"
+              onClick={() => {
+                logClick('glance_panel', 'customize');
+                setOpen(false);
+                onCustomize();
+              }}
+            >
+              Customize Mochi…
             </button>
           )}
           {onReportProblem && (
@@ -677,6 +694,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
               notify={props.notify}
               onNotifyChange={props.onNotifyChange}
               onCopyStats={props.onCopyStats}
+              onCustomize={props.onCustomize}
               onReportProblem={props.onReportProblem}
             />
           )}

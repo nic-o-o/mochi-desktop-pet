@@ -19,6 +19,7 @@ export const EVENT_NAMES = new Set([
   'mochi_fetch',
   'mochi_resource',
   'mochi_agent_review',
+  'mochi_pet_generate',
 ]);
 
 /* Event-specific columns from the plan, plus the renderer-side common ones. */

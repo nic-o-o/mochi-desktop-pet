@@ -27,6 +27,8 @@ import { MochiPet } from './mochi/MochiPet.tsx';
 import { AGENT_LABELS, jobsForTask, useAgentReviews } from './mochi/agentReviews.ts';
 import type { AgentId, AgentJob } from './mochi/agentReviews.ts';
 import { AgentReportView } from './mochi/AgentReportView.tsx';
+import { CustomizeView } from './mochi/CustomizeView.tsx';
+import { currentImage, useLooks } from './mochi/looks.ts';
 import { reviewUrl } from './mochi/codimango.ts';
 import {
   cancelAgentReview,
@@ -133,6 +135,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /* The expanded card shows this task's agent reports instead of the task list. */
   const [reportTaskId, setReportTaskId] = useState<string | null>(null);
+  /* Customize Mochi in the full view; while Mochi draws, the pet looks Focused. */
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [drawing, setDrawing] = useState(false);
   const [lastActive, setLastActive] = useState(() => Date.now());
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [viewport, setViewport] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
@@ -464,6 +469,20 @@ export default function App() {
     void cancelAgentReview(jobId).then((jobs) => jobs && agentReviews.apply(jobs));
   }
 
+  /* Panel menu or Dock menu → Customize Mochi… in the full view. */
+  const openCustomize = useCallback(() => {
+    touch();
+    panelCloseReason.current = 'expanded_view';
+    setPanelOpen(false);
+    setSelectedId(null);
+    setEditingIn(null);
+    setReportTaskId(null);
+    setCustomizeOpen(true);
+    setExpandedOpen(true);
+  }, [touch]);
+  const looks = useLooks(openCustomize);
+  const petLook = currentImage(looks.state);
+
   function openReport(taskId: string) {
     touch();
     panelCloseReason.current = 'expanded_view';
@@ -471,6 +490,7 @@ export default function App() {
     setSelectedId(null);
     setEditingIn(null);
     setReportTaskId(taskId);
+    setCustomizeOpen(false);
     setExpandedOpen(true);
   }
 
@@ -479,6 +499,7 @@ export default function App() {
     setSelectedId(null);
     setEditingIn(null);
     setReportTaskId(null);
+    setCustomizeOpen(false);
   }
 
   const togglePanel = useCallback((via: 'pet_click' | 'keyboard') => {
@@ -703,6 +724,7 @@ export default function App() {
     }
     panelCloseReason.current = 'expanded_view';
     setPanelOpen(false);
+    setCustomizeOpen(false);
     setSelectedId(id);
     setExpandedOpen(true);
   }
@@ -713,6 +735,7 @@ export default function App() {
     setSelectedId(null);
     setEditingIn(null);
     setReportTaskId(null);
+    setCustomizeOpen(false);
     panelTrigger.current = 'back';
     setPanelOpen(true);
   }
@@ -884,7 +907,7 @@ export default function App() {
             onPointerLeave={() => setHovering(false)}
             onKeyDown={handlePetKeyDown}
           >
-            <MochiPet state={petState} reviewFrac={reviewFrac} subFrac={subFrac} />
+            <MochiPet state={drawing ? 'focused' : petState} reviewFrac={reviewFrac} subFrac={subFrac} look={petLook} />
           </div>
           <button
             type="button"
@@ -956,6 +979,7 @@ export default function App() {
           submittable={submittable}
           onCopyStats={status === 'mock' ? undefined : copyStats}
           onReportProblem={status === 'mock' ? undefined : startProblemReport}
+          onCustomize={looks.state.available ? openCustomize : undefined}
           sections={sections}
           onSectionsChange={(next) => {
             touch();
@@ -1049,7 +1073,17 @@ export default function App() {
 
       {expandedOpen && (
         <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
-        {reportTaskId ? (
+        {customizeOpen ? (
+          <CustomizeView
+            anchor={shell ? expandedPos : undefined}
+            looks={looks.state}
+            reviewFrac={reviewFrac}
+            subFrac={subFrac}
+            onLooksChange={looks.apply}
+            onDrawingChange={setDrawing}
+            onClose={closeExpanded}
+          />
+        ) : reportTaskId ? (
           <AgentReportView
             key={reportTaskId}
             anchor={shell ? expandedPos : undefined}
