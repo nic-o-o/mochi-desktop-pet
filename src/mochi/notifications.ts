@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodimangoRow, CodimangoSnapshot } from './codimango.ts';
-import { advisoryFailures, failedCheckSummary, reviewUrl, submissionUrl } from './codimango.ts';
+import { advisoryFailures, erroredChecks, failedCheckSummary, reviewUrl, submissionUrl } from './codimango.ts';
 
 /* v3: task_submitted became review_started; older entries are dropped and reseeded. */
 export const NOTIFICATIONS_STORAGE_KEY = 'mochi.notifications.v3';
@@ -156,6 +156,9 @@ function validationNotice(row: CodimangoRow, raisedAtMs: number): Notice {
   const passed = v === 'passing';
   const summary = !passed ? failedCheckSummary(row) : undefined;
   const advisory = passed ? advisoryFailures(row) : undefined;
+  /* Only infra errors blocking: say it isn't the task, and how to re-run. */
+  const errored = passed ? [] : erroredChecks(row);
+  const onlyErrored = errored.length > 0 && !(row.validationDetails ?? []).some((d) => d.status === 'failed' && !d.advisory);
   return {
     id: `validation:${row.id}:${v}:${raisedAtMs}`,
     kind: passed ? 'validation_passed' : 'validation_failed',
@@ -165,7 +168,9 @@ function validationNotice(row: CodimangoRow, raisedAtMs: number): Notice {
       ? advisory
         ? `Required checks passed; advisory checks failed: ${advisory}.`
         : 'All validation checks passed.'
-      : `Validation failed${summary ? ` (${summary})` : ''}.`,
+      : onlyErrored
+        ? `${errored.join(', ')} couldn't run (an infrastructure error, not your task). Revalidate to re-run it.`
+        : `Validation failed${summary ? ` (${summary})` : ''}.`,
     url: submissionUrl(row.id),
     taskId: row.id,
     raisedAtMs,
@@ -306,6 +311,23 @@ const EMPTY_NOTICE: Notice = {
 };
 
 /* Merge seeded past events under existing history, newest first, capped. */
+const VALIDATION_KIND: Record<string, NoticeKind> = { passing: 'validation_passed', failed: 'validation_failed' };
+
+/**
+ * Drop validation notices the task's current status contradicts: a "Validation
+ * passed" for a task that has since failed (or the reverse) would mislead when
+ * the bell replays history. Other statuses (pending, running) keep history as is.
+ */
+export function pruneStaleValidation(history: Notice[], snapshot: CodimangoSnapshot): Notice[] {
+  const current = new Map(snapshot.mine.map((r) => [r.id, VALIDATION_KIND[r.validationStatus ?? '']]));
+  const kept = history.filter((n) => {
+    if (n.kind !== 'validation_passed' && n.kind !== 'validation_failed') return true;
+    const now = n.taskId ? current.get(n.taskId) : undefined;
+    return !now || now === n.kind;
+  });
+  return kept.length === history.length ? history : kept;
+}
+
 function mergeSeeded(history: Notice[], seeded: Notice[]): Notice[] {
   const seen = new Set(history.map((n) => `${n.taskId}|${n.title}`));
   const fresh = seeded.filter((n) => !seen.has(`${n.taskId}|${n.title}`));
@@ -345,6 +367,10 @@ export function useNotificationHistory(
   if (snapshot !== prevSnapshot) {
     setPrevSnapshot(snapshot);
     if (snapshot) {
+      setHistory((h) => {
+        const pruned = pruneStaleValidation(h, snapshot);
+        return pruned === h ? h : saveNotificationHistory(pruned);
+      });
       if (!prevSnapshot) {
         /* First snapshot seeds browsable history without popping anything. */
         const seeded = seedNotifications(snapshot, nowMs);
