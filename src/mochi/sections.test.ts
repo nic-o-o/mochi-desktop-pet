@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SECTIONS, SECTIONS, parseSectionPrefs, visibleStatuses, DEFAULT_SECTION_ORDER, moveSection, parseSectionOrder } from './sections.ts';
+import { DEFAULT_SECTIONS, SECTIONS, parseSectionPrefs, visibleStatuses, DEFAULT_SECTION_ORDER, moveSection, parseSectionOrder, reorderSection, reorderInVisibleOrder } from './sections.ts';
 
 describe('section prefs', () => {
   it('defaults to revisions, reviews, and ready-for-submission; drafts off', () => {
@@ -54,5 +54,43 @@ describe('section order', () => {
     expect(moveSection(order, 'submittable', -1)).toBe(order);
     expect(moveSection(order, 'drafts', 1)).toBe(order);
     expect(order).toEqual(['submittable', 'revisions', 'reviews', 'drafts']);
+  });
+
+  it('reorders a section to any index and clamps past either end', () => {
+    const order = DEFAULT_SECTION_ORDER;
+    expect(reorderSection(order, 'reviews', 0)).toEqual(['reviews', 'submittable', 'revisions', 'drafts']);
+    expect(reorderSection(order, 'reviews', 3)).toEqual(['submittable', 'revisions', 'drafts', 'reviews']);
+    expect(reorderSection(order, 'submittable', 2)).toEqual(['revisions', 'reviews', 'submittable', 'drafts']);
+    expect(reorderSection(order, 'reviews', -5)).toEqual(['reviews', 'submittable', 'revisions', 'drafts']);
+    expect(reorderSection(order, 'reviews', 99)).toEqual(['submittable', 'revisions', 'drafts', 'reviews']);
+    expect(order).toEqual(['submittable', 'revisions', 'reviews', 'drafts']);
+  });
+
+  it('reordering to the same spot, or an unknown section, returns the same order', () => {
+    const order = DEFAULT_SECTION_ORDER;
+    expect(reorderSection(order, 'reviews', 2)).toBe(order);
+    expect(reorderSection(order, 'bogus' as never, 0)).toBe(order);
+  });
+
+  it('reorders within the shown sections and leaves hidden ones where they sit', () => {
+    const order = DEFAULT_SECTION_ORDER;
+    const shown = ['submittable', 'revisions', 'reviews'] as const;
+    // Reviews above revisions; the hidden drafts section stays last.
+    expect(reorderInVisibleOrder(order, 'reviews', [...shown], 1)).toEqual(['submittable', 'reviews', 'revisions', 'drafts']);
+    // Ready for submission to the bottom of the shown list, still above hidden drafts.
+    expect(reorderInVisibleOrder(order, 'submittable', [...shown], 2)).toEqual(['revisions', 'reviews', 'submittable', 'drafts']);
+    // A hidden section interleaved in the full order stays put when a shown one passes it.
+    const interleaved = ['drafts', 'submittable', 'revisions', 'reviews'] as const;
+    expect(reorderInVisibleOrder([...interleaved], 'reviews', [...shown], 0)).toEqual(['drafts', 'reviews', 'submittable', 'revisions']);
+    expect(order).toEqual(['submittable', 'revisions', 'reviews', 'drafts']);
+  });
+
+  it('reordering in the shown list clamps, ignores unknown sections, and is a no-op for one shown section', () => {
+    const order = DEFAULT_SECTION_ORDER;
+    const shown = ['submittable', 'revisions', 'reviews'] as const;
+    expect(reorderInVisibleOrder(order, 'submittable', [...shown], 99)).toEqual(['revisions', 'reviews', 'submittable', 'drafts']);
+    expect(reorderInVisibleOrder(order, 'submittable', [...shown], -5)).toBe(order);
+    expect(reorderInVisibleOrder(order, 'bogus' as never, [...shown], 0)).toBe(order);
+    expect(reorderInVisibleOrder(order, 'reviews', ['reviews'], 0)).toBe(order);
   });
 });

@@ -93,12 +93,42 @@ export function saveSectionOrder(order: SectionOrder): void {
   }
 }
 
+/** Move one section to an index, clamped to either end. A move to its own spot, or of
+ * an unknown section, returns the same array. Never mutates. */
+export function reorderSection(order: SectionOrder, key: SectionKey, to: number): SectionOrder {
+  const from = order.indexOf(key);
+  const clamped = Math.max(0, Math.min(to, order.length - 1));
+  if (from < 0 || clamped === from) return order;
+  const next = [...order];
+  const [moved] = next.splice(from, 1);
+  next.splice(clamped, 0, moved);
+  return next;
+}
+
 /** Move one section up (-1) or down (+1); a move past either end changes nothing. Never mutates. */
 export function moveSection(order: SectionOrder, key: SectionKey, delta: -1 | 1): SectionOrder {
-  const from = order.indexOf(key);
-  const to = from + delta;
-  if (from < 0 || to < 0 || to >= order.length) return order;
-  const next = [...order];
-  [next[from], next[to]] = [next[to], next[from]];
+  return reorderSection(order, key, order.indexOf(key) + delta);
+}
+
+/** Move one section to an index within the sections currently shown (`shown`, in
+ * shown order). Sections not shown keep their places: the moved section lands
+ * before the shown section now at that index, or just past the last shown one.
+ * A move to its own spot, of an unknown section, or with one shown section
+ * returns the same array. Never mutates. */
+export function reorderInVisibleOrder(order: SectionOrder, key: SectionKey, shown: SectionKey[], toShown: number): SectionOrder {
+  const fromShown = shown.indexOf(key);
+  if (fromShown < 0 || shown.length <= 1) return order;
+  const clamped = Math.max(0, Math.min(toShown, shown.length - 1));
+  if (clamped === fromShown) return order;
+  const remaining = order.filter((k) => k !== key);
+  const visibleRemaining = remaining.filter((k) => shown.includes(k));
+  const insertAt =
+    clamped >= visibleRemaining.length
+      ? visibleRemaining.length > 0
+        ? remaining.indexOf(visibleRemaining[visibleRemaining.length - 1]) + 1
+        : remaining.length
+      : remaining.indexOf(visibleRemaining[clamped]);
+  const next = [...remaining];
+  next.splice(insertAt, 0, key);
   return next;
 }

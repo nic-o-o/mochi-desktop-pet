@@ -67,6 +67,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
 | `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section or notification kind by its label |
+| `drag_section: { label: Waiting for your review, dy: -40 }` | Drag a section header's handle that far up (negative) or down in the main panel |
 | `refresh_now` | ↻ on the freshness line |
 | `click: <text>` | Any button or link showing that text |
 | `press: <aria-label>` | A control by its accessible label, e.g. `Increase reviewed goal` |

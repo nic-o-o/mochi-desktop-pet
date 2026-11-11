@@ -594,6 +594,7 @@ body {
 }
 
 .glance-section {
+  position: relative;
   padding: 16px 0 8px;
 }
 
@@ -1776,31 +1777,63 @@ html.mochi-shell .expanded-view {
   min-width: 0;
 }
 
-.section-move {
+/* Drag handle: parked in the panel's 16px left gutter, so the title starts at
+   the same left edge as every other part of the panel. It spans the full
+   height of its section, with the grip centered vertically, and takes no
+   space in the flow, so the title never shifts when the handle appears. The
+   handle is invisible until the pointer is on the section — or the handle has
+   keyboard focus, or its section is being dragged. Opacity, not display, so
+   the handle stays hoverable and focusable while hidden. */
+.section-drag-handle {
+  position: absolute;
+  left: -16px;
+  top: 0;
+  bottom: 0;
+  width: 18px;
   display: flex;
-  gap: 2px;
-}
-
-.section-move-btn {
-  width: 22px;
-  height: 22px;
+  align-items: center;
+  justify-content: flex-start;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
 }
 
-.section-move-btn:hover:not(:disabled) {
+.glance-section:hover .section-drag-handle,
+.glance-section:focus-within .section-drag-handle,
+.section-drag-handle:focus-visible,
+.glance-section.is-dragging .section-drag-handle {
+  opacity: 1;
+}
+
+.section-drag-handle:hover {
   background: var(--accent-soft);
   color: var(--ink);
 }
 
-.section-move-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
+.section-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Focusing or dragging the handle marks the whole section — head and tasks —
+   not just the head, so it reads as one block being moved. The focus ring is
+   drawn on the section, so the handle itself shows no separate outline. */
+.glance-section.is-dragging,
+.glance-section:has(.section-drag-handle:focus-visible) {
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
+.glance-section:has(.section-drag-handle:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.section-drag-handle:focus-visible {
+  outline: none;
 }
 
 .section-menu-subtitle {
