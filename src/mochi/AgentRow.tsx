@@ -80,8 +80,8 @@ export function SkillPicker({
           <input
             className="skill-filter"
             type="search"
-            placeholder="Filter skills…"
-            aria-label="Filter skills"
+            placeholder="🔍  Search skills…"
+            aria-label="Search skills"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -105,6 +105,9 @@ export function SkillPicker({
                             close();
                           }}
                         >
+                          <span className="skill-check" aria-hidden="true">
+                            {s.id === value ? '✓' : ''}
+                          </span>
                           {s.label}
                         </button>
                         {s.source !== 'default' && (

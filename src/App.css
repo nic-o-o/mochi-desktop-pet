@@ -1839,8 +1839,7 @@ html.mochi-shell .expanded-view {
   border-radius: 6px;
 }
 
-.skill-row:hover,
-.skill-row.is-current {
+.skill-row:hover {
   background: var(--accent-soft);
 }
 
@@ -1859,8 +1858,12 @@ html.mochi-shell .expanded-view {
   white-space: nowrap;
 }
 
-.skill-row.is-current .skill-row-pick {
-  font-weight: 600;
+/* The chosen skill gets a check in a fixed-width gutter, like a menu. */
+.skill-check {
+  display: inline-block;
+  width: 14px;
+  color: var(--accent, #5b4bd5);
+  font-weight: 700;
 }
 
 .skill-star {

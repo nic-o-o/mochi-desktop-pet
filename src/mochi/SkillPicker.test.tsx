@@ -48,13 +48,14 @@ describe('SkillPicker', () => {
     expect(filled.className).toContain('is-starred');
   });
 
-  it('filters by name and picks a skill, closing the list', () => {
+  it('marks the chosen skill with a check, searches by name and picks a skill, closing the list', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: /Codimango review assistant/ }));
-    fireEvent.change(screen.getByLabelText('Filter skills'), { target: { value: 'a-rev' } });
+    expect(document.querySelector('[aria-current="true"]')?.textContent).toBe('✓Codimango review assistant (default)');
+    fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'a-rev' } });
     expect(screen.queryByText('p:b-review')).toBeNull();
     fireEvent.click(screen.getByText('p:a-review'));
-    expect(screen.queryByLabelText('Filter skills')).toBeNull();
+    expect(screen.queryByLabelText('Search skills')).toBeNull();
     expect(screen.getByRole('button', { name: /p:a-review/ })).toBeTruthy();
   });
 });
