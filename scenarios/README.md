@@ -47,6 +47,8 @@ Snapshot-level `age_min` makes a saved snapshot older (default 0).
 - `saved`: a fixture name or inline snapshot. Mochi diffs the first fetch against it, which is how "something changed while Mochi was closed" pops a bubble. Leave it out for a first launch.
 - `live`: a fixture, an inline snapshot, `{ error: cli_missing | login_required | offline | error }`, or a list (one per fetch; the last repeats).
 - `sections`: saved section choices, e.g. `{ revisions: false, reviews: true, drafts: true }`.
+- `section_order`: saved section order, top first, e.g. `[reviews, revisions, submittable, drafts]`.
+- `notify`: saved notification switches; kinds left out stay on, e.g. `{ validation_failed: false }`.
 - `agents`: agent reviews the shell already has, e.g. `[{ task: r2, agent: claude, status: done, report: accept }]`. Optional `failure` (`skill_missing`, `codimango_login`, `timeout`, `interrupted`), `started_ago_min`, `steps`, `model`, `task_updated_ago_h` (the task's last change when the run started).
 - `sevs`: Codimango SEVs the main process has already read and filtered, same shape as the `sevs` step.
 
@@ -64,7 +66,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `click_bell`, `click_bubble`, `close_bubble` | Bell, bubble body, bubble × |
 | `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
-| `open_menu`, `toggle_section: Drafts` | ≡ menu; tick or untick a section |
+| `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section or notification kind by its label |
 | `refresh_now` | ↻ on the freshness line |
 | `click: <text>` | Any button or link showing that text |
 | `press: <aria-label>` | A control by its accessible label, e.g. `Increase reviewed goal` |

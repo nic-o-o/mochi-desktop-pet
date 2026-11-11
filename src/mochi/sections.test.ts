@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SECTIONS, SECTIONS, parseSectionPrefs, visibleStatuses } from './sections.ts';
+import { DEFAULT_SECTIONS, SECTIONS, parseSectionPrefs, visibleStatuses, DEFAULT_SECTION_ORDER, moveSection, parseSectionOrder } from './sections.ts';
 
 describe('section prefs', () => {
   it('defaults to revisions, reviews, and ready-for-submission; drafts off', () => {
@@ -34,5 +34,25 @@ describe('section prefs', () => {
       label: 'Ready for submission',
       status: 'draft',
     });
+  });
+});
+
+describe('section order', () => {
+  it('defaults to Ready for submission first, then the panel order', () => {
+    expect(parseSectionOrder(null)).toEqual(['submittable', 'revisions', 'reviews', 'drafts']);
+    expect(parseSectionOrder('not json')).toEqual(DEFAULT_SECTION_ORDER);
+    expect(parseSectionOrder('{"a":1}')).toEqual(DEFAULT_SECTION_ORDER);
+  });
+
+  it('repairs a saved order: drops unknown keys and repeats, appends missing sections', () => {
+    expect(parseSectionOrder('["reviews","bogus","reviews","drafts"]')).toEqual(['reviews', 'drafts', 'submittable', 'revisions']);
+  });
+
+  it('moves a section one step and stops at either end', () => {
+    const order = DEFAULT_SECTION_ORDER;
+    expect(moveSection(order, 'reviews', -1)).toEqual(['submittable', 'reviews', 'revisions', 'drafts']);
+    expect(moveSection(order, 'submittable', -1)).toBe(order);
+    expect(moveSection(order, 'drafts', 1)).toBe(order);
+    expect(order).toEqual(['submittable', 'revisions', 'reviews', 'drafts']);
   });
 });

@@ -128,3 +128,26 @@ scenarios:
       - expect:
           see: [ember-lobby-seat, Offline · showing data from]
           not_see: [Codimango is not connected]
+
+  - id: panel-section-order
+    title: The ≡ menu arrows reorder sections, and the order is kept
+    given: { live: busy_week }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - press: Move Waiting for your review up
+      - press: Move Waiting for your review up
+      - expect:
+          events:
+            - { event: mochi_click, surface: glance_panel, component: section_order, section: waiting_review, action: up }
+      - open_menu
+      - expect: { in_order: [Waiting for your review, Ready for submission, Needs revision] }
+
+  - id: panel-section-order-saved
+    title: A saved section order is used on launch
+    given: { live: busy_week, section_order: [revisions, reviews, submittable, drafts] }
+    steps:
+      - start
+      - click_pet
+      - expect: { in_order: [Needs revision, Waiting for your review, Ready for submission] }

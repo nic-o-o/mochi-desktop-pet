@@ -99,6 +99,8 @@ export interface Scenario {
     /** What each Codimango fetch returns, in order; the last one repeats. */
     live?: LiveSpec | LiveSpec[];
     sections?: Record<string, boolean>;
+    section_order?: string[];
+    notify?: Record<string, boolean>;
     /** Agent reviews the shell already has (running or finished). */
     agents?: GivenAgentJob[];
     /** Codimango SEVs the main process has already read. */
@@ -279,6 +281,8 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     localStorage.setItem('mochi.codimango.v1', JSON.stringify(resolveSnapshot(sc.given.saved, file.fixtures, now - 1)));
   }
   if (sc.given?.sections) localStorage.setItem('mochi.sections.v1', JSON.stringify(sc.given.sections));
+  if (sc.given?.section_order) localStorage.setItem('mochi.sections.order.v1', JSON.stringify(sc.given.section_order));
+  if (sc.given?.notify) localStorage.setItem('mochi.notify.v1', JSON.stringify(sc.given.notify));
 
   window.mochiShell = {
     getDisplayBounds: () => Promise.resolve({ x: 0, y: 0, width: 1280, height: 800 }),

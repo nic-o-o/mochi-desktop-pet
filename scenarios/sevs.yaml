@@ -10,7 +10,7 @@ fixtures:
 
 scenarios:
   - id: sev-open-bubble
-    title: A newly opened Codimango SEV bubbles once, and the bubble opens the SEV
+    title: A newly opened Codimango SEV bubbles once, and the bubble's Open link opens the SEV
     given: { live: one_review }
     steps:
       - start
@@ -20,10 +20,30 @@ scenarios:
           see: [TBR mac_swe lane increased job timeouts. Submissions or validation may fail until it's fixed.]
           events:
             - { event: mochi_vpv, surface: bubble, component: bubble, notif_kind: sev_open }
-      - click_bubble
+      - click: Open ↗
       - expect: { opened: [/sevmanager/view/728082], bubble: none }
       - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
       - expect: { bubble: none }
+
+  - id: sev-bubble-opens-panel
+    title: Clicking a SEV bubble opens the panel, where the SEV line shows
+    given: { live: one_review }
+    steps:
+      - start
+      - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
+      - expect: { bubble: Codimango SEV3 open }
+      - click_bubble
+      - expect: { panel: open, bubble: none, see: ["SEV3 · TBR mac_swe lane increased job timeouts"] }
+
+  - id: sev-switched-off
+    title: With Codimango SEVs switched off, a new SEV doesn't bubble but still shows in the panel
+    given: { live: one_review, notify: { sev: false } }
+    steps:
+      - start
+      - sevs: [{ id: S728082, level: 3, open: true, title: TBR mac_swe lane increased job timeouts, opened_ago_h: 1 }]
+      - expect: { bubble: none }
+      - click_pet
+      - expect: { see: ["SEV3 · TBR mac_swe lane increased job timeouts"] }
 
   - id: sev-panel-line
     title: While a SEV is open the panel shows one line for it, and the line opens the SEV

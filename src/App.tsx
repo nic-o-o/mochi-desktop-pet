@@ -17,8 +17,10 @@ import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
 import { advanceStudy, loadStudy, saveStudy, studyReport } from './mochi/study.ts';
 import type { StudyRecord } from './mochi/study.ts';
-import { SECTIONS, loadSectionPrefs, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
-import type { SectionPrefs } from './mochi/sections.ts';
+import { SECTIONS, loadSectionOrder, loadSectionPrefs, saveSectionOrder, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
+import type { SectionOrder, SectionPrefs } from './mochi/sections.ts';
+import { loadNotifyPrefs, notifyAllowed, saveNotifyPrefs } from './mochi/notifyPrefs.ts';
+import type { NotifyPrefs } from './mochi/notifyPrefs.ts';
 import type { Notice } from './mochi/notifications.ts';
 import { NOTICE_ICONS, noticeAge, useNotificationHistory } from './mochi/notifications.ts';
 import { MochiPet } from './mochi/MochiPet.tsx';
@@ -296,6 +298,15 @@ export default function App() {
   const submittable = useMemo(() => submittableDrafts(sortedTasks), [sortedTasks]);
   /* Panel sections the user chose (filter menu); the full task list follows the same choice. */
   const [sections, setSections] = useState<SectionPrefs>(loadSectionPrefs);
+  const [sectionOrder, setSectionOrder] = useState<SectionOrder>(loadSectionOrder);
+  /* Notification kinds that may pop the bubble (filter menu). Callbacks read the ref. */
+  const [notify, setNotify] = useState<NotifyPrefs>(loadNotifyPrefs);
+  const notifyRef = useRef(notify);
+  useEffect(() => {
+    notifyRef.current = notify;
+  });
+  /* The task a clicked notification is about, highlighted in the panel it opens. */
+  const [highlightTaskId, setHighlightTaskId] = useState<string | null>(null);
   const listedTasks = useMemo(() => {
     const show = visibleStatuses(sections);
     return sortedTasks.filter((t) => show.has(t.status));
@@ -371,6 +382,7 @@ export default function App() {
       if (spent !== null) logClose('glance_panel', 'panel', { time_spent_ms: spent, reason: panelCloseReason.current });
       panelCloseReason.current = 'other';
       panelTrigger.current = 'pet_click';
+      setHighlightTaskId(null);
     };
   }, [panelVisible]);
   /* Quitting with the panel open still records how long it was up. */
@@ -390,18 +402,24 @@ export default function App() {
     },
     false,
   );
-  const { showNext, showPrev, resetCycle } = useNotificationHistory(snapshot, nowMs, (n: Notice, source) => {
-    touch();
-    setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined, taskId: n.taskId || undefined, source, shownAt: mark() });
-    if (source === 'arrival') setUnread((u) => u + 1);
-    else setUnread(0);
-    /* The bubble gets the stage: hide the panel whenever one is up. */
-    panelCloseReason.current = 'bubble_arrived';
-    setPanelOpen(false);
-  });
+  const { showNext, showPrev, resetCycle } = useNotificationHistory(
+    snapshot,
+    nowMs,
+    (n: Notice, source) => {
+      touch();
+      setBubble({ id: Date.now(), title: n.title, taskName: n.taskName, detail: n.detail, raisedAtMs: n.raisedAtMs, kind: n.kind, url: n.url || undefined, taskId: n.taskId || undefined, source, shownAt: mark() });
+      if (source === 'arrival') setUnread((u) => u + 1);
+      else setUnread(0);
+      /* The bubble gets the stage: hide the panel whenever one is up. */
+      panelCloseReason.current = 'bubble_arrived';
+      setPanelOpen(false);
+    },
+    (kind) => notifyAllowed(notify, kind),
+  );
 
   /* Codimango SEVs: a bubble when one opens or is mitigated (clicking opens the SEV), a panel line while open. */
   const openSevs = useSevs((b: SevBubble) => {
+    if (!notifyAllowed(notifyRef.current, b.kind)) return;
     touch();
     const { title, detail } = sevBubbleText(b);
     setBubble({ id: Date.now(), title, taskName: '', detail, raisedAtMs: Date.now(), kind: b.kind, url: b.sev.url, source: 'arrival', shownAt: mark() });
@@ -411,6 +429,7 @@ export default function App() {
 
   /* Ask agents to review: a run that finishes pops the bubble; clicking it opens the report. */
   const agentReviews = useAgentReviews((job: AgentJob) => {
+    if (!notifyAllowed(notifyRef.current, 'agent_review')) return;
     touch();
     const label = AGENT_LABELS[job.agent];
     setBubble({
@@ -617,6 +636,17 @@ export default function App() {
     });
   });
 
+  /* "Open in Codimango ↗": the notice's page (task, review or SEV), skipping the panel. */
+  function openBubbleLink() {
+    touch();
+    if (bubble) logClick('bubble', 'open_link', bubbleFields(bubble));
+    const url = bubble?.url;
+    setBubble(null);
+    resetCycle();
+    setUnread(0);
+    if (url) openLink(url);
+  }
+
   /* The × dismisses the bubble without opening anything. */
   function dismissBubble() {
     touch();
@@ -626,12 +656,13 @@ export default function App() {
     setUnread(0);
   }
 
-  /* Bubbles never auto-dismiss: a click opens the task (or panel) and clears it. */
+  /* Bubbles never auto-dismiss: a click opens the panel (agent reports: the report)
+     with the notice's task highlighted, and clears the bubble. */
   function openBubble() {
     touch();
     if (bubble) logClick('bubble', 'bubble', bubbleFields(bubble));
-    const url = bubble?.url;
     const reportFor = bubble?.reportTaskId;
+    const taskId = bubble?.taskId ?? null;
     setBubble(null);
     resetCycle();
     setUnread(0);
@@ -639,11 +670,7 @@ export default function App() {
       openReport(reportFor);
       return;
     }
-    /* Real notifications open their task page; the placeholder opens the panel. */
-    if (url) {
-      openLink(url);
-      return;
-    }
+    setHighlightTaskId(taskId);
     setExpandedOpen(false);
     setSelectedId(null);
     setEditingIn(null);
@@ -812,6 +839,11 @@ export default function App() {
             >
               ›
             </button>
+            {bubble.url && !bubble.reportTaskId && (
+              <button type="button" className="bubble-link-btn" onClick={openBubbleLink}>
+                {bubble.taskId ? 'Open in Codimango ↗' : 'Open ↗'}
+              </button>
+            )}
             <span className="bubble-time">{noticeAge(bubble.raisedAtMs, nowMs)}</span>
           </span>
           <button type="button" className="bubble-close" onClick={dismissBubble} aria-label="Dismiss notification">
@@ -919,6 +951,21 @@ export default function App() {
             setSections(next);
             saveSectionPrefs(next);
           }}
+          sectionOrder={sectionOrder}
+          onSectionOrderChange={(next) => {
+            touch();
+            setSectionOrder(next);
+            saveSectionOrder(next);
+          }}
+          notify={notify}
+          onNotifyChange={(next) => {
+            touch();
+            setNotify(next);
+            saveNotifyPrefs(next);
+          }}
+          highlightTaskId={highlightTaskId}
+          onShowNotifications={cycleNotification}
+          unread={unread}
           reviewsCompleted={weekly.reviewsCompleted}
           submissionsCompleted={weekly.submissionsCompleted}
           goals={goals}
