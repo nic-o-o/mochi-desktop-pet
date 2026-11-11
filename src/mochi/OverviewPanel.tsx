@@ -516,6 +516,11 @@ export function SectionFilter({
     return () => window.clearTimeout(id);
   }, [copyState]);
   const onCount = SECTIONS.filter(({ key }) => prefs[key]).length;
+  /* Display-only partition: checked items first, unchecked items greyed at the
+     bottom of their own group, each side keeping its saved order. The saved
+     section order and notification prefs are not rewritten by this sorting. */
+  const shownSections = [...order.filter((key) => prefs[key]), ...order.filter((key) => !prefs[key])];
+  const shownNotify = [...NOTIFY_KINDS.filter(({ key }) => notify[key]), ...NOTIFY_KINDS.filter(({ key }) => !notify[key])];
 
   return (
     <div className="section-filter">
@@ -534,11 +539,11 @@ export function SectionFilter({
       {open && (
         <div className="section-menu" role="group" aria-label="Sections to show">
           <p className="section-menu-title">Show in panel</p>
-          {order.map((key) => {
+          {shownSections.map((key) => {
             const label = SECTIONS.find((s) => s.key === key)?.label ?? key;
             const last = prefs[key] && onCount === 1;
             return (
-              <div key={key} className="section-option-row">
+              <div key={key} className={`section-option-row${prefs[key] ? '' : ' is-off'}`}>
                 <label className="section-option">
                   <input
                     type="checkbox"
@@ -556,8 +561,8 @@ export function SectionFilter({
             );
           })}
           <p className="section-menu-title section-menu-subtitle">Notify me about</p>
-          {NOTIFY_KINDS.map(({ key, label }) => (
-            <label key={key} className="section-option">
+          {shownNotify.map(({ key, label }) => (
+            <label key={key} className={`section-option${notify[key] ? '' : ' is-off'}`}>
               <input
                 type="checkbox"
                 checked={notify[key]}
