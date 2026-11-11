@@ -366,6 +366,9 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'click_bubble':
           fireEvent.click(mustFind('.bubble-main', 'the bubble'));
           break;
+        case 'click_bubble_task':
+          fireEvent.click(mustFind('.bubble-task', "the bubble's task name"));
+          break;
         case 'bubble_older':
           fireEvent.click(mustFind('[aria-label="Show older notification"]', 'the › button'));
           break;

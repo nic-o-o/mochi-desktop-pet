@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   DRAG_THRESHOLD_PX,
   clampPetPosition,
@@ -636,10 +636,13 @@ export default function App() {
     });
   });
 
-  /* "Open in Codimango ↗": the notice's page (task, review or SEV), skipping the panel. */
-  function openBubbleLink() {
+  /* The bubble's task name is a link when the notice has a Codimango page of its own. */
+  const bubbleTaskLinks = Boolean(bubble?.url && bubble.taskId && !bubble.reportTaskId);
+
+  /* "Open in Codimango ↗" (or the underlined task name): the notice's page (task, review or SEV), skipping the panel. */
+  function openBubbleLink(component: 'open_link' | 'task_link' = 'open_link') {
     touch();
-    if (bubble) logClick('bubble', 'open_link', bubbleFields(bubble));
+    if (bubble) logClick('bubble', component, bubbleFields(bubble));
     const url = bubble?.url;
     setBubble(null);
     resetCycle();
@@ -657,8 +660,13 @@ export default function App() {
   }
 
   /* Bubbles never auto-dismiss: a click opens the panel (agent reports: the report)
-     with the notice's task highlighted, and clears the bubble. */
-  function openBubble() {
+     with the notice's task highlighted, and clears the bubble. The underlined
+     task name is the exception: it opens the task in Codimango, like it looks. */
+  function openBubble(e: ReactMouseEvent) {
+    if (bubbleTaskLinks && (e.target as Element).closest('.bubble-task')) {
+      openBubbleLink('task_link');
+      return;
+    }
     touch();
     if (bubble) logClick('bubble', 'bubble', bubbleFields(bubble));
     const reportFor = bubble?.reportTaskId;
@@ -809,7 +817,10 @@ export default function App() {
             <span className="bubble-body">
               {bubble.taskName ? (
                 <>
-                  <span className="bubble-task">{bubble.taskName}</span> {bubble.detail}
+                  <span className={bubbleTaskLinks ? 'bubble-task' : 'bubble-task is-plain'} title={bubbleTaskLinks ? 'Open in Codimango' : undefined}>
+                    {bubble.taskName}
+                  </span>{' '}
+                  {bubble.detail}
                 </>
               ) : (
                 bubble.detail
@@ -840,7 +851,7 @@ export default function App() {
               ›
             </button>
             {bubble.url && !bubble.reportTaskId && (
-              <button type="button" className="bubble-link-btn" onClick={openBubbleLink}>
+              <button type="button" className="bubble-link-btn" onClick={() => openBubbleLink()}>
                 {bubble.taskId ? 'Open in Codimango ↗' : 'Open ↗'}
               </button>
             )}
