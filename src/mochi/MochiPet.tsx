@@ -8,6 +8,8 @@ interface MochiPetProps {
   subFrac: number;
   /** A custom look (sprite data URL) drawn in place of the classic Mochi; moods still move it. */
   look?: string | null;
+  /** Leave out the progress ring (small tiles such as My Mochis). */
+  bare?: boolean;
 }
 
 const CX = 74;
@@ -34,42 +36,47 @@ const BOTTOM_HALF = `M ${ringPt(360 - GAP_DEG)} A ${RING_R} ${RING_R} 0 0 1 ${ri
  * Upper green half-ring = reviews completed / review goal.
  * Lower orange half-ring = submissions completed / submission goal.
  */
-export function MochiPet({ state, reviewFrac, subFrac, look }: MochiPetProps) {
+export function MochiPet({ state, reviewFrac, subFrac, look, bare = false }: MochiPetProps) {
   const rev = Math.min(1, Math.max(0, reviewFrac));
   const sub = Math.min(1, Math.max(0, subFrac));
   return (
     <svg
       className={`mochi-svg mochi-${state}`}
-      viewBox="0 0 148 148"
+      /* bare tiles zoom in on the pet, since there is no ring around it */
+      viewBox={bare ? '26 16 104 104' : '0 0 148 148'}
       role="img"
       aria-hidden="true"
       focusable="false"
     >
       {/* progress rings: one circle split in halves — green up, orange down.
           pathLength=100 makes each dash length a percent of its own half. */}
-      <path d={TOP_HALF} className="ring-track" strokeWidth={7} fill="none" />
-      {rev > 0 && (
-        <path
-          d={TOP_HALF}
-          className="ring-progress ring-green"
-          strokeWidth={7}
-          fill="none"
-          strokeLinecap="round"
-          pathLength={100}
-          strokeDasharray={`${rev * 100} 100`}
-        />
-      )}
-      <path d={BOTTOM_HALF} className="ring-track" strokeWidth={7} fill="none" />
-      {sub > 0 && (
-        <path
-          d={BOTTOM_HALF}
-          className="ring-progress ring-orange"
-          strokeWidth={7}
-          fill="none"
-          strokeLinecap="round"
-          pathLength={100}
-          strokeDasharray={`${sub * 100} 100`}
-        />
+      {!bare && (
+        <>
+          <path d={TOP_HALF} className="ring-track" strokeWidth={7} fill="none" />
+          {rev > 0 && (
+            <path
+              d={TOP_HALF}
+              className="ring-progress ring-green"
+              strokeWidth={7}
+              fill="none"
+              strokeLinecap="round"
+              pathLength={100}
+              strokeDasharray={`${rev * 100} 100`}
+            />
+          )}
+          <path d={BOTTOM_HALF} className="ring-track" strokeWidth={7} fill="none" />
+          {sub > 0 && (
+            <path
+              d={BOTTOM_HALF}
+              className="ring-progress ring-orange"
+              strokeWidth={7}
+              fill="none"
+              strokeLinecap="round"
+              pathLength={100}
+              strokeDasharray={`${sub * 100} 100`}
+            />
+          )}
+        </>
       )}
 
       {/* body */}

@@ -139,6 +139,11 @@ export function CustomizeView(props: CustomizeViewProps) {
             ))}
           </div>
 
+          {looks.practice && (
+            <p className="muted small customize-practice">
+              Practice drawings: this build shows the same three sample pets whatever you describe. Real drawing comes in a later version.
+            </p>
+          )}
           <div className="customize-actions">
             {phase === 'drawing' ? (
               <>
@@ -203,23 +208,29 @@ export function CustomizeView(props: CustomizeViewProps) {
 
           <h3 className="customize-heading">My Mochis</h3>
           <div className="customize-looks">
-            <button
-              type="button"
-              className={looks.currentId === null ? 'customize-look is-current' : 'customize-look'}
-              aria-pressed={looks.currentId === null}
-              onClick={() => void switchTo(null)}
-              title="Classic Mochi"
-            >
-              <span className="customize-look-pet">
-                <MochiPet state="chilling" reviewFrac={0} subFrac={0} />
-              </span>
-              <span className="small">Classic</span>
-            </button>
+            <div className={looks.currentId === null ? 'customize-look is-current' : 'customize-look'}>
+              <button
+                type="button"
+                className="customize-look-pick"
+                aria-pressed={looks.currentId === null}
+                aria-label="Classic Mochi"
+                onClick={() => void switchTo(null)}
+                title="Classic Mochi"
+              >
+                <span className="customize-look-pet">
+                  <MochiPet state="chilling" reviewFrac={0} subFrac={0} bare />
+                </span>
+              </button>
+              <span className="small customize-look-name">Classic</span>
+            </div>
             {looks.looks.map((look) => (
               <div key={look.id} className={look.id === looks.currentId ? 'customize-look is-current' : 'customize-look'}>
                 <button type="button" className="customize-look-pick" aria-pressed={look.id === looks.currentId} onClick={() => void switchTo(look.id)} title={look.prompt}>
                   <img src={look.image} alt={look.prompt} draggable={false} />
                 </button>
+                <span className="small customize-look-name" title={look.prompt}>
+                  {look.prompt}
+                </span>
                 <button type="button" className="customize-look-delete" onClick={() => void remove(look)} aria-label={`Delete ${look.prompt}`} title="Delete">
                   ×
                 </button>

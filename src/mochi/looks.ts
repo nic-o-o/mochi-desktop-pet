@@ -20,6 +20,8 @@ export interface PetLook {
 export interface LooksState {
   /** Whether this build can draw pets (B1: only when running from source). */
   available: boolean;
+  /** Drawings are fixed practice images (the fake generator), not drawn from the description. */
+  practice?: boolean;
   looks: PetLook[];
   currentId: string | null;
 }

@@ -20,6 +20,8 @@ export function createCustomizer({ store, generator, codec, log = () => {}, now 
   return {
     /** Whether this build can draw pets (B1: only with the fake generator, outside packaged builds). */
     available: () => Boolean(generator),
+    /** The fake generator: the same practice drawings whatever the description. */
+    practice: () => generator?.kind === 'fake',
 
     state: () => (generator ? store.state() : { looks: [], currentId: null }),
 

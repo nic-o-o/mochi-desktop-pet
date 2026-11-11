@@ -239,7 +239,7 @@ ipcMain.handle('mochi:review-skill-remove', (_event, id) => {
 });
 
 // Customize Mochi: availability and saved looks, drawing candidates, keeping one.
-ipcMain.handle('mochi:looks-state', () => ({ available: customizer?.available() ?? false, ...(customizer?.state() ?? { looks: [], currentId: null }) }));
+ipcMain.handle('mochi:looks-state', () => ({ available: customizer?.available() ?? false, practice: customizer?.practice() ?? false, ...(customizer?.state() ?? { looks: [], currentId: null }) }));
 ipcMain.handle('mochi:pet-generate', (_event, text) => customizer?.generate(String(text ?? '')) ?? { ok: false, error: { kind: 'error' } });
 ipcMain.handle('mochi:pet-generate-cancel', () => customizer?.cancel());
 ipcMain.handle('mochi:look-keep', (_event, candidateId) => customizer?.keep(String(candidateId ?? '')) ?? null);

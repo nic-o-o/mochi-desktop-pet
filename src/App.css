@@ -2099,8 +2099,7 @@ html.mochi-shell .expanded-view {
 }
 
 .customize-candidate,
-.customize-look-pick,
-.customize-look > button:first-child {
+.customize-look-pick {
   width: 96px;
   height: 96px;
   padding: 6px;
@@ -2121,8 +2120,7 @@ html.mochi-shell .expanded-view {
 }
 
 .customize-candidate.is-picked,
-.customize-look.is-current .customize-look-pick,
-.customize-look.is-current > button:first-child {
+.customize-look.is-current .customize-look-pick {
   border-color: var(--accent, #5b4bd5);
 }
 
@@ -2148,8 +2146,27 @@ html.mochi-shell .expanded-view {
 
 .customize-look-pet {
   display: block;
-  width: 64px;
-  height: 64px;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.customize-look-pet .mochi-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.customize-look-name {
+  width: 96px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customize-practice {
+  margin: 8px 0 0;
 }
 
 .customize-look-delete {

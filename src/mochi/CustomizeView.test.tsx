@@ -5,13 +5,13 @@ import { CustomizeView } from './CustomizeView.tsx';
 
 const img = (n: number) => `data:image/png;base64,AAAA${n}`;
 
-function setup() {
+function setup(practice = false) {
   (window as unknown as { mochiShell: unknown }).mochiShell = {
     generatePet: async () => ({ ok: true, candidates: [0, 1, 2].map((i) => ({ id: `c${i}`, image: img(i), framed: false })) }),
   };
   render(
     <CustomizeView
-      looks={{ available: true, looks: [], currentId: null }}
+      looks={{ available: true, practice, looks: [], currentId: null }}
       reviewFrac={0}
       subFrac={0}
       onLooksChange={() => {}}
@@ -34,5 +34,13 @@ describe('CustomizeView', () => {
     fireEvent.click(screen.getByLabelText('Option 2'));
     expect(screen.getByLabelText('Option 2').getAttribute('aria-pressed')).toBe('true');
     expect(previewHref()).toBe(img(1));
+  });
+
+  it('says when the drawings are practice ones', () => {
+    setup(true);
+    expect(screen.getByText(/Practice drawings/)).toBeTruthy();
+    cleanup();
+    setup(false);
+    expect(screen.queryByText(/Practice drawings/)).toBeNull();
   });
 });
