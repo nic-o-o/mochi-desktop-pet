@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NOTICE_ICONS, diffNotifications, noticeAge, seedNotifications } from './notifications.ts';
+import { NOTICE_ICONS, diffNotifications, noticeAge, pruneStaleValidation, seedNotifications } from './notifications.ts';
 import type { CodimangoRow, CodimangoSnapshot } from './codimango.ts';
 
 const NOW = 2_000_000_000;
@@ -269,5 +269,31 @@ describe('NOTICE_ICONS — canonical per-type icon', () => {
       review_assigned: '👤',
       review_started: '👀',
     });
+  });
+});
+
+describe('validation notices that went stale', () => {
+  const errored = [
+    { label: 'Oracle validation', status: 'passed' },
+    { label: 'Metacode or Opus pass/fail balance', status: 'error' },
+  ];
+
+  it('a check that errored is named, and the bubble says it is an infra error to revalidate', () => {
+    const prev = snap([], [row({ id: 'm1', name: 'ember-a', status: 'draft', reviewStatus: 'draft', validationStatus: 'passing' })]);
+    const next = snap([], [row({ id: 'm1', name: 'ember-a', status: 'draft', reviewStatus: 'draft', validationStatus: 'failed', validationDetails: errored })]);
+    const [n] = diffNotifications(prev, next, NOW);
+    expect(n.kind).toBe('validation_failed');
+    expect(n.detail).toBe("Solvability & difficulty couldn't run (an infrastructure error, not your task). Revalidate to re-run it.");
+  });
+
+  it('drops a "Validation passed" from history once the task has failed, and keeps the rest', () => {
+    const passed = row({ id: 'm1', name: 'ember-a', status: 'draft', reviewStatus: 'draft', validationStatus: 'passing' });
+    const history = [...seedNotifications(snap([], [passed, row({ id: 'm2', name: 'ember-b', status: 'draft', reviewStatus: 'draft', validationStatus: 'passing' })]), NOW)];
+    expect(history.map((n) => n.taskId).sort()).toEqual(['m1', 'm2']);
+    const failedNow = snap([], [{ ...passed, validationStatus: 'failed', validationDetails: errored }, row({ id: 'm2', name: 'ember-b', status: 'draft', reviewStatus: 'draft', validationStatus: 'passing' })]);
+    expect(pruneStaleValidation(history, failedNow).map((n) => n.taskId)).toEqual(['m2']);
+    /* still running a revalidation: history stays */
+    const running = snap([], [{ ...passed, validationStatus: 'pending' }]);
+    expect(pruneStaleValidation(history, running)).toBe(history);
   });
 });

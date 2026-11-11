@@ -179,14 +179,25 @@ export function advisoryFailures(row: CodimangoRow): string | undefined {
   return names.length ? names.join(', ') : undefined;
 }
 
-/** "Oracle 1/3", "Solvability & difficulty", "Oracle 1/3 +2" — the failed required checks (advisory ones don't block). */
+/** Required checks that couldn't run (an infra error, not a task defect): Revalidate re-runs them. */
+export function erroredChecks(row: CodimangoRow): string[] {
+  return (row.validationDetails ?? []).filter((d) => d.status === 'error' && !d.advisory).map((d) => checkName(d.label));
+}
+
+/**
+ * "Oracle 1/3", "Solvability & difficulty", "Oracle 1/3 +2" — the failed required checks (advisory ones don't block).
+ * A required check that errored also blocks: "Solvability & difficulty errored".
+ */
 export function failedCheckSummary(row: CodimangoRow): string | undefined {
   const failed = (row.validationDetails ?? []).filter((d) => d.status === 'failed' && !d.advisory);
-  const names = failed.map((d) =>
-    d.label === 'Oracle validation' && row.oracleTotalCount
-      ? `Oracle ${row.oraclePassCount ?? 0}/${row.oracleTotalCount}`
-      : checkName(d.label),
-  );
+  const names = [
+    ...failed.map((d) =>
+      d.label === 'Oracle validation' && row.oracleTotalCount
+        ? `Oracle ${row.oraclePassCount ?? 0}/${row.oracleTotalCount}`
+        : checkName(d.label),
+    ),
+    ...erroredChecks(row).map((name) => `${name} errored`),
+  ];
   if (names.length === 0) return undefined;
   return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
 }

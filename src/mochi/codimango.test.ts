@@ -394,3 +394,11 @@ describe('draft rows', () => {
     expect(weeklyCompleted(snap([], [draft('d1', { reviewedAt: iso(NOW) })]), NOW).submissionsCompleted).toBe(0);
   });
 });
+
+describe('failedCheckSummary with errored checks', () => {
+  it('names a required check that errored', () => {
+    expect(
+      failedCheckSummary(revision('1', { validationDetails: [{ label: 'Metacode or Opus pass/fail balance', status: 'error' }] })),
+    ).toBe('Solvability & difficulty errored');
+  });
+});

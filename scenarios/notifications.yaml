@@ -45,6 +45,25 @@ fixtures:
         failed_checks: [Metacode or Opus pass/fail balance]
         updated_ago_h: 0.1
 
+  draft_passing:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30, claimed_ago_h: 20 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: being_reviewed, review: open, claimed_ago_h: 5 }
+      - { id: d1, name: ember-hidden-frames, status: draft, validation: passing, updated_ago_h: 3 }
+
+  draft_infra_error:
+    reviewing:
+      - { id: r1, name: ember-lobby-seat, review: open, due_in_h: 30, claimed_ago_h: 20 }
+    mine:
+      - { id: m1, name: ember-results-sync, status: being_reviewed, review: open, claimed_ago_h: 5 }
+      - id: d1
+        name: ember-hidden-frames
+        status: draft
+        validation: failed
+        errored_checks: [Metacode or Opus pass/fail balance]
+        updated_ago_h: 0.1
+
 scenarios:
   - id: notif-review-assigned
     title: A new review pops a bubble; clicking it opens the panel showing that review and clears the badge
@@ -136,6 +155,19 @@ scenarios:
       - expect: { bubble: "Validation failed (Solvability & difficulty)." }
       - click_bubble
       - expect: { panel: open, bubble: none }
+
+  - id: notif-validation-infra-error-replaces-passed
+    title: A passed draft that later fails on an infra error says so, and the bell no longer replays the old "passed"
+    given: { saved: draft_passing, live: draft_infra_error }
+    steps:
+      - start
+      - expect:
+          bubble: "Solvability & difficulty couldn't run (an infrastructure error, not your task). Revalidate to re-run it."
+      - close_bubble
+      - click_bell
+      - expect: { bubble: Validation failed }
+      - bubble_older
+      - expect: { not_see: [All validation checks passed.] }
 
   - id: notif-kind-switched-off
     title: A notification kind switched off in the menu doesn't pop, but the bell still shows it
