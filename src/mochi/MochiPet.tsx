@@ -6,12 +6,16 @@ interface MochiPetProps {
   reviewFrac: number;
   /** 0..1 fill for the orange (submissions) ring — already capped by the caller. */
   subFrac: number;
+  /** A custom look (sprite data URL) drawn in place of the classic Mochi; moods still move it. */
+  look?: string | null;
 }
 
 const CX = 74;
 const CY = 70;
 /* Body scale — the pet shrinks toward the center while the ring stays put. */
 const BODY_SCALE = 0.85;
+/* A custom look's square, in body coordinates: about the classic body's width plus ears. */
+const LOOK_SIZE = 88;
 /* Single split ring: green fills the upper half, orange the lower half.
    Arc ends stop short of the 3/9 o'clock joints so the round caps meet
    with a small gap instead of overlapping. */
@@ -30,7 +34,7 @@ const BOTTOM_HALF = `M ${ringPt(360 - GAP_DEG)} A ${RING_R} ${RING_R} 0 0 1 ${ri
  * Upper green half-ring = reviews completed / review goal.
  * Lower orange half-ring = submissions completed / submission goal.
  */
-export function MochiPet({ state, reviewFrac, subFrac }: MochiPetProps) {
+export function MochiPet({ state, reviewFrac, subFrac, look }: MochiPetProps) {
   const rev = Math.min(1, Math.max(0, reviewFrac));
   const sub = Math.min(1, Math.max(0, subFrac));
   return (
@@ -73,80 +77,96 @@ export function MochiPet({ state, reviewFrac, subFrac }: MochiPetProps) {
         className="mochi-body"
         transform={`translate(${CX} ${CY}) scale(${BODY_SCALE}) translate(${-CX} ${-CY})`}
       >
-        {/* tail */}
-        <path
-          d="M110 92 Q126 94 124 78 Q123 68 114 70"
-          fill="none"
-          stroke="#7f6cc4"
-          strokeWidth={9}
-          strokeLinecap="round"
-        />
-        {/* ears — wide bases sunk into the head so no gap shows */}
-        <path d="M52 54 L48 28 L68 46 Z" fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} strokeLinejoin="round" />
-        <path d="M96 54 L100 28 L80 46 Z" fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} strokeLinejoin="round" />
-        <path d="M54 48 L52 35 L61 42 Z" fill="#b3a1e1" />
-        <path d="M94 48 L96 35 L87 42 Z" fill="#b3a1e1" />
-        {/* body blob */}
-        <ellipse cx={CX} cy={CY + 4} rx={37} ry={35} fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} />
-        {/* feet */}
-        <ellipse cx={58} cy={102} rx={10} ry={6} fill="#e7def9" stroke="#7f6cc4" strokeWidth={2} />
-        <ellipse cx={90} cy={102} rx={10} ry={6} fill="#e7def9" stroke="#7f6cc4" strokeWidth={2} />
-        {/* blush */}
-        <ellipse cx={52} cy={76} rx={6} ry={4} fill="#f6c9d4" opacity={0.8} />
-        <ellipse cx={96} cy={76} rx={6} ry={4} fill="#f6c9d4" opacity={0.8} />
+        {look ? (
+          <>
+            {/* custom look: the sprite fills the body area; the zz and sweat drop still show */}
+            <image href={look} x={CX - LOOK_SIZE / 2} y={CY - LOOK_SIZE / 2 + 4} width={LOOK_SIZE} height={LOOK_SIZE} preserveAspectRatio="xMidYMid meet" />
+            {state === 'sleepy' && (
+              <g>
+                <text x={100} y={40} fontSize={16} fill="#8a7f72" fontWeight="bold">z</text>
+                <text x={110} y={28} fontSize={21} fill="#8a7f72" fontWeight="bold">z</text>
+              </g>
+            )}
+            {state === 'nervous' && <path d="M106 52 Q110 60 105 64 Q100 60 106 52 Z" fill="#bfe3f5" stroke="#7fb8d9" strokeWidth={1.5} />}
+          </>
+        ) : (
+          <>
+          {/* tail */}
+          <path
+            d="M110 92 Q126 94 124 78 Q123 68 114 70"
+            fill="none"
+            stroke="#7f6cc4"
+            strokeWidth={9}
+            strokeLinecap="round"
+          />
+          {/* ears — wide bases sunk into the head so no gap shows */}
+          <path d="M52 54 L48 28 L68 46 Z" fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} strokeLinejoin="round" />
+          <path d="M96 54 L100 28 L80 46 Z" fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} strokeLinejoin="round" />
+          <path d="M54 48 L52 35 L61 42 Z" fill="#b3a1e1" />
+          <path d="M94 48 L96 35 L87 42 Z" fill="#b3a1e1" />
+          {/* body blob */}
+          <ellipse cx={CX} cy={CY + 4} rx={37} ry={35} fill="#d3c8ed" stroke="#7f6cc4" strokeWidth={2.5} />
+          {/* feet */}
+          <ellipse cx={58} cy={102} rx={10} ry={6} fill="#e7def9" stroke="#7f6cc4" strokeWidth={2} />
+          <ellipse cx={90} cy={102} rx={10} ry={6} fill="#e7def9" stroke="#7f6cc4" strokeWidth={2} />
+          {/* blush */}
+          <ellipse cx={52} cy={76} rx={6} ry={4} fill="#f6c9d4" opacity={0.8} />
+          <ellipse cx={96} cy={76} rx={6} ry={4} fill="#f6c9d4" opacity={0.8} />
 
-        {state === 'chilling' && (
-          <g stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round" fill="none">
-            <path d="M58 66 Q62 70 66 66" />
-            <path d="M82 66 Q86 70 90 66" />
-            <path d="M68 78 Q74 83 80 78" />
-          </g>
-        )}
-
-        {state === 'happy' && (
-          <g>
-            <circle cx={62} cy={66} r={6} fill="#4a3f35" />
-            <circle cx={86} cy={66} r={6} fill="#4a3f35" />
-            <circle cx={64} cy={64} r={2} fill="#fff" />
-            <circle cx={88} cy={64} r={2} fill="#fff" />
-            <path d="M66 78 Q74 88 82 78 Q74 82 66 78 Z" fill="#8a4b3c" />
-            <path d="M70 81 Q74 85 78 81 Q74 83 70 81 Z" fill="#e98d8d" />
-          </g>
-        )}
-
-        {state === 'sleepy' && (
-          <g>
-            <g stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round">
-              <line x1={57} y1={67} x2={67} y2={67} />
-              <line x1={81} y1={67} x2={91} y2={67} />
+          {state === 'chilling' && (
+            <g stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round" fill="none">
+              <path d="M58 66 Q62 70 66 66" />
+              <path d="M82 66 Q86 70 90 66" />
+              <path d="M68 78 Q74 83 80 78" />
             </g>
-            <ellipse cx={74} cy={80} rx={3.5} ry={4.5} fill="none" stroke="#4a3f35" strokeWidth={2.5} />
-            <text x={100} y={40} fontSize={16} fill="#8a7f72" fontWeight="bold">z</text>
-            <text x={110} y={28} fontSize={21} fill="#8a7f72" fontWeight="bold">z</text>
-          </g>
-        )}
+          )}
 
-        {state === 'nervous' && (
-          <g>
-            <ellipse cx={62} cy={66} rx={7} ry={8} fill="#fff" stroke="#4a3f35" strokeWidth={2} />
-            <ellipse cx={86} cy={66} rx={7} ry={8} fill="#fff" stroke="#4a3f35" strokeWidth={2} />
-            <circle cx={63} cy={68} r={2.5} fill="#4a3f35" />
-            <circle cx={85} cy={68} r={2.5} fill="#4a3f35" />
-            <path d="M67 80 Q70 77 73 80 Q76 83 79 80" fill="none" stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round" />
-            <path d="M106 52 Q110 60 105 64 Q100 60 106 52 Z" fill="#bfe3f5" stroke="#7fb8d9" strokeWidth={1.5} />
-          </g>
-        )}
-
-        {state === 'focused' && (
-          <g>
-            <g stroke="#4a3f35" strokeWidth={3} strokeLinecap="round">
-              <line x1={54} y1={56} x2={68} y2={60} />
-              <line x1={94} y1={56} x2={80} y2={60} />
+          {state === 'happy' && (
+            <g>
+              <circle cx={62} cy={66} r={6} fill="#4a3f35" />
+              <circle cx={86} cy={66} r={6} fill="#4a3f35" />
+              <circle cx={64} cy={64} r={2} fill="#fff" />
+              <circle cx={88} cy={64} r={2} fill="#fff" />
+              <path d="M66 78 Q74 88 82 78 Q74 82 66 78 Z" fill="#8a4b3c" />
+              <path d="M70 81 Q74 85 78 81 Q74 83 70 81 Z" fill="#e98d8d" />
             </g>
-            <circle cx={62} cy={68} r={4.5} fill="#4a3f35" />
-            <circle cx={86} cy={68} r={4.5} fill="#4a3f35" />
-            <line x1={68} y1={80} x2={80} y2={80} stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round" />
-          </g>
+          )}
+
+          {state === 'sleepy' && (
+            <g>
+              <g stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round">
+                <line x1={57} y1={67} x2={67} y2={67} />
+                <line x1={81} y1={67} x2={91} y2={67} />
+              </g>
+              <ellipse cx={74} cy={80} rx={3.5} ry={4.5} fill="none" stroke="#4a3f35" strokeWidth={2.5} />
+              <text x={100} y={40} fontSize={16} fill="#8a7f72" fontWeight="bold">z</text>
+              <text x={110} y={28} fontSize={21} fill="#8a7f72" fontWeight="bold">z</text>
+            </g>
+          )}
+
+          {state === 'nervous' && (
+            <g>
+              <ellipse cx={62} cy={66} rx={7} ry={8} fill="#fff" stroke="#4a3f35" strokeWidth={2} />
+              <ellipse cx={86} cy={66} rx={7} ry={8} fill="#fff" stroke="#4a3f35" strokeWidth={2} />
+              <circle cx={63} cy={68} r={2.5} fill="#4a3f35" />
+              <circle cx={85} cy={68} r={2.5} fill="#4a3f35" />
+              <path d="M67 80 Q70 77 73 80 Q76 83 79 80" fill="none" stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round" />
+              <path d="M106 52 Q110 60 105 64 Q100 60 106 52 Z" fill="#bfe3f5" stroke="#7fb8d9" strokeWidth={1.5} />
+            </g>
+          )}
+
+          {state === 'focused' && (
+            <g>
+              <g stroke="#4a3f35" strokeWidth={3} strokeLinecap="round">
+                <line x1={54} y1={56} x2={68} y2={60} />
+                <line x1={94} y1={56} x2={80} y2={60} />
+              </g>
+              <circle cx={62} cy={68} r={4.5} fill="#4a3f35" />
+              <circle cx={86} cy={68} r={4.5} fill="#4a3f35" />
+              <line x1={68} y1={80} x2={80} y2={80} stroke="#4a3f35" strokeWidth={2.5} strokeLinecap="round" />
+            </g>
+          )}
+          </>
         )}
       </g>
     </svg>

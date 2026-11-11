@@ -36,6 +36,17 @@ contextBridge.exposeInMainWorld('mochiShell', {
     ipcRenderer.on('mochi:agent-reviews', listener);
     return () => ipcRenderer.removeListener('mochi:agent-reviews', listener);
   },
+  looksState: () => ipcRenderer.invoke('mochi:looks-state'),
+  generatePet: (text) => ipcRenderer.invoke('mochi:pet-generate', text),
+  cancelPetGenerate: () => ipcRenderer.invoke('mochi:pet-generate-cancel'),
+  keepLook: (candidateId) => ipcRenderer.invoke('mochi:look-keep', candidateId),
+  setCurrentLook: (id) => ipcRenderer.invoke('mochi:look-set-current', id),
+  deleteLook: (id) => ipcRenderer.invoke('mochi:look-delete', id),
+  onOpenCustomize: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('mochi:open-customize', listener);
+    return () => ipcRenderer.removeListener('mochi:open-customize', listener);
+  },
   listSevs: () => ipcRenderer.invoke('mochi:sevs-list'),
   onSevsChanged: (callback) => {
     const listener = (_event, sevs) => callback(sevs);

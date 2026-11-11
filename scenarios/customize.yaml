@@ -1,0 +1,90 @@
+# Customize Mochi: describe a look, Mochi draws it, keep it as the pet.
+# Format: scenarios/README.md. The bridge stands in for the drawing service:
+# three candidates per draw, or the failure named by "#refused" (etc.) in the text.
+
+fixtures:
+  one_review:
+    reviewing:
+      - { id: r2, name: ember-turn-timer, review: open, due_in_h: 20, claimed_ago_h: 2 }
+    mine: []
+
+scenarios:
+  - id: customize-draw-and-keep
+    title: Customize Mochi from the ≡ menu draws three options; keeping one makes it the pet
+    given: { live: one_review }
+    steps:
+      - start
+      - expect: { pet_look: classic }
+      - click_pet
+      - open_menu
+      - click: Customize Mochi…
+      - expect:
+          see: [Describe your Mochi, My Mochis, Classic]
+          events:
+            - { event: mochi_click, surface: glance_panel, component: customize }
+            - { event: mochi_vpv, surface: customize, component: view }
+      - fill: { label: Describe your Mochi, text: a sleepy orange cat with a scarf }
+      - click: Draw Mochi
+      - expect:
+          see: [Pick one, This is how your Mochi moves through its moods., Keep this Mochi]
+          events:
+            - { event: mochi_click, surface: customize, component: generate }
+      - click: Keep this Mochi
+      - expect:
+          pet_look: custom
+          not_see: [Keep this Mochi]
+          events:
+            - { event: mochi_click, surface: customize, component: keep, result: cutout }
+
+  - id: customize-refused
+    title: A description the drawing service refuses says so and keeps the classic pet
+    given: { live: one_review }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - click: Customize Mochi…
+      - fill: { label: Describe your Mochi, text: "a scary dragon #refused" }
+      - click: Draw Mochi
+      - expect:
+          see: [Mochi can't look like that. Try something else.]
+          not_see: [Pick one]
+          pet_look: classic
+
+  - id: customize-saved-look-and-reset
+    title: A kept look is the pet after a restart, and Reset to classic Mochi brings the original back
+    given: { live: one_review, customize: { looks: [a tiny blue dragon], current: 0 } }
+    steps:
+      - start
+      - expect: { pet_look: custom }
+      - click_pet
+      - open_menu
+      - click: Customize Mochi…
+      - click: Reset to classic Mochi
+      - expect:
+          pet_look: classic
+          events:
+            - { event: mochi_click, surface: customize, component: reset }
+
+  - id: customize-delete-current
+    title: Deleting the current look in My Mochis goes back to the classic pet
+    given: { live: one_review, customize: { looks: [a round panda, a fluffy bunny], current: 1 } }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - click: Customize Mochi…
+      - press: Delete a fluffy bunny
+      - expect:
+          pet_look: classic
+          events:
+            - { event: mochi_click, surface: customize, component: delete }
+
+  - id: customize-hidden-when-unavailable
+    title: Builds that can't draw pets don't offer Customize Mochi
+    given: { live: one_review, customize: { available: false } }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - expect: { see: [Show in panel], not_see: [Customize Mochi…] }

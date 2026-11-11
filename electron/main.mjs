@@ -21,7 +21,7 @@
  * to events.jsonl in the same folder (electron/events.mjs). "Ask agents to
  * review" runs Claude Code or Codex in the background (electron/agentReview.mjs).
  */
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,6 +34,9 @@ import { FLUSH_MS, flushSender, loadSharing, setSharing } from './sender.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 import { createSevWatch } from './sevs.mjs';
+import { createCustomizer } from './customize.mjs';
+import { createLookStore } from './looks.mjs';
+import { createFakeGenerator } from './petGenerator.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -47,6 +50,31 @@ let lastBoundsKey = '';
 let syncedOnce = false;
 /* Usage events (electron/events.mjs); created once the app is ready. */
 let events = null;
+/* Customize Mochi (electron/customize.mjs); created once the app is ready. */
+let customizer = null;
+
+/* PNG ⇄ RGBA through nativeImage. Its bitmaps are BGRA; decode and encode swap
+   the same two channels, so colours round-trip whichever order the platform uses. */
+const swapRB = (buf) => {
+  const out = new Uint8ClampedArray(buf);
+  for (let i = 0; i < out.length; i += 4) [out[i], out[i + 2]] = [out[i + 2], out[i]];
+  return out;
+};
+const imageCodec = {
+  decode(png) {
+    const img = nativeImage.createFromBuffer(png);
+    const { width, height } = img.getSize();
+    if (!width || !height) throw new Error('not an image');
+    return { width, height, data: swapRB(img.toBitmap()) };
+  },
+  encode({ width, height, data }) {
+    return nativeImage.createFromBitmap(Buffer.from(swapRB(data)), { width, height }).toPNG();
+  },
+  resize(png, size) {
+    return nativeImage.createFromBuffer(png).resize({ width: size, height: size, quality: 'best' }).toPNG();
+  },
+};
+
 /* Agent review jobs (electron/agentReview.mjs); created once the app is ready. */
 let agentReviews = null;
 /* Review skills added with the file picker (userData/review-skills.json). */
@@ -210,6 +238,14 @@ ipcMain.handle('mochi:review-skill-remove', (_event, id) => {
   return listReviewSkills(os.homedir(), undefined, addedSkills?.list() ?? []);
 });
 
+// Customize Mochi: availability and saved looks, drawing candidates, keeping one.
+ipcMain.handle('mochi:looks-state', () => ({ available: customizer?.available() ?? false, ...(customizer?.state() ?? { looks: [], currentId: null }) }));
+ipcMain.handle('mochi:pet-generate', (_event, text) => customizer?.generate(String(text ?? '')) ?? { ok: false, error: { kind: 'error' } });
+ipcMain.handle('mochi:pet-generate-cancel', () => customizer?.cancel());
+ipcMain.handle('mochi:look-keep', (_event, candidateId) => customizer?.keep(String(candidateId ?? '')) ?? null);
+ipcMain.handle('mochi:look-set-current', (_event, id) => customizer?.setCurrent(typeof id === 'string' ? id : null) ?? null);
+ipcMain.handle('mochi:look-delete', (_event, id) => customizer?.remove(String(id ?? '')) ?? null);
+
 ipcMain.handle('mochi:agent-review-cancel', (_event, id) => agentReviews?.cancel(String(id)) ?? []);
 
 ipcMain.handle('mochi:usage-summary', () => (events ? usageSummary(readEvents(events.file, Date.now())) : null));
@@ -273,6 +309,17 @@ function setDockMenu() {
         },
       },
       { type: 'separator' },
+      ...(customizer?.available()
+        ? [
+            {
+              label: 'Customize Mochi…',
+              click: () => {
+                events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'customize' });
+                win?.webContents.send('mochi:open-customize');
+              },
+            },
+          ]
+        : []),
       {
         // The renderer holds status and counts, so ask it to start the report.
         label: 'Report a Problem…',
@@ -287,6 +334,15 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
+  // B1: pets are drawn by the fake generator, so only outside packaged builds
+  // (or with MOCHI_PET_GENERATOR=fake). B2 swaps in the real model.
+  const fakePets = !app.isPackaged || process.env.MOCHI_PET_GENERATOR === 'fake';
+  customizer = createCustomizer({
+    store: createLookStore(path.join(app.getPath('userData'), 'pet-looks')),
+    generator: fakePets ? createFakeGenerator({ dir: path.join(here, 'fixtures', 'pets') }) : null,
+    codec: imageCodec,
+    log: (fields) => events?.log({ event_name: 'mochi_pet_generate', ...fields }),
+  });
   if (app.isPackaged) {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);
     setDockMenu();
