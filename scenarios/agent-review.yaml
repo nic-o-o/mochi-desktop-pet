@@ -104,8 +104,9 @@ scenarios:
       - click_pet
       - expect: { see: [ember-turn-timer, Ask agents] }
       - click: Ask agents
-      - expect: { see: [Ask agents to review, Claude Code, Codex, Nothing is submitted] }
+      - expect: { see: [Ask agents to review, Run with, Claude Code, Codex, Nothing is submitted], not_see: [Both agents follow this skill] }
       - toggle_section: Codex
+      - expect: { see: [Both agents follow this skill; you get one report from each.] }
       - click: Start
       - expect:
           agents_started: ["r2:claude", "r2:codex"]

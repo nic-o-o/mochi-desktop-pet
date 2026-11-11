@@ -207,15 +207,9 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
   return (
     <fieldset className="agent-picker" aria-describedby={`${uid}-note`}>
       <legend>Ask agents to review</legend>
-      {AGENT_IDS.map((agent) => (
-        <label key={agent} className="agent-choice">
-          <input type="checkbox" checked={chosen.has(agent)} onChange={() => toggle(agent)} />
-          {AGENT_LABELS[agent]}
-        </label>
-      ))}
       {(skills.length > 1 || canAddReviewSkill()) && (
         <div className="agent-skill">
-          <span className="small">Skill</span>
+          <span className="small agent-picker-label">Review skill</span>
           <SkillPicker
             skills={skills}
             value={skillId}
@@ -234,6 +228,14 @@ function AgentPicker({ taskId, onStart, onCancel }: { taskId: string; onStart: (
           )}
         </div>
       )}
+      <span className="small agent-picker-label">Run with</span>
+      {AGENT_IDS.map((agent) => (
+        <label key={agent} className="agent-choice">
+          <input type="checkbox" checked={chosen.has(agent)} onChange={() => toggle(agent)} />
+          {AGENT_LABELS[agent]}
+        </label>
+      ))}
+      {chosen.size > 1 && <p className="muted small agent-both-note">Both agents follow this skill; you get one report from each.</p>}
       <p className="muted small" id={`${uid}-note`}>
         Runs on this Mac and usually takes 15–30 minutes. Nothing is submitted: you read the report and decide.
         {skillId !== DEFAULT_SKILL_ID && ' With your own skill, the report shows as plain text with one Copy button unless the skill writes the review-form sections.'}

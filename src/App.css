@@ -1904,3 +1904,13 @@ html.mochi-shell .expanded-view {
 .skill-hint {
   margin: 4px 6px 0;
 }
+
+.agent-picker-label {
+  display: block;
+  margin: 6px 0 2px;
+  font-weight: 600;
+}
+
+.agent-both-note {
+  margin: 2px 0 6px;
+}
