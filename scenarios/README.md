@@ -63,7 +63,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `start` | Launch Mochi and wait for the first fetch |
 | `click_pet` | Click the pet (toggles the panel; closes a full view) |
 | `drag_pet: { dx: 80, dy: 40 }` | Drag the pet that far |
-| `click_bell`, `click_bubble`, `close_bubble` | Bell, bubble body, bubble × |
+| `click_bell`, `click_bubble`, `click_bubble_task`, `close_bubble` | Bell, bubble body, the bubble's underlined task name, bubble × |
 | `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
 | `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section or notification kind by its label |
