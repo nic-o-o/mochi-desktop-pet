@@ -365,7 +365,7 @@ export default function App() {
   const subFrac = ringFraction(weekly.submissionsCompleted, goals.submissionGoal);
 
   /* Real notifications: arrivals pop the bubble and raise the unread badge; the
-     shortcut and the panel bell replay history newest first and clear it. */
+     shortcut and the pet bell replay history newest first and clear it. */
   const [unread, setUnread] = useState(0);
   /* Usage logging (src/mochi/usage.ts): one panel session per opening, closed with a reason. */
   const panelTrigger = useRef<PanelTrigger>('pet_click');
@@ -633,7 +633,7 @@ export default function App() {
     showNext();
   }, [touch, showNext]);
 
-  /* desktop shell: the global shortcut and the panel bell replay past notifications */
+  /* desktop shell: the global shortcut and the pet bell replay past notifications */
   useEffect(() => {
     if (!isDesktopShell()) return;
     return onSimulateNotification(() => cycleNotification());
@@ -999,7 +999,6 @@ export default function App() {
             saveNotifyPrefs(next);
           }}
           highlightTaskId={highlightTaskId}
-          onShowNotifications={cycleNotification}
           unread={unread}
           reviewsCompleted={weekly.reviewsCompleted}
           submissionsCompleted={weekly.submissionsCompleted}

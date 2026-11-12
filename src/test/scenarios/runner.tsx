@@ -434,6 +434,9 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'open_menu':
           fireEvent.click(mustFind('[aria-label="Choose sections"]', 'the ≡ menu button'));
           break;
+        case 'open_notify_menu':
+          fireEvent.click(mustFind('[aria-label="Notification settings"]', 'the bell button'));
+          break;
         case 'drag_section': {
           const { label, dy } = arg as { label: string; dy: number };
           const handle = mustFind(`[aria-label="Drag ${label} to reorder"]`, 'the section drag handle');

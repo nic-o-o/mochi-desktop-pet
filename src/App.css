@@ -1382,7 +1382,8 @@ html.mochi-shell .expanded-view {
   gap: 2px;
 }
 
-.section-filter {
+.section-filter,
+.notify-filter {
   position: relative;
 }
 
@@ -1438,7 +1439,8 @@ html.mochi-shell .expanded-view {
   color: var(--ink-soft);
 }
 
-.section-filter .icon-btn {
+.section-filter .icon-btn,
+.notify-filter .icon-btn {
   display: grid;
   place-items: center;
 }

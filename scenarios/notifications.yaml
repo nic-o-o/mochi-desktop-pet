@@ -116,18 +116,19 @@ scenarios:
             - { event: mochi_click, surface: bubble, component: task_link, notif_kind: review_assigned, task_id: r2 }
 
   - id: notif-panel-bell
-    title: The bell in the panel header shows the notification bubbles, latest first
+    title: The bell in the panel header opens notification settings, without showing a bubble
     given: { saved: quiet_day, live: i_rejected_a_review }
     steps:
       - start
       - expect: { bubble: none }
       - click_pet
-      - press: Show notifications
+      - press: Notification settings
       - expect:
-          bubble: Task Rejected
-          panel: closed
+          bubble: none
+          panel: open
+          see: [Notify me about, Validation failed, Task Rejected]
           events:
-            - { event: mochi_click, surface: glance_panel, component: notifications }
+            - { event: mochi_click, surface: glance_panel, component: notify_menu }
 
   - id: notif-own-verdict-quiet
     title: Your own verdict on a review is saved to history but does not pop
@@ -179,13 +180,13 @@ scenarios:
       - expect: { bubble: "Validation failed (Solvability & difficulty)." }
 
   - id: notif-switch-in-menu
-    title: The menu lists notification kinds, all on by default, and logs a switch
+    title: The bell menu lists notification kinds, all on by default, and logs a switch
     given: { live: draft_failed_validation }
     steps:
       - start
       - click_pet
-      - open_menu
-      - expect: { see: [Notify me about, Validation failed, Review assigned to you, Codimango SEVs, Agent review finished] }
+      - open_notify_menu
+      - expect: { see: [Notify me about, Validation failed, Review Assigned, Codimango SEV, Agent review] }
       - toggle_section: Validation failed
       - expect:
           events:

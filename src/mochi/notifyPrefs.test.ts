@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_NOTIFY, NOTIFY_KINDS, notifyAllowed, notifyKindOf, parseNotifyPrefs } from './notifyPrefs.ts';
+import { DEFAULT_NOTIFY, NOTIFY_ICONS, NOTIFY_KINDS, notifyAllowed, notifyKindOf, parseNotifyPrefs } from './notifyPrefs.ts';
 
 describe('notification switches', () => {
   it('has every kind on by default', () => {
@@ -13,6 +13,34 @@ describe('notification switches', () => {
     expect(prefs.validation_failed).toBe(false);
     expect(prefs.sev).toBe(true);
     expect('made_up' in prefs).toBe(false);
+  });
+
+  it('labels each switch with its bubble title; SEV and agent review share one switch for two titles', () => {
+    expect(NOTIFY_KINDS.map(({ key, label }) => [key, label])).toEqual([
+      ['validation_failed', 'Validation failed'],
+      ['validation_passed', 'Validation passed'],
+      ['needs_revision', 'Changes Requested'],
+      ['accepted', 'Task Accepted'],
+      ['rejected', 'Task Rejected'],
+      ['review_assigned', 'Review Assigned'],
+      ['review_started', 'Review Started'],
+      ['sev', 'Codimango SEV'],
+      ['agent_review', 'Agent review'],
+    ]);
+  });
+
+  it('gives each switch its bubble icon; SEV uses the alert icon, agent review the robot', () => {
+    expect(NOTIFY_ICONS).toEqual({
+      validation_failed: '❌',
+      validation_passed: '✅',
+      needs_revision: '🔄',
+      accepted: '✅',
+      rejected: '❌',
+      review_assigned: '👤',
+      review_started: '👀',
+      sev: '⚠️',
+      agent_review: '🤖',
+    });
   });
 
   it('maps bubble kinds to switches; SEV opened and mitigated share one', () => {
