@@ -42,6 +42,18 @@ scenarios:
           events:
             - { event: mochi_vpv, surface: glance_panel, component: panel, trigger: pet_click, sections_on: "revisions,reviews,submittable" }
 
+  - id: panel-delegate-revision
+    title: Delegating a revision row starts Green on the devserver with Codex
+    given: { live: busy_week }
+    steps:
+      - start
+      - click_pet
+      - delegate_task: ember-results-sync
+      - expect:
+          see: [Green working]
+          events:
+            - { event: mochi_click, surface: glance_panel, component: delegate_start, section: needs_revision, task_id: v1, agent: codex }
+
   - id: panel-row-opens-codimango
     title: Clicking a row opens its Codimango page, not an in-app view
     given: { live: busy_week }

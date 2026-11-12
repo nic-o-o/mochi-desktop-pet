@@ -69,6 +69,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section by its label |
 | `open_notify_menu` | Bell menu (again to close); tick or untick a notification kind by its label with `toggle_section` |
 | `drag_section: { label: Waiting for your review, dy: -40 }` | Drag a section header's handle that far up (negative) or down in the main panel |
+| `delegate_task: ember-results-sync` | Open the Delegate picker for that revision row and confirm with Codex |
 | `refresh_now` | ↻ on the freshness line |
 | `click: <text>` | Any button or link showing that text |
 | `press: <aria-label>` | A control by its accessible label, e.g. `Increase reviewed goal` |

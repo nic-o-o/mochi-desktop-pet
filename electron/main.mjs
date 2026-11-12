@@ -20,6 +20,8 @@
  * Dock icon's menu offers "Open at Login". Usage events (dev and packaged) go
  * to events.jsonl in the same folder (electron/events.mjs). "Ask agents to
  * review" runs Claude Code or Codex in the background (electron/agentReview.mjs).
+ * "Delegate to agent" launches Green on the devserver instead
+ * (electron/delegate.mjs).
  */
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
@@ -27,6 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewSkill } from './agentReview.mjs';
+import { checkDelegateStatus, delegateToGreen } from './delegate.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
@@ -208,6 +211,18 @@ ipcMain.handle('mochi:sevs-list', () => sevWatch?.list() ?? []);
 // Ask agents to review: the renderer sends the task and the chosen agents; runs
 // and reports live in the main process and are pushed back on every change.
 ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
+
+// Delegate a "needs revision" task to Green on the devserver: the renderer
+// sends only the task slug; every check and the launch happen here.
+ipcMain.handle('mochi:green-delegate', (_event, taskSlug, node) => delegateToGreen({ taskSlug: String(taskSlug ?? ''), node: String(node ?? '') }));
+ipcMain.handle('mochi:green-delegate-status', (_event, req) =>
+  checkDelegateStatus({
+    taskSlug: String(req?.taskSlug ?? ''),
+    node: String(req?.node ?? ''),
+    pid: Number(req?.pid),
+    logPath: String(req?.logPath ?? ''),
+  }),
+);
 
 ipcMain.handle('mochi:agent-review-start', (_event, req) =>
   agentReviews?.start({

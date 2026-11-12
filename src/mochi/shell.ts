@@ -3,6 +3,7 @@
  * is a no-op, so `npm run dev` behaves exactly as before.
  */
 import type { AgentJob, AgentReviewStart, ReviewSkill } from './agentReviews.ts';
+import type { DelegateResult, DelegateStatusRequest, DelegateStatusResult } from './delegations.ts';
 import type { CodimangoFetchResult } from './codimango.ts';
 import type { Sev } from './sevs.ts';
 import type { GenerateResult, LooksState, PetLook } from './looks.ts';
@@ -89,6 +90,10 @@ export interface MochiShell {
   removeReviewSkill?: (id: string) => Promise<ReviewSkill[]>;
   /** Every change to the runs (progress, finish); returns unsubscribe. */
   onAgentReviewsChanged?: (callback: (jobs: AgentJob[]) => void) => () => void;
+  /** Delegate a task to Green on the named devserver; resolves the launch result. */
+  delegateToGreen?: (taskSlug: string, node: string) => Promise<DelegateResult>;
+  /** One live status probe for a launched delegation. */
+  checkDelegateStatus?: (req: DelegateStatusRequest) => Promise<DelegateStatusResult>;
   /** Read-only submission preflight for one task (main process). */
   submitDryRun?: (id: string) => Promise<SubmitDryRunResult>;
   /** Current commit SHA to pin a submission to (main process). */
@@ -344,4 +349,23 @@ export function onAgentReviewsChanged(callback: (jobs: AgentJob[]) => void): () 
   const b = bridge();
   if (!b?.onAgentReviewsChanged) return () => {};
   return b.onAgentReviewsChanged(callback);
+}
+
+/** True when the shell can delegate to Green on the devserver (not in a plain browser or an older preload). */
+export function delegateAvailable(): boolean {
+  return typeof bridge()?.delegateToGreen === 'function';
+}
+
+/** Launch Green for one task slug on the named devserver; null outside the desktop shell. */
+export function delegateToGreen(taskSlug: string, node: string): Promise<DelegateResult | null> {
+  const b = bridge();
+  if (!b?.delegateToGreen) return Promise.resolve(null);
+  return b.delegateToGreen(taskSlug, node).catch(() => null);
+}
+
+/** Fetch one live status for a launched delegation; null outside the desktop shell. */
+export function checkDelegateStatus(req: DelegateStatusRequest): Promise<DelegateStatusResult | null> {
+  const b = bridge();
+  if (!b?.checkDelegateStatus) return Promise.resolve(null);
+  return b.checkDelegateStatus(req).catch(() => null);
 }

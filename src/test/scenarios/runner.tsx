@@ -312,6 +312,8 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
   if (sc.given?.sections) localStorage.setItem('mochi.sections.v1', JSON.stringify(sc.given.sections));
   if (sc.given?.section_order) localStorage.setItem('mochi.sections.order.v1', JSON.stringify(sc.given.section_order));
   if (sc.given?.notify) localStorage.setItem('mochi.notify.v1', JSON.stringify(sc.given.notify));
+  // Delegation already asked for its devserver in this harness, so the picker shows the saved one.
+  localStorage.setItem('mochi.delegate-node.v1', 'devvm7438.hil0.facebook.com');
 
   window.mochiShell = {
     getDisplayBounds: () => Promise.resolve({ x: 0, y: 0, width: 1280, height: 800 }),
@@ -375,6 +377,29 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       h.agentJobs = h.agentJobs.map((j) => (j.id === id ? { ...j, status: 'failed', endedAtMs: Date.now(), failure: agentFailure('cancelled') } : j));
       return Promise.resolve(h.agentJobs);
     },
+    delegateToGreen: (taskSlug) =>
+      Promise.resolve({
+        ok: true as const,
+        taskSlug: String(taskSlug),
+        agent: 'codex' as const,
+        repo: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember',
+        pid: 424242,
+        logPath: '/home/zixuanchen/logs/green-1.log',
+        decision: 'DECIDE repair: validation failures',
+      }),
+    checkDelegateStatus: (req) =>
+      Promise.resolve({
+        ok: true as const,
+        status: {
+          kind: 'working' as const,
+          taskSlug: String(req.taskSlug),
+          pid: req.pid,
+          logPath: req.logPath,
+          lastDecision: 'DECIDE FIX: validation failures',
+          lastActivityAgeSecs: 60,
+          checkedAtMs: Date.now(),
+        },
+      }),
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -431,6 +456,16 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'close_bubble':
           fireEvent.click(mustFind('[aria-label="Dismiss notification"]', 'the bubble ×'));
           break;
+        case 'delegate_task': {
+          const title = findByText(String(arg));
+          const row = title.closest('.glance-row');
+          if (!row) throw new Error(`Step failed: no row for "${String(arg)}"`);
+          const button = [...row.querySelectorAll('button')].find((b) => b.textContent?.includes('Delegate to agent'));
+          if (!button) throw new Error(`Step failed: no Delegate to agent button for "${String(arg)}"`);
+          fireEvent.click(button);
+          fireEvent.click(findByText('Delegate to Codex'));
+          break;
+        }
         case 'open_menu':
           fireEvent.click(mustFind('[aria-label="Choose sections"]', 'the ≡ menu button'));
           break;
