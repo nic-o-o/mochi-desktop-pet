@@ -50,7 +50,7 @@ scenarios:
       - click_pet
       - delegate_task: ember-results-sync
       - expect:
-          see: [Green working, worker 424242, green-1.log]
+          see: [Green working]
           events:
             - { event: mochi_click, surface: glance_panel, component: delegate_start, section: needs_revision, task_id: v1, agent: codex }
 

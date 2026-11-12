@@ -93,10 +93,9 @@ and runs Green `doctor --install-hooks` there. The
 launch is `green <task-slug> --live --hardening --detach --agent codex`, so
 confirming edits and pushes the real task. Delegations are remembered locally
 (`mochi.delegations.v1`) so the pid and log survive the panel closing; while
-the panel is open, each row fetches the worker's live status every 30 seconds
-(starting, working, blocked, done, or not running) instead of showing the
-launch record, with a Refresh status action and the log path behind a copy
-button.
+the panel is open, each row shows only the worker's live status, fetched every
+30 seconds (starting, working, and done in green; blocked and not running in
+red; unknown in grey when the check fails).
 
 ## Codimango SEVs (desktop shell)
 

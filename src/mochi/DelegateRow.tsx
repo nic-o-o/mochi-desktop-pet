@@ -13,7 +13,6 @@ import { checkDelegateStatus, delegateAvailable, delegateToGreen } from './shell
 import type { DelegateResult, DelegateStatus, DelegateStatusRequest, DelegateStatusResult } from './delegations.ts';
 import {
   DELEGATE_STATUS_LABELS,
-  formatActivityAge,
   loadDelegateNode,
   loadDelegations,
   normalizeDelegateNode,
@@ -50,7 +49,6 @@ export function DelegateRow({
   const displayNode = node ?? 'your devserver';
   const [liveStatus, setLiveStatus] = useState<DelegateStatus | null>(null);
   const [statusUnknown, setStatusUnknown] = useState(false);
-  const [copied, setCopied] = useState(false);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -58,11 +56,6 @@ export function DelegateRow({
       mountedRef.current = false;
     };
   }, []);
-  useEffect(() => {
-    if (!copied) return;
-    const id = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(id);
-  }, [copied]);
 
   /* Live status for the saved launch only: needs a pid and log path to probe
      and a node to probe on. The status request identity is a key string so
@@ -159,61 +152,21 @@ export function DelegateRow({
     saveDelegations(recordDelegation(loadDelegations(), next));
   };
 
-  const logBase = record?.logPath ? (record.logPath.split('/').pop() ?? record.logPath) || record.logPath : null;
-  const copyLogPath = () => {
-    if (!record?.logPath) return;
-    navigator.clipboard
-      ?.writeText(record.logPath)
-      .then(() => setCopied(true))
-      .catch(() => {
-        /* clipboard blocked — the copied label stays off, the path stays selectable in the title */
-      });
-  };
+  const statusClass =
+    liveStatus?.kind === 'blocked' || liveStatus?.kind === 'stopped'
+      ? 'agent-failed'
+      : liveStatus?.kind === 'done' || liveStatus?.kind === 'working' || liveStatus?.kind === 'starting'
+        ? 'agent-done'
+        : 'agent-status';
 
   return (
     <div className="agent-row">
       {record?.status === 'started' && (
-        <>
-          <ul className="agent-status-list">
-            <li
-              className={`agent-status ${
-                liveStatus?.kind === 'done'
-                  ? 'agent-done'
-                  : liveStatus?.kind === 'blocked'
-                    ? 'agent-failed'
-                    : liveStatus?.kind === 'working' || liveStatus?.kind === 'starting'
-                      ? 'agent-running'
-                      : 'agent-status'
-              }`}
-            >
-              {liveStatus ? DELEGATE_STATUS_LABELS[liveStatus.kind] : statusUnknown ? DELEGATE_STATUS_LABELS.unknown : 'Green started'}
-            </li>
-          </ul>
-          {record.pid != null && (
-            <p className="muted small">
-              {record.node ? `on ${record.node} · ` : ''}worker {record.pid}
-              {liveStatus?.lastActivityAgeSecs != null && formatActivityAge(liveStatus.lastActivityAgeSecs) ? ` · active ${formatActivityAge(liveStatus.lastActivityAgeSecs)}` : ''}
-              {liveStatus?.lastDecision ? ` · ${liveStatus.lastDecision}` : ''}
-              {logBase ? (
-                <>
-                  {' · '}
-                  <span title={record.logPath ?? ''}>{logBase}</span>{' '}
-                  <button type="button" className="btn-link" onClick={copyLogPath}>
-                    {copied ? 'Copied' : 'Copy log path'}
-                  </button>
-                </>
-              ) : null}
-              {statusKey ? (
-                <>
-                  {' '}
-                  <button type="button" className="btn-link" onClick={() => void doCheck()}>
-                    Refresh status
-                  </button>
-                </>
-              ) : null}
-            </p>
-          )}
-        </>
+        <ul className="agent-status-list">
+          <li className={`agent-status ${statusClass}`}>
+            {liveStatus ? DELEGATE_STATUS_LABELS[liveStatus.kind] : statusUnknown ? DELEGATE_STATUS_LABELS.unknown : 'Green started'}
+          </li>
+        </ul>
       )}
       {record?.status === 'failed' && (
         <ul className="agent-status-list">

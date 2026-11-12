@@ -71,13 +71,6 @@ export const DELEGATE_STATUS_LABELS: Record<DelegateStatusKind, string> = {
   unknown: 'Green status unknown',
 };
 
-/** How long ago the worker log last changed, in one short phrase. */
-export function formatActivityAge(ageSecs: number | null | undefined): string | null {
-  if (ageSecs == null || ageSecs < 0) return null;
-  if (ageSecs < 60) return 'just now';
-  if (ageSecs < 3600) return `${Math.floor(ageSecs / 60)}m ago`;
-  return `${Math.floor(ageSecs / 3600)}h ago`;
-}
 
 export const DELEGATIONS_STORAGE_KEY = 'mochi.delegations.v1';
 export const DELEGATE_NODE_STORAGE_KEY = 'mochi.delegate-node.v1';

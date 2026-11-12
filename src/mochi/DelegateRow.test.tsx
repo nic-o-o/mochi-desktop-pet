@@ -80,16 +80,18 @@ describe('DelegateRow', () => {
     expect(screen.queryByRole('button', { name: 'Delegate to Codex' })).toBeNull();
   });
 
-  it('delegates on Confirm and shows the worker pid and log path, saved for later', async () => {
+  it('delegates on Confirm and saves the worker pid and log path without showing them', async () => {
     const onDelegate = vi.fn(async () => STARTED);
     render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={onDelegate} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delegate to agent' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delegate to Codex' }));
     expect(onDelegate).toHaveBeenCalledWith('ember-task', NODE);
-    await waitFor(() => expect(screen.getByText(/worker 424242/)).toBeTruthy());
-    expect(screen.getByText(/green-1\.log/)).toBeTruthy();
-    const saved = JSON.parse(localStorage.getItem(DELEGATIONS_STORAGE_KEY) ?? '[]') as Array<{ pid: number; logPath: string }>;
-    expect(saved[0]).toMatchObject({ pid: 424242, logPath: '/home/zixuanchen/logs/green-1.log' });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(DELEGATIONS_STORAGE_KEY) ?? '[]') as Array<{ pid: number; logPath: string }>;
+      expect(saved[0]).toMatchObject({ pid: 424242, logPath: '/home/zixuanchen/logs/green-1.log' });
+    });
+    expect(screen.queryByText(/worker 424242/)).toBeNull();
+    expect(screen.queryByText(/green-1\.log/)).toBeNull();
   });
 
   it('shows the failure message and fix, and lets the person try again', async () => {
@@ -115,7 +117,11 @@ describe('DelegateRow', () => {
     fireEvent.click(confirm);
     expect(onDelegate).toHaveBeenCalledWith('ember-task', NODE);
     expect(localStorage.getItem(DELEGATE_NODE_STORAGE_KEY)).toBe(NODE);
-    await waitFor(() => expect(screen.getByText(/worker 424242/)).toBeTruthy());
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(DELEGATIONS_STORAGE_KEY) ?? '[]') as Array<{ pid: number }>;
+      expect(saved[0]).toMatchObject({ pid: 424242 });
+    });
+    expect(screen.queryByText(/worker 424242/)).toBeNull();
   });
 
   it('keeps Confirm disabled for an invalid devserver, and lets the saved one be changed', async () => {
@@ -153,29 +159,31 @@ describe('DelegateRow', () => {
     );
     const onDelegate = vi.fn();
     render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={onDelegate} />);
-    expect(screen.getByText(/worker 99/)).toBeTruthy();
-    expect(screen.getByText(/old\.log/)).toBeTruthy();
+    expect(screen.getByText('Green started')).toBeTruthy();
+    expect(screen.queryByText(/worker 99/)).toBeNull();
+    expect(screen.queryByText(/old\.log/)).toBeNull();
     expect(onDelegate).not.toHaveBeenCalled();
   });
 
-  it('replaces the saved line with the live status, without the full log path', async () => {
+  it('shows only the live status label, with no worker or log detail', async () => {
     seedStartedRecord();
     const onStatusCheck = vi.fn(async () => liveStatus('working'));
     render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
     await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
-    expect(screen.queryByText(/\/tmp\/old\.log/)).toBeNull();
-    expect(screen.getByText(/worker 99/)).toBeTruthy();
-    expect(screen.getByText(/2m ago/)).toBeTruthy();
-    expect(screen.getByText('old.log')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy log path' })).toBeTruthy();
+    expect(screen.getByText('Green working').className).toContain('agent-done');
+    expect(screen.queryByText(/worker 99/)).toBeNull();
+    expect(screen.queryByText(/old\.log/)).toBeNull();
+    expect(screen.queryByText(/2m ago/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy log path' })).toBeNull();
     expect(onStatusCheck).toHaveBeenCalledWith({ taskSlug: 'ember-task', node: NODE, pid: 99, logPath: '/tmp/old.log' });
   });
 
-  it('shows blocked, done, and stopped statuses concisely, each with Delegate again', async () => {
-    for (const [kind, label] of [
-      ['blocked', 'Green blocked'],
-      ['done', 'Green done'],
-      ['stopped', 'Green not running'],
+  it('colors good statuses green and blocked/stopped red, each with Delegate again', async () => {
+    for (const [kind, label, className] of [
+      ['starting', 'Green starting', 'agent-done'],
+      ['blocked', 'Green blocked', 'agent-failed'],
+      ['done', 'Green done', 'agent-done'],
+      ['stopped', 'Green not running', 'agent-failed'],
     ] as const) {
       cleanup();
       localStorage.clear();
@@ -183,15 +191,20 @@ describe('DelegateRow', () => {
       seedStartedRecord();
       render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={async () => liveStatus(kind)} />);
       await waitFor(() => expect(screen.getByText(label)).toBeTruthy());
+      expect(screen.getByText(label).className).toContain(className);
       expect(screen.getByRole('button', { name: /Delegate/ })).toBeTruthy();
     }
   });
 
-  it('shows unknown when the status check fails, keeping the worker detail', async () => {
+  it('shows unknown in neutral grey when the status check fails, with no detail', async () => {
     seedStartedRecord();
     render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={async () => null} />);
     await waitFor(() => expect(screen.getByText('Green status unknown')).toBeTruthy());
-    expect(screen.getByText(/worker 99/)).toBeTruthy();
+    const label = screen.getByText('Green status unknown');
+    expect(label.className).toContain('agent-status');
+    expect(label.className).not.toContain('agent-done');
+    expect(label.className).not.toContain('agent-failed');
+    expect(screen.queryByText(/worker 99/)).toBeNull();
   });
 
   it('does not probe when there is no pid or log path to check', () => {
@@ -199,28 +212,25 @@ describe('DelegateRow', () => {
     const onStatusCheck = vi.fn();
     render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
     expect(screen.getByText('Green started')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy log path' })).toBeNull();
     expect(onStatusCheck).not.toHaveBeenCalled();
   });
 
-  it('rechecks when Refresh status is clicked', async () => {
-    seedStartedRecord();
-    const onStatusCheck = vi.fn(async () => liveStatus('working'));
-    onStatusCheck.mockResolvedValueOnce(liveStatus('working'));
-    onStatusCheck.mockResolvedValueOnce(liveStatus('blocked'));
-    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
-    await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
-    await waitFor(() => expect(screen.getByText('Green blocked')).toBeTruthy());
-    expect(onStatusCheck).toHaveBeenCalledTimes(2);
-  });
-
-  it('copies the full log path from the concise line', async () => {
-    const writeText = vi.fn(async () => undefined);
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
-    seedStartedRecord();
-    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={async () => liveStatus('working')} />);
-    await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Copy log path' }));
-    expect(writeText).toHaveBeenCalledWith('/tmp/old.log');
+  it('rechecks the status every 30 seconds while the panel is open', async () => {
+    vi.useFakeTimers();
+    try {
+      seedStartedRecord();
+      const onStatusCheck = vi.fn(async () => liveStatus('working'));
+      render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onStatusCheck).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(onStatusCheck).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(onStatusCheck).toHaveBeenCalledTimes(3);
+      expect(screen.getByText('Green working')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
