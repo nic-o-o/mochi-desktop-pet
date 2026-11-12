@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_NOTIFY, NOTIFY_KINDS, notifyAllowed, notifyKindOf, parseNotifyPrefs } from './notifyPrefs.ts';
+import { DEFAULT_NOTIFY, NOTIFY_ICONS, NOTIFY_KINDS, notifyAllowed, notifyKindOf, parseNotifyPrefs } from './notifyPrefs.ts';
 
 describe('notification switches', () => {
   it('has every kind on by default', () => {
@@ -27,6 +27,20 @@ describe('notification switches', () => {
       ['sev', 'Codimango SEV'],
       ['agent_review', 'Agent review'],
     ]);
+  });
+
+  it('gives each switch its bubble icon; SEV uses the alert icon, agent review the robot', () => {
+    expect(NOTIFY_ICONS).toEqual({
+      validation_failed: '❌',
+      validation_passed: '✅',
+      needs_revision: '🔄',
+      accepted: '✅',
+      rejected: '❌',
+      review_assigned: '👤',
+      review_started: '👀',
+      sev: '⚠️',
+      agent_review: '🤖',
+    });
   });
 
   it('maps bubble kinds to switches; SEV opened and mitigated share one', () => {

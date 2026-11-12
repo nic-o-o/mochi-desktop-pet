@@ -2,6 +2,7 @@
  * Everything is on by default. A kind that's off never pops or raises the
  * unread badge, but still goes to history, so the bell can replay it.
  */
+import { NOTICE_ICONS } from './notifications.ts';
 import type { NoticeKind } from './notifications.ts';
 
 export type NotifyKind = NoticeKind | 'sev' | 'agent_review';
@@ -21,6 +22,13 @@ export const NOTIFY_KINDS: { key: NotifyKind; label: string }[] = [
   { key: 'sev', label: 'Codimango SEV' },
   { key: 'agent_review', label: 'Agent review' },
 ];
+
+/** The bubble icon for each switch: the Codimango icons, plus the SEV alert and agent icons. */
+export const NOTIFY_ICONS: Record<NotifyKind, string> = {
+  ...NOTICE_ICONS,
+  sev: '⚠️',
+  agent_review: '🤖',
+};
 
 export const DEFAULT_NOTIFY: NotifyPrefs = Object.fromEntries(NOTIFY_KINDS.map(({ key }) => [key, true])) as NotifyPrefs;
 

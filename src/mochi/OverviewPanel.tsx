@@ -23,7 +23,7 @@ import { SEV_LINES_MAX, sevHeadline } from './sevs.ts';
 import type { Sev } from './sevs.ts';
 import { SECTIONS } from './sections.ts';
 import type { SectionKey, SectionOrder, SectionPrefs } from './sections.ts';
-import { NOTIFY_KINDS } from './notifyPrefs.ts';
+import { NOTIFY_ICONS, NOTIFY_KINDS } from './notifyPrefs.ts';
 import type { NotifyPrefs } from './notifyPrefs.ts';
 import { SECTION_EVENT_NAME, logClick, logVpv, msSincePanelOpen, useVpv } from './usage.ts';
 import { SectionDragHandle } from './SectionDragHandle.tsx';
@@ -659,6 +659,7 @@ export function NotifyMenu({
                   onNotifyChange({ ...notify, [key]: e.target.checked });
                 }}
               />
+              <span aria-hidden="true">{NOTIFY_ICONS[key]}</span>
               <span>{label}</span>
             </label>
           ))}

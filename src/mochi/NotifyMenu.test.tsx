@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { NotifyMenu } from './OverviewPanel.tsx';
-import { DEFAULT_NOTIFY, NOTIFY_KINDS } from './notifyPrefs.ts';
+import { DEFAULT_NOTIFY, NOTIFY_ICONS, NOTIFY_KINDS } from './notifyPrefs.ts';
 import type { NotifyPrefs } from './notifyPrefs.ts';
 
 function Harness({
@@ -98,5 +98,14 @@ describe('NotifyMenu', () => {
     clickCheckbox('Validation passed');
     expect(notifyLabels()[1]).toBe('validation_passed');
     expect(notifyLabelByKey('validation_passed').className).not.toContain('is-off');
+  });
+
+  it('shows each kind with its bubble icon, hidden from screen readers', () => {
+    render(<Harness />);
+    for (const { key } of NOTIFY_KINDS) {
+      const row = notifyLabelByKey(key);
+      expect(row.textContent?.startsWith(NOTIFY_ICONS[key])).toBe(true);
+      expect(row.querySelector('span[aria-hidden="true"]')?.textContent).toBe(NOTIFY_ICONS[key]);
+    }
   });
 });
