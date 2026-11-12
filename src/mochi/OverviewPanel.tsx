@@ -16,6 +16,8 @@ import {
 } from './logic.ts';
 import { AgentRow } from './AgentRow.tsx';
 import type { AgentReviewControls } from './AgentRow.tsx';
+import { DelegateRow } from './DelegateRow.tsx';
+import { delegateAvailable } from './shell.ts';
 import { jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
@@ -328,6 +330,9 @@ function GlanceRow({
       </div>
       {kind === 'pending' && agentReview && (
         <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
+      )}
+      {kind === 'revision' && delegateAvailable() && (
+        <DelegateRow taskId={t.id} taskSlug={t.title} detail={t.checkSummary} />
       )}
       {showSubmit && phase === 'confirming' && (
         <div className="agent-row">

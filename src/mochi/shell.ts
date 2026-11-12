@@ -3,6 +3,7 @@
  * is a no-op, so `npm run dev` behaves exactly as before.
  */
 import type { AgentJob, AgentReviewStart, ReviewSkill } from './agentReviews.ts';
+import type { DelegateResult } from './delegations.ts';
 import type { CodimangoFetchResult } from './codimango.ts';
 import type { Sev } from './sevs.ts';
 import type { GenerateResult, LooksState, PetLook } from './looks.ts';
@@ -89,6 +90,8 @@ export interface MochiShell {
   removeReviewSkill?: (id: string) => Promise<ReviewSkill[]>;
   /** Every change to the runs (progress, finish); returns unsubscribe. */
   onAgentReviewsChanged?: (callback: (jobs: AgentJob[]) => void) => () => void;
+  /** Delegate a task to Green on the devserver; resolves the launch result. */
+  delegateToGreen?: (taskSlug: string) => Promise<DelegateResult>;
   /** Read-only submission preflight for one task (main process). */
   submitDryRun?: (id: string) => Promise<SubmitDryRunResult>;
   /** Current commit SHA to pin a submission to (main process). */
@@ -344,4 +347,16 @@ export function onAgentReviewsChanged(callback: (jobs: AgentJob[]) => void): () 
   const b = bridge();
   if (!b?.onAgentReviewsChanged) return () => {};
   return b.onAgentReviewsChanged(callback);
+}
+
+/** True when the shell can delegate to Green on the devserver (not in a plain browser or an older preload). */
+export function delegateAvailable(): boolean {
+  return typeof bridge()?.delegateToGreen === 'function';
+}
+
+/** Launch Green for one task slug; null outside the desktop shell. */
+export function delegateToGreen(taskSlug: string): Promise<DelegateResult | null> {
+  const b = bridge();
+  if (!b?.delegateToGreen) return Promise.resolve(null);
+  return b.delegateToGreen(taskSlug).catch(() => null);
 }

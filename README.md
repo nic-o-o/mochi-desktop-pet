@@ -74,6 +74,22 @@ you read the report, decide, and submit in Codimango (Open in Codimango).
 - **Try it without agents:** `MOCHI_CLAUDE_BIN=/nonexistent npm run desktop`
   shows the "can't find Claude Code" failure.
 
+## Delegate to agent (desktop shell)
+
+Each row in Needs revision has **Delegate to agent**: pick Codex and confirm,
+and Mochi launches the `$green` skill on your devserver (`devvm7438`, via
+`agentcloudctl`) to repair that task — Green reads the validation findings,
+hands the repair to Codex, proves it locally, pushes, and waits for
+validation, detached for up to 10 hours. Mochi reports the worker pid and
+log path when the first decision lands; it does not write the repair prompt
+itself (Green authors it from the findings). Before launching, Mochi checks
+Green is installed on the devserver (installing it with Agent Market if
+needed), resolves the task checkout from the task's `sourceRepo` under
+`~/AAI/` and verifies it, and runs Green `doctor --install-hooks` there. The
+launch is `green <task-slug> --live --hardening --detach --agent codex`, so
+confirming edits and pushes the real task. Delegations are remembered locally
+(`mochi.delegations.v1`) so the pid and log survive the panel closing.
+
 ## Codimango SEVs (desktop shell)
 
 When a Codimango SEV opens, Mochi bubbles (⚠️ "Codimango SEV3 open") because

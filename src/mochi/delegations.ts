@@ -1,0 +1,78 @@
+/* Green delegations: what Mochi launched on the devserver, kept locally so a
+ * panel reopen still shows the worker pid and log path. Green itself keeps
+ * working detached; this record is only Mochi's memory of the launch.
+ */
+export type DelegateAgent = 'codex';
+
+export interface DelegateError {
+  kind: string;
+  message: string;
+  fix?: string;
+}
+
+/** Result of one delegate launch, as the main process returns it over IPC. */
+export interface DelegateResult {
+  ok: boolean;
+  taskSlug: string;
+  agent: DelegateAgent;
+  repo?: string | null;
+  pid?: number | null;
+  logPath?: string | null;
+  decision?: string | null;
+  timedOut?: boolean;
+  error?: DelegateError;
+}
+
+export interface DelegationRecord {
+  taskSlug: string;
+  agent: DelegateAgent;
+  status: 'started' | 'failed';
+  pid: number | null;
+  logPath: string | null;
+  repo: string | null;
+  startedAtMs: number;
+  errorMessage?: string;
+  errorFix?: string;
+}
+
+export const DELEGATIONS_STORAGE_KEY = 'mochi.delegations.v1';
+const MAX_RECORDS = 20;
+
+function isRecord(value: unknown): value is DelegationRecord {
+  if (!value || typeof value !== 'object') return false;
+  const r = value as Partial<DelegationRecord>;
+  return typeof r.taskSlug === 'string' && r.taskSlug.length > 0 && (r.status === 'started' || r.status === 'failed');
+}
+
+/** Saved delegations, repaired: unknown entries dropped. Never throws. */
+export function parseDelegations(raw: string | null): DelegationRecord[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isRecord);
+  } catch {
+    return [];
+  }
+}
+
+export function loadDelegations(): DelegationRecord[] {
+  try {
+    return parseDelegations(localStorage.getItem(DELEGATIONS_STORAGE_KEY));
+  } catch {
+    return [];
+  }
+}
+
+export function saveDelegations(records: DelegationRecord[]): void {
+  try {
+    localStorage.setItem(DELEGATIONS_STORAGE_KEY, JSON.stringify(records));
+  } catch {
+    /* storage unavailable — the record still applies for the session */
+  }
+}
+
+/** Upsert one record for a task, newest first, capped. Never mutates. */
+export function recordDelegation(records: DelegationRecord[], record: DelegationRecord): DelegationRecord[] {
+  return [record, ...records.filter((r) => r.taskSlug !== record.taskSlug)].slice(0, MAX_RECORDS);
+}

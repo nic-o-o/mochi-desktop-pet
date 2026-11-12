@@ -375,6 +375,16 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       h.agentJobs = h.agentJobs.map((j) => (j.id === id ? { ...j, status: 'failed', endedAtMs: Date.now(), failure: agentFailure('cancelled') } : j));
       return Promise.resolve(h.agentJobs);
     },
+    delegateToGreen: (taskSlug) =>
+      Promise.resolve({
+        ok: true as const,
+        taskSlug: String(taskSlug),
+        agent: 'codex' as const,
+        repo: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember',
+        pid: 424242,
+        logPath: '/home/zixuanchen/logs/green-1.log',
+        decision: 'DECIDE repair: validation failures',
+      }),
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -431,6 +441,16 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         case 'close_bubble':
           fireEvent.click(mustFind('[aria-label="Dismiss notification"]', 'the bubble ×'));
           break;
+        case 'delegate_task': {
+          const title = findByText(String(arg));
+          const row = title.closest('.glance-row');
+          if (!row) throw new Error(`Step failed: no row for "${String(arg)}"`);
+          const button = [...row.querySelectorAll('button')].find((b) => b.textContent?.includes('Delegate to agent'));
+          if (!button) throw new Error(`Step failed: no Delegate to agent button for "${String(arg)}"`);
+          fireEvent.click(button);
+          fireEvent.click(findByText('Delegate to Codex'));
+          break;
+        }
         case 'open_menu':
           fireEvent.click(mustFind('[aria-label="Choose sections"]', 'the ≡ menu button'));
           break;
