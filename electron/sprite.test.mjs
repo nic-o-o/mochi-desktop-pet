@@ -74,4 +74,18 @@ describe('makeSprite', () => {
     const img = image(40, 40, [255, 255, 255], { x: 19, y: 19, w: 2, h: 2 }, [0, 0, 0]);
     expect(makeSprite(Buffer.from('png'), fakeCodec(img)).framed).toBe(true);
   });
+
+  it('keeps an image that arrived transparent as is (no cutout, no frame)', () => {
+    const img = image(40, 40, [0, 0, 0], { x: 10, y: 10, w: 20, h: 20 }, [30, 30, 30]);
+    for (let p = 0; p < 40 * 40; p++) {
+      const x = p % 40;
+      const y = Math.floor(p / 40);
+      if (x < 10 || x >= 30 || y < 10 || y >= 30) img.data[p * 4 + 3] = 0;
+    }
+    const out = makeSprite(Buffer.from('png'), fakeCodec(img));
+    expect(out.framed).toBe(false);
+    /* the dark character touching the black-RGB background survives: nothing was flood-filled */
+    expect(out.png.data[(out.png.height / 2 * out.png.width + out.png.width / 2) * 4 + 3]).toBe(255);
+    expect(out.png.width).toBe(20 + 2 * 6);
+  });
 });

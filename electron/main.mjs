@@ -21,7 +21,7 @@
  * to events.jsonl in the same folder (electron/events.mjs). "Ask agents to
  * review" runs Claude Code or Codex in the background (electron/agentReview.mjs).
  */
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -36,7 +36,7 @@ import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 import { createSevWatch } from './sevs.mjs';
 import { createCustomizer } from './customize.mjs';
 import { createLookStore } from './looks.mjs';
-import { createFakeGenerator } from './petGenerator.mjs';
+import { pickGenerator } from './petGenerator.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -70,8 +70,12 @@ const imageCodec = {
   encode({ width, height, data }) {
     return nativeImage.createFromBitmap(Buffer.from(swapRB(data)), { width, height }).toPNG();
   },
+  /* Fit the longer side to `size`, keeping the aspect ratio. */
   resize(png, size) {
-    return nativeImage.createFromBuffer(png).resize({ width: size, height: size, quality: 'best' }).toPNG();
+    const img = nativeImage.createFromBuffer(png);
+    const { width, height } = img.getSize();
+    const scale = size / Math.max(width, height, 1);
+    return img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' }).toPNG();
   },
 };
 
@@ -334,14 +338,21 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
-  // B1: pets are drawn by the fake generator, so only outside packaged builds
-  // (or with MOCHI_PET_GENERATOR=fake). B2 swaps in the real model.
-  const fakePets = !app.isPackaged || process.env.MOCHI_PET_GENERATOR === 'fake';
+  // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai.
+  // Packaged builds keep Customize hidden until the key-holding proxy exists (B3).
+  const pets = pickGenerator({
+    packaged: app.isPackaged,
+    env: process.env,
+    fixturesDir: path.join(here, 'fixtures', 'pets'),
+    /* Chromium's network stack: the Mac's proxy and VPN settings apply, unlike Node's fetch. */
+    fetchImpl: (url, init) => net.fetch(url, init),
+  });
+  if (pets.note) console.warn(`[mochi] ${pets.note}`);
   customizer = createCustomizer({
     store: createLookStore(path.join(app.getPath('userData'), 'pet-looks')),
-    generator: fakePets ? createFakeGenerator({ dir: path.join(here, 'fixtures', 'pets') }) : null,
+    generator: pets.generator,
     codec: imageCodec,
-    log: (fields) => events?.log({ event_name: 'mochi_pet_generate', ...fields }),
+    log: (fields) => events?.log({ event_name: 'mochi_pet_generate', source: pets.generator?.kind, ...fields }),
   });
   if (app.isPackaged) {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);

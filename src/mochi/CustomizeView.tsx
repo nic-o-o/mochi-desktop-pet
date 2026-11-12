@@ -148,7 +148,7 @@ export function CustomizeView(props: CustomizeViewProps) {
             {phase === 'drawing' ? (
               <>
                 <span className="muted small" role="status">
-                  Mochi is drawing…
+                  {looks.practice ? 'Mochi is drawing…' : 'Mochi is drawing… this takes about half a minute.'}
                 </span>
                 <button type="button" className="btn-secondary" onClick={cancel}>
                   Cancel
