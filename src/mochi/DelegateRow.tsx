@@ -113,7 +113,8 @@ export function DelegateRow({
           <p className="muted small">
             Runs Green on devvm7438 with Codex (<code>green {taskSlug} --live --hardening --detach --agent codex</code>). Green repairs the task, proves
             it locally, pushes, and waits for validation — up to 10 hours, detached. Before launching, Mochi checks Green is installed on the devserver
-            (installing it if needed) and runs <code>doctor --install-hooks</code> in the task checkout.
+            (installing it if needed), clones the task checkout if it is missing, fast-forwards it to origin/main if the task directory is missing from a
+            stale checkout, and runs <code>doctor --install-hooks</code> in the task checkout.
           </p>
           <div className="agent-picker-actions">
             <button

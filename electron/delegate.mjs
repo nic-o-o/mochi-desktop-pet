@@ -9,19 +9,23 @@
  *
  * Launching runs through agentcloudctl on the devserver the user owns
  * (devvm7438): check Green is installed there (install it if needed), resolve
- * the task repo from the task's sourceRepo and verify the checkout, check the
- * task directory exists in that checkout, run Green's doctor to install the
- * push guard, then launch detached with Codex. Nothing here guesses a repo
- * path: a missing or mismatched checkout fails closed with the expected path,
- * and a missing task directory fails closed naming the task's commit instead
- * of letting Green refuse cryptically at launch. The saved order of steps
- * matters: doctor must run before any live launch, and no launch happens
- * after any failure.
+ * the task repo from the task's sourceRepo, clone the checkout if it is
+ * missing, verify it, fast-forward it when the task directory is missing from
+ * a stale checkout, check the task directory exists, run Green's doctor to
+ * install the push guard, then launch detached with Codex. Nothing here
+ * guesses a repo path: a missing or mismatched checkout fails closed with
+ * the expected path, and a task directory still missing after a fast-forward
+ * fails closed naming the task's commit instead of letting Green refuse
+ * cryptically at launch. The saved order of steps matters: doctor must run
+ * before any live launch, and no launch happens after any failure. Only a
+ * fast-forward merge is ever applied to a checkout (never a rebase or a
+ * checkout of another commit), and only cloning creates a new checkout.
  *
  * Failures come back as one of: invalid_task, agentcloud_missing, node_error,
- * green_missing, repo_not_found, task_dir_missing, doctor_failed,
- * launch_failed. The last launch step may report ok with timedOut when the
- * worker started but its first decision had not landed before the wait ended.
+ * green_missing, repo_not_found, task_dir_missing, checkout_stale,
+ * doctor_failed, launch_failed. The last launch step may report ok with
+ * timedOut when the worker started but its first decision had not landed
+ * before the wait ended.
  */
 import { spawn } from 'node:child_process';
 
@@ -36,6 +40,8 @@ const CHECK_TIMEOUT_MS = 60_000;
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const TASK_SHOW_TIMEOUT_MS = 60_000;
 const VERIFY_TIMEOUT_MS = 60_000;
+const CLONE_TIMEOUT_MS = 15 * 60_000;
+const UPDATE_TIMEOUT_MS = 5 * 60_000;
 const DOCTOR_TIMEOUT_MS = 5 * 60_000;
 const LAUNCH_TIMEOUT_MS = 15 * 60_000;
 
@@ -74,6 +80,34 @@ export function repoCandidatePath(home, sourceRepo) {
   return `${home.replace(/\/+$/, '')}/AAI/${name}`;
 }
 
+/**
+ * The SSH clone URL for a task's sourceRepo, or null when no org and repo
+ * can be read off it. HTTPS URLs cannot be cloned on the devserver (the git
+ * credential helper there is broken); SSH was verified against ls-remote.
+ */
+export function cloneSshUrl(sourceRepo) {
+  const clean = String(sourceRepo ?? '').trim().replace(/\/+$/, '');
+  if (!clean) return null;
+  let path;
+  const schemeIdx = clean.indexOf('://');
+  if (schemeIdx >= 0) {
+    const segments = clean.slice(schemeIdx + 3).split('/').filter(Boolean);
+    if (segments.length < 3) return null; // host + org + repo
+    path = segments.slice(1).join('/');
+  } else if (clean.includes(':')) {
+    const segments = (clean.split(':').pop() ?? '').split('/').filter(Boolean);
+    if (segments.length < 2) return null; // org + repo
+    path = segments.join('/');
+  } else {
+    const segments = clean.split('/').filter(Boolean);
+    if (segments.length < 2) return null; // org + repo
+    path = segments.join('/');
+  }
+  const repo = path.replace(/\.git$/, '');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return null;
+  return `git@github.com:${repo}.git`;
+}
+
 function q(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -94,8 +128,20 @@ function verifyRepoScript(repoName) {
   return `repo="$HOME/AAI/${repoName}"\ntop=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || exit 3\nremote=$(git -C "$repo" remote get-url origin 2>/dev/null) || exit 3\nprintf '%s\\n%s\\n' "$top" "$remote"`;
 }
 
+function repoExistsScript(repoName) {
+  return `test -e "$HOME/AAI/${repoName}"`;
+}
+
+function cloneScript(sshUrl, repoName) {
+  return `git clone ${q(sshUrl)} "$HOME/AAI/${repoName}"`;
+}
+
 function taskDirScript(repo, slug) {
   return `test -d ${q(`${repo}/${slug}`)}`;
+}
+
+function updateCheckoutScript() {
+  return 'git pull --ff-only origin main';
 }
 
 function doctorScript() {
@@ -256,6 +302,24 @@ export async function delegateToGreen({ taskSlug }, { run = runNodeExec } = {}) 
     return fail(slug, 'repo_not_found', `Could not find a source repository for task ${slug}.`, 'Open the task in Codimango to confirm its repository.');
   }
   const expected = `~/AAI/${repoName}`;
+  const exists = await safeRun({ script: repoExistsScript(repoName), timeoutMs: VERIFY_TIMEOUT_MS });
+  if (exists.error) return nodeError(slug, exists, 'checking the task checkout');
+  if (exists.code !== 0) {
+    const url = cloneSshUrl(sourceRepo);
+    if (!url) {
+      return fail(slug, 'repo_not_found', `Task checkout not found: expected ${expected} on the devserver, pointing at the task repository.`, `Clone the task repository to ${expected} on the devserver, then try again.`);
+    }
+    const cloned = await safeRun({ script: cloneScript(url, repoName), timeoutMs: CLONE_TIMEOUT_MS });
+    if (cloned.error) return nodeError(slug, cloned, 'cloning the task repository');
+    if (cloned.code !== 0) {
+      return fail(
+        slug,
+        'repo_not_found',
+        `Could not clone the task repository to ${expected}.${tailOf(cloned) ? ` ${tailOf(cloned)}` : ''}`,
+        `Clone it manually: git clone ${url} ${expected}`,
+      );
+    }
+  }
   const verified = await safeRun({ script: verifyRepoScript(repoName), timeoutMs: VERIFY_TIMEOUT_MS });
   if (verified.error) return nodeError(slug, verified, 'verifying the task checkout');
   const lines = String(verified.stdout ?? '').trim().split('\n');
@@ -273,16 +337,33 @@ export async function delegateToGreen({ taskSlug }, { run = runNodeExec } = {}) 
   const dirChecked = await safeRun({ script: taskDirScript(repo, slug), timeoutMs: VERIFY_TIMEOUT_MS });
   if (dirChecked.error) return nodeError(slug, dirChecked, 'checking the task directory');
   if (dirChecked.code !== 0) {
-    const commit = taskCommitSha(shown.stdout);
-    const taskDir = `${repo}/${slug}`;
-    return fail(
-      slug,
-      'task_dir_missing',
-      `Task directory not found: ${taskDir} is missing from this checkout.${commit ? ` It exists at the task's commit ${commit}.` : ''}`,
-      commit
-        ? `Check out commit ${commit} in ${repo} (or restore ${slug} there), then try again.`
-        : `Restore ${slug} in ${repo}, then try again.`,
-    );
+    // A stale checkout is the common cause: the task directory may exist at
+    // origin/main even though this checkout predates it. Only a fast-forward
+    // is ever applied, so local work is never overwritten or rebased away.
+    const updated = await safeRun({ cwd: repo, script: updateCheckoutScript(), timeoutMs: UPDATE_TIMEOUT_MS });
+    if (updated.error) return nodeError(slug, updated, 'updating the task checkout');
+    if (updated.code !== 0) {
+      return fail(
+        slug,
+        'checkout_stale',
+        `Task checkout is behind: ${repo} could not fast-forward to origin/main, and the task directory is missing.${tailOf(updated) ? ` ${tailOf(updated)}` : ''}`,
+        `Run git pull in ${repo} yourself (after saving any local work), then try again.`,
+      );
+    }
+    const rechecked = await safeRun({ script: taskDirScript(repo, slug), timeoutMs: VERIFY_TIMEOUT_MS });
+    if (rechecked.error) return nodeError(slug, rechecked, 'checking the task directory');
+    if (rechecked.code !== 0) {
+      const commit = taskCommitSha(shown.stdout);
+      const taskDir = `${repo}/${slug}`;
+      return fail(
+        slug,
+        'task_dir_missing',
+        `Task directory not found: ${taskDir} is missing from this checkout even after fast-forwarding to origin/main.${commit ? ` It exists at the task's commit ${commit}.` : ''}`,
+        commit
+          ? `Check out commit ${commit} in ${repo} (or restore ${slug} there), then try again.`
+          : `Restore ${slug} in ${repo}, then try again.`,
+      );
+    }
   }
 
   const doctored = await safeRun({ cwd: repo, script: doctorScript(), timeoutMs: DOCTOR_TIMEOUT_MS });

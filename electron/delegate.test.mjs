@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cloneSshUrl,
   delegateToGreen,
   isTaskSlug,
   parseGreenStarted,
@@ -39,6 +40,7 @@ function happyRun() {
       'task show',
       { code: 0, stdout: TASK_SHOW, stderr: '' },
     ],
+    ['test -e', OK],
     [
       'rev-parse',
       { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg-272075201@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' },
@@ -95,6 +97,22 @@ describe('parseTaskShow', () => {
   });
 });
 
+describe('cloneSshUrl', () => {
+  it('builds the git@ clone URL off https and ssh sourceRepo URLs', () => {
+    expect(cloneSshUrl('https://github.com/codimango/swe-bench-aai-labs-ember')).toBe('git@github.com:codimango/swe-bench-aai-labs-ember.git');
+    expect(cloneSshUrl('org-272075201@github.com:codimango/swe-bench-aai-labs-ember.git')).toBe('git@github.com:codimango/swe-bench-aai-labs-ember.git');
+    expect(cloneSshUrl('git@github.com:codimango/swe-bench-aai-labs-ember.git')).toBe('git@github.com:codimango/swe-bench-aai-labs-ember.git');
+    expect(cloneSshUrl('codimango/swe-bench-aai-labs-ember')).toBe('git@github.com:codimango/swe-bench-aai-labs-ember.git');
+  });
+
+  it('returns null when there is no org and repo to clone', () => {
+    expect(cloneSshUrl('')).toBeNull();
+    expect(cloneSshUrl(null)).toBeNull();
+    expect(cloneSshUrl('https://github.com/codimango/')).toBeNull();
+    expect(cloneSshUrl('swe-bench-aai-labs-ember')).toBeNull();
+  });
+});
+
 describe('taskCommitSha', () => {
   it('reads the task commit out of task show JSON', () => {
     expect(taskCommitSha(TASK_SHOW)).toBe('4e305117d2917b0aaaffeeb029539555685a74f6');
@@ -148,14 +166,17 @@ describe('delegateToGreen', () => {
     const fake = fakeRun([
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
       ['test -d', { code: 1, stdout: '', stderr: '' }],
+      ['pull --ff-only', OK],
     ]);
     const result = await delegateToGreen({ taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('task_dir_missing');
     expect(result.error?.message).toContain('/home/zixuanchen/AAI/swe-bench-aai-labs-ember/ember-review-turnaround-study-install-time-bef-da119-zixuanchen');
     expect(result.error?.message).toContain('4e305117d2917b0aaaffeeb029539555685a74f6');
+    expect(fake.calls.some((c) => c.script.includes('pull --ff-only'))).toBe(true);
     expect(fake.calls.some((c) => c.script.includes('doctor'))).toBe(false);
     expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
   });
@@ -180,6 +201,7 @@ describe('delegateToGreen', () => {
       ],
       ['agent-market skill install green', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
       ['test -d', OK],
       ['doctor', OK],
@@ -206,6 +228,7 @@ describe('delegateToGreen', () => {
     const fake = fakeRun([
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
       ['rev-parse', { code: 3, stdout: '', stderr: 'fatal: not a git repository' }],
     ]);
     const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
@@ -219,6 +242,7 @@ describe('delegateToGreen', () => {
     const fake = fakeRun([
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\nhttps://github.com/someone-else/other.git\n', stderr: '' }],
     ]);
     const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
@@ -231,6 +255,7 @@ describe('delegateToGreen', () => {
     const fake = fakeRun([
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
       ['test -d', OK],
       ['doctor', { code: 1, stdout: '', stderr: 'muse: command not found' }],
@@ -248,6 +273,7 @@ describe('delegateToGreen', () => {
     const failing = fakeRun([
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
       ['test -d', OK],
       ['doctor', OK],
@@ -257,6 +283,85 @@ describe('delegateToGreen', () => {
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('launch_failed');
     expect(result.error?.message).toContain('already has a worker');
+  });
+
+  it('fast-forwards a stale checkout so a missing task directory appears, then launches', async () => {
+    let dirChecks = 0;
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      [
+        'test -d',
+        () => {
+          dirChecks += 1;
+          return dirChecks === 1 ? { code: 1, stdout: '', stderr: '' } : OK;
+        },
+      ],
+      ['pull --ff-only', OK],
+      ['doctor', OK],
+      ['--detach', { code: 0, stdout: 'worker pid: 8\nlog: /tmp/g2.log\n', stderr: '' }],
+    ]);
+    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result.ok).toBe(true);
+    expect(result.pid).toBe(8);
+    const pull = fake.calls.find((c) => c.script.includes('pull --ff-only'));
+    expect(pull?.cwd).toBe('/home/zixuanchen/AAI/swe-bench-aai-labs-ember');
+    expect(pull?.script).toContain('git pull --ff-only origin main');
+  });
+
+  it('fails closed when the checkout cannot fast-forward, without launching', async () => {
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', { code: 1, stdout: '', stderr: '' }],
+      ['pull --ff-only', { code: 1, stdout: '', stderr: 'fatal: Not possible to fast-forward, aborting.' }],
+    ]);
+    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('checkout_stale');
+    expect(result.error?.message).toContain('Not possible to fast-forward');
+    expect(fake.calls.some((c) => c.script.includes('doctor'))).toBe(false);
+    expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
+  });
+
+  it('clones a missing task checkout over ssh, then verifies and launches', async () => {
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', { code: 1, stdout: '', stderr: '' }],
+      ['git clone', OK],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
+      ['doctor', OK],
+      ['--detach', { code: 0, stdout: 'worker pid: 9\nlog: /tmp/g3.log\n', stderr: '' }],
+    ]);
+    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result.ok).toBe(true);
+    expect(result.pid).toBe(9);
+    const clone = fake.calls.find((c) => c.script.includes('git clone'));
+    expect(clone?.script).toContain("git clone 'git@github.com:codimango/swe-bench-aai-labs-ember.git'");
+    expect(clone?.script).toContain('"$HOME/AAI/swe-bench-aai-labs-ember"');
+    expect(fake.calls.findIndex((c) => c.script.includes('git clone'))).toBeLessThan(
+      fake.calls.findIndex((c) => c.script.includes('rev-parse')),
+    );
+  });
+
+  it('fails closed when cloning fails, without launching', async () => {
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', { code: 1, stdout: '', stderr: '' }],
+      ['git clone', { code: 128, stdout: '', stderr: 'fatal: Could not read from remote repository.' }],
+    ]);
+    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('repo_not_found');
+    expect(result.error?.message).toContain('Could not read from remote repository');
+    expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
   });
 
   it('reports agentcloudctl missing when the runner cannot spawn it', async () => {
