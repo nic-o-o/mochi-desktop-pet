@@ -85,7 +85,9 @@ log path when the first decision lands; it does not write the repair prompt
 itself (Green authors it from the findings). Before launching, Mochi checks
 Green is installed on the devserver (installing it with Agent Market if
 needed), resolves the task checkout from the task's `sourceRepo` under
-`~/AAI/` and verifies it, and runs Green `doctor --install-hooks` there. The
+`~/AAI/` and verifies it, checks the task directory exists in that checkout
+(stopping before launching, naming the task's commit, if it was removed from
+the tip), and runs Green `doctor --install-hooks` there. The
 launch is `green <task-slug> --live --hardening --detach --agent codex`, so
 confirming edits and pushes the real task. Delegations are remembered locally
 (`mochi.delegations.v1`) so the pid and log survive the panel closing.

@@ -9,16 +9,19 @@
  *
  * Launching runs through agentcloudctl on the devserver the user owns
  * (devvm7438): check Green is installed there (install it if needed), resolve
- * the task repo from the task's sourceRepo and verify the checkout, run
- * Green's doctor to install the push guard, then launch detached with Codex.
- * Nothing here guesses a repo path: a missing or mismatched checkout fails
- * closed with the expected path. The saved order of steps matters: doctor
- * must run before any live launch, and no launch happens after any failure.
+ * the task repo from the task's sourceRepo and verify the checkout, check the
+ * task directory exists in that checkout, run Green's doctor to install the
+ * push guard, then launch detached with Codex. Nothing here guesses a repo
+ * path: a missing or mismatched checkout fails closed with the expected path,
+ * and a missing task directory fails closed naming the task's commit instead
+ * of letting Green refuse cryptically at launch. The saved order of steps
+ * matters: doctor must run before any live launch, and no launch happens
+ * after any failure.
  *
  * Failures come back as one of: invalid_task, agentcloud_missing, node_error,
- * green_missing, repo_not_found, doctor_failed, launch_failed. The last
- * launch step may report ok with timedOut when the worker started but its
- * first decision had not landed before the wait ended.
+ * green_missing, repo_not_found, task_dir_missing, doctor_failed,
+ * launch_failed. The last launch step may report ok with timedOut when the
+ * worker started but its first decision had not landed before the wait ended.
  */
 import { spawn } from 'node:child_process';
 
@@ -91,6 +94,10 @@ function verifyRepoScript(repoName) {
   return `repo="$HOME/AAI/${repoName}"\ntop=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || exit 3\nremote=$(git -C "$repo" remote get-url origin 2>/dev/null) || exit 3\nprintf '%s\\n%s\\n' "$top" "$remote"`;
 }
 
+function taskDirScript(repo, slug) {
+  return `test -d ${q(`${repo}/${slug}`)}`;
+}
+
 function doctorScript() {
   return `python3 "${GREEN_CLI}" doctor --install-hooks`;
 }
@@ -99,17 +106,30 @@ function launchScript(slug, repo) {
   return `python3 "${GREEN_CLI}" ${q(slug)} --repo ${q(repo)} --live --hardening --detach --agent codex`;
 }
 
-/** sourceRepo out of `codimango task show --json`, tolerating a banner line. */
-export function parseTaskShow(text) {
-  const start = String(text ?? '').indexOf('{');
-  const end = String(text ?? '').lastIndexOf('}');
+function parseTaskJson(text) {
+  const raw = String(text ?? '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
   try {
-    const parsed = JSON.parse(String(text).slice(start, end + 1));
-    return typeof parsed?.sourceRepo === 'string' && parsed.sourceRepo ? parsed.sourceRepo : null;
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
     return null;
   }
+}
+
+/** sourceRepo out of `codimango task show --json`, tolerating a banner line. */
+export function parseTaskShow(text) {
+  const parsed = parseTaskJson(text);
+  return typeof parsed?.sourceRepo === 'string' && parsed.sourceRepo ? parsed.sourceRepo : null;
+}
+
+/** The task's 40-character commit SHA out of `codimango task show --json`, or null. */
+export function taskCommitSha(text) {
+  const parsed = parseTaskJson(text);
+  const sha = parsed?.commitSha;
+  return typeof sha === 'string' && /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
 }
 
 /** The worker pid, log path, and first decision out of a detached launch. */
@@ -247,6 +267,21 @@ export async function delegateToGreen({ taskSlug }, { run = runNodeExec } = {}) 
       'repo_not_found',
       `Task checkout not found: expected ${expected} on the devserver, pointing at the task repository.`,
       `Clone the task repository to ${expected} on the devserver, then try again.`,
+    );
+  }
+
+  const dirChecked = await safeRun({ script: taskDirScript(repo, slug), timeoutMs: VERIFY_TIMEOUT_MS });
+  if (dirChecked.error) return nodeError(slug, dirChecked, 'checking the task directory');
+  if (dirChecked.code !== 0) {
+    const commit = taskCommitSha(shown.stdout);
+    const taskDir = `${repo}/${slug}`;
+    return fail(
+      slug,
+      'task_dir_missing',
+      `Task directory not found: ${taskDir} is missing from this checkout.${commit ? ` It exists at the task's commit ${commit}.` : ''}`,
+      commit
+        ? `Check out commit ${commit} in ${repo} (or restore ${slug} there), then try again.`
+        : `Restore ${slug} in ${repo}, then try again.`,
     );
   }
 

@@ -6,11 +6,13 @@ import {
   parseTaskShow,
   repoCandidatePath,
   repoDirName,
+  taskCommitSha,
 } from './delegate.mjs';
 
 const TASK_SHOW = JSON.stringify({
   name: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen',
   sourceRepo: 'https://github.com/codimango/swe-bench-aai-labs-ember',
+  commitSha: '4e305117d2917b0aaaffeeb029539555685a74f6',
   status: 'draft',
 });
 
@@ -41,6 +43,7 @@ function happyRun() {
       'rev-parse',
       { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg-272075201@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' },
     ],
+    ['test -d', OK],
     ['doctor', OK],
     [
       '--detach',
@@ -92,6 +95,15 @@ describe('parseTaskShow', () => {
   });
 });
 
+describe('taskCommitSha', () => {
+  it('reads the task commit out of task show JSON', () => {
+    expect(taskCommitSha(TASK_SHOW)).toBe('4e305117d2917b0aaaffeeb029539555685a74f6');
+    expect(taskCommitSha('{"name":"x"}')).toBeNull();
+    expect(taskCommitSha('{"commitSha":"short"}')).toBeNull();
+    expect(taskCommitSha('not json')).toBeNull();
+  });
+});
+
 describe('parseGreenStarted', () => {
   it('reads the worker pid, log path, and first decision', () => {
     expect(parseGreenStarted('DECIDE repair: validation failures\nworker pid: 424242\nlog: /home/zixuanchen/logs/green-1.log\n')).toEqual({
@@ -127,6 +139,25 @@ describe('delegateToGreen', () => {
     expect(launch.script).toContain('ember-review-turnaround-study-install-time-bef-da119-zixuanchen');
     expect(launch.cwd).toBe('/home/zixuanchen/AAI/swe-bench-aai-labs-ember');
     expect(fake.calls.some((c) => c.script.includes('doctor --install-hooks'))).toBe(true);
+    expect(fake.calls.findIndex((c) => c.script.includes('test -d'))).toBeLessThan(
+      fake.calls.findIndex((c) => c.script.includes('doctor --install-hooks')),
+    );
+  });
+
+  it('fails closed when the task directory is missing from the checkout, before doctor or launch', async () => {
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', { code: 1, stdout: '', stderr: '' }],
+    ]);
+    const result = await delegateToGreen({ taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('task_dir_missing');
+    expect(result.error?.message).toContain('/home/zixuanchen/AAI/swe-bench-aai-labs-ember/ember-review-turnaround-study-install-time-bef-da119-zixuanchen');
+    expect(result.error?.message).toContain('4e305117d2917b0aaaffeeb029539555685a74f6');
+    expect(fake.calls.some((c) => c.script.includes('doctor'))).toBe(false);
+    expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
   });
 
   it('rejects an invalid slug without running anything', async () => {
@@ -150,6 +181,7 @@ describe('delegateToGreen', () => {
       ['agent-market skill install green', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
       ['doctor', OK],
       ['--detach', { code: 0, stdout: 'worker pid: 7\nlog: /tmp/g.log\n', stderr: '' }],
     ]);
@@ -200,6 +232,7 @@ describe('delegateToGreen', () => {
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
       ['doctor', { code: 1, stdout: '', stderr: 'muse: command not found' }],
     ]);
     const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
@@ -216,6 +249,7 @@ describe('delegateToGreen', () => {
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
       ['doctor', OK],
       ['--detach', { code: 1, stdout: '', stderr: 'converge-locks: task already has a worker' }],
     ]);
