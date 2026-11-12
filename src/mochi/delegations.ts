@@ -36,6 +36,49 @@ export interface DelegationRecord {
   errorFix?: string;
 }
 
+/** Live worker status, from one probe of the devserver. */
+export type DelegateStatusKind = 'starting' | 'working' | 'blocked' | 'done' | 'stopped' | 'unknown';
+
+export interface DelegateStatus {
+  kind: DelegateStatusKind;
+  taskSlug: string;
+  pid: number | null;
+  logPath: string | null;
+  lastDecision?: string | null;
+  lastActivityAgeSecs?: number | null;
+  checkedAtMs: number;
+}
+
+export interface DelegateStatusRequest {
+  taskSlug: string;
+  node: string;
+  pid: number;
+  logPath: string;
+}
+
+export interface DelegateStatusResult {
+  ok: boolean;
+  status?: DelegateStatus;
+  error?: DelegateError;
+}
+
+export const DELEGATE_STATUS_LABELS: Record<DelegateStatusKind, string> = {
+  starting: 'Green starting',
+  working: 'Green working',
+  blocked: 'Green blocked',
+  done: 'Green done',
+  stopped: 'Green not running',
+  unknown: 'Green status unknown',
+};
+
+/** How long ago the worker log last changed, in one short phrase. */
+export function formatActivityAge(ageSecs: number | null | undefined): string | null {
+  if (ageSecs == null || ageSecs < 0) return null;
+  if (ageSecs < 60) return 'just now';
+  if (ageSecs < 3600) return `${Math.floor(ageSecs / 60)}m ago`;
+  return `${Math.floor(ageSecs / 3600)}h ago`;
+}
+
 export const DELEGATIONS_STORAGE_KEY = 'mochi.delegations.v1';
 export const DELEGATE_NODE_STORAGE_KEY = 'mochi.delegate-node.v1';
 

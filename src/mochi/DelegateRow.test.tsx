@@ -3,6 +3,42 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DelegateRow } from './DelegateRow.tsx';
 import { DELEGATE_NODE_STORAGE_KEY, DELEGATIONS_STORAGE_KEY } from './delegations.ts';
+import type { DelegationRecord, DelegateStatus, DelegateStatusResult } from './delegations.ts';
+
+function seedStartedRecord(over: Partial<DelegationRecord> = {}) {
+  localStorage.setItem(
+    DELEGATIONS_STORAGE_KEY,
+    JSON.stringify([
+      {
+        taskSlug: 'ember-task',
+        agent: 'codex',
+        status: 'started',
+        pid: 99,
+        logPath: '/tmp/old.log',
+        repo: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember',
+        node: NODE,
+        startedAtMs: 1000,
+        ...over,
+      },
+    ]),
+  );
+}
+
+function liveStatus(kind: DelegateStatus['kind'], over: Partial<DelegateStatus> = {}): DelegateStatusResult {
+  return {
+    ok: true,
+    status: {
+      kind,
+      taskSlug: 'ember-task',
+      pid: 99,
+      logPath: '/tmp/old.log',
+      lastDecision: 'DECIDE FIX: x',
+      lastActivityAgeSecs: 120,
+      checkedAtMs: 1000,
+      ...over,
+    },
+  };
+}
 import type { DelegateResult } from './delegations.ts';
 
 const STARTED: DelegateResult = {
@@ -120,5 +156,71 @@ describe('DelegateRow', () => {
     expect(screen.getByText(/worker 99/)).toBeTruthy();
     expect(screen.getByText(/old\.log/)).toBeTruthy();
     expect(onDelegate).not.toHaveBeenCalled();
+  });
+
+  it('replaces the saved line with the live status, without the full log path', async () => {
+    seedStartedRecord();
+    const onStatusCheck = vi.fn(async () => liveStatus('working'));
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
+    await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
+    expect(screen.queryByText(/\/tmp\/old\.log/)).toBeNull();
+    expect(screen.getByText(/worker 99/)).toBeTruthy();
+    expect(screen.getByText(/2m ago/)).toBeTruthy();
+    expect(screen.getByText('old.log')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy log path' })).toBeTruthy();
+    expect(onStatusCheck).toHaveBeenCalledWith({ taskSlug: 'ember-task', node: NODE, pid: 99, logPath: '/tmp/old.log' });
+  });
+
+  it('shows blocked, done, and stopped statuses concisely, each with Delegate again', async () => {
+    for (const [kind, label] of [
+      ['blocked', 'Green blocked'],
+      ['done', 'Green done'],
+      ['stopped', 'Green not running'],
+    ] as const) {
+      cleanup();
+      localStorage.clear();
+      localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, NODE);
+      seedStartedRecord();
+      render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={async () => liveStatus(kind)} />);
+      await waitFor(() => expect(screen.getByText(label)).toBeTruthy());
+      expect(screen.getByRole('button', { name: /Delegate/ })).toBeTruthy();
+    }
+  });
+
+  it('shows unknown when the status check fails, keeping the worker detail', async () => {
+    seedStartedRecord();
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={async () => null} />);
+    await waitFor(() => expect(screen.getByText('Green status unknown')).toBeTruthy());
+    expect(screen.getByText(/worker 99/)).toBeTruthy();
+  });
+
+  it('does not probe when there is no pid or log path to check', () => {
+    seedStartedRecord({ pid: null, logPath: null });
+    const onStatusCheck = vi.fn();
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
+    expect(screen.getByText('Green started')).toBeTruthy();
+    expect(onStatusCheck).not.toHaveBeenCalled();
+  });
+
+  it('rechecks when Refresh status is clicked', async () => {
+    seedStartedRecord();
+    const onStatusCheck = vi.fn(async () => liveStatus('working'));
+    onStatusCheck.mockResolvedValueOnce(liveStatus('working'));
+    onStatusCheck.mockResolvedValueOnce(liveStatus('blocked'));
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={onStatusCheck} />);
+    await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+    await waitFor(() => expect(screen.getByText('Green blocked')).toBeTruthy());
+    expect(onStatusCheck).toHaveBeenCalledTimes(2);
+  });
+
+  it('copies the full log path from the concise line', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    seedStartedRecord();
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} onStatusCheck={async () => liveStatus('working')} />);
+    await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Copy log path' }));
+    expect(writeText).toHaveBeenCalledWith('/tmp/old.log');
   });
 });

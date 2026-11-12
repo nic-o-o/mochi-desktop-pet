@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
 import {
+  checkDelegateStatus,
   cloneSshUrl,
   delegateToGreen,
+  deriveDelegateStatus,
   isTaskSlug,
   normalizeDelegateNode,
+  parseDelegateStatusOutput,
   parseGreenStarted,
   parseTaskShow,
   repoCandidatePath,
@@ -163,6 +166,131 @@ describe('normalizeDelegateNode', () => {
     expect(normalizeDelegateNode('bad-')).toBeNull();
     expect(normalizeDelegateNode('bad; rm -rf /')).toBeNull();
     expect(normalizeDelegateNode('a_b')).toBeNull();
+  });
+});
+
+describe('deriveDelegateStatus', () => {
+  it('calls a live worker working once it has decided, starting before that', () => {
+    expect(deriveDelegateStatus({ pidAlive: true, logExists: true, logAgeSecs: 120, hasDecide: true, hasBlocked: false, hasTimingZero: false }).kind).toBe('working');
+    expect(deriveDelegateStatus({ pidAlive: true, logExists: true, logAgeSecs: 5, hasDecide: false, hasBlocked: false, hasTimingZero: false }).kind).toBe('starting');
+  });
+
+  it('calls a dead worker blocked, done, or stopped from its log markers', () => {
+    expect(
+      deriveDelegateStatus({ pidAlive: false, logExists: true, logAgeSecs: 900, hasDecide: true, hasBlocked: true, hasTimingZero: false }).kind,
+    ).toBe('blocked');
+    expect(
+      deriveDelegateStatus({ pidAlive: false, logExists: true, logAgeSecs: 900, hasDecide: true, hasBlocked: false, hasTimingZero: true }).kind,
+    ).toBe('done');
+    expect(
+      deriveDelegateStatus({ pidAlive: false, logExists: true, logAgeSecs: 900, hasDecide: true, hasBlocked: false, hasTimingZero: false }).kind,
+    ).toBe('stopped');
+    expect(deriveDelegateStatus({ pidAlive: false, logExists: false, logAgeSecs: null, hasDecide: false, hasBlocked: false, hasTimingZero: false }).kind).toBe(
+      'stopped',
+    );
+  });
+
+  it('keeps an alive worker working even when a blocked closure is in its log', () => {
+    expect(
+      deriveDelegateStatus({ pidAlive: true, logExists: true, logAgeSecs: 60, hasDecide: true, hasBlocked: true, hasTimingZero: false, lastDecision: 'DECIDE FIX: x' }).kind,
+    ).toBe('working');
+  });
+});
+
+describe('parseDelegateStatusOutput', () => {
+  it('reads the probe lines and the last decision', () => {
+    const parsed = parseDelegateStatusOutput(
+      'PID_ALIVE=1\nLOG_EXISTS=1\nLOG_AGE_SECS=120\nDECIDE_LINE=13:54:28  DECIDE FIX: 2 finding(s) from codimango\nHAS_BLOCKED=0\nHAS_TIMING_ZERO=0\n',
+    );
+    expect(parsed).toEqual({
+      pidAlive: true,
+      logExists: true,
+      logAgeSecs: 120,
+      hasDecide: true,
+      lastDecision: 'DECIDE FIX: 2 finding(s) from codimango',
+      hasBlocked: false,
+      hasTimingZero: false,
+    });
+  });
+
+  it('defaults missing and malformed values instead of throwing', () => {
+    expect(parseDelegateStatusOutput('PID_ALIVE=yes\nLOG_AGE_SECS=soon\n')).toEqual({
+      pidAlive: false,
+      logExists: false,
+      logAgeSecs: null,
+      hasDecide: false,
+      lastDecision: null,
+      hasBlocked: false,
+      hasTimingZero: false,
+    });
+    expect(parseDelegateStatusOutput('')).toEqual({
+      pidAlive: false,
+      logExists: false,
+      logAgeSecs: null,
+      hasDecide: false,
+      lastDecision: null,
+      hasBlocked: false,
+      hasTimingZero: false,
+    });
+  });
+});
+
+describe('checkDelegateStatus', () => {
+  const STATUS_OUTPUT = 'PID_ALIVE=1\nLOG_EXISTS=1\nLOG_AGE_SECS=120\nDECIDE_LINE=DECIDE FIX: 2 finding(s)\nHAS_BLOCKED=0\nHAS_TIMING_ZERO=0\n';
+
+  it('runs one probe on the named node and returns the live status', async () => {
+    const calls = [];
+    const run = async (job) => {
+      calls.push(job);
+      return { code: 0, stdout: STATUS_OUTPUT, stderr: '' };
+    };
+    const result = await checkDelegateStatus(
+      { taskSlug: 'ember-task', node: 'devvm7438.hil0.facebook.com', pid: 424242, logPath: '/tmp/green.log' },
+      { run },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.status).toMatchObject({ kind: 'working', pid: 424242, logPath: '/tmp/green.log', lastDecision: 'DECIDE FIX: 2 finding(s)', lastActivityAgeSecs: 120 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].node).toBe('devvm7438.hil0.facebook.com');
+    expect(calls[0].script).toContain('424242');
+    expect(calls[0].script).toContain('/tmp/green.log');
+    expect(calls[0].script).toContain('tail -n 200');
+    expect(calls[0].script).toContain('loop.py');
+  });
+
+  it('reports a dead worker as done when its log ends with a zero timing', async () => {
+    const run = async () => ({
+      code: 0,
+      stdout: 'PID_ALIVE=0\nLOG_EXISTS=1\nLOG_AGE_SECS=900\nDECIDE_LINE=\nHAS_BLOCKED=0\nHAS_TIMING_ZERO=1\n',
+      stderr: '',
+    });
+    const result = await checkDelegateStatus({ taskSlug: 'ember-task', node: 'devvm7438.hil0.facebook.com', pid: 424242, logPath: '/tmp/green.log' }, { run });
+    expect(result.status?.kind).toBe('done');
+  });
+
+  it('refuses without a node or a valid slug, and never probes a relative log path', async () => {
+    const calls = [];
+    const run = async (job) => {
+      calls.push(job);
+      return { code: 0, stdout: STATUS_OUTPUT, stderr: '' };
+    };
+    expect((await checkDelegateStatus({ taskSlug: 'ember-task', pid: 424242, logPath: '/tmp/green.log' }, { run })).error?.kind).toBe('node_missing');
+    expect((await checkDelegateStatus({ taskSlug: 'not a slug', node: 'devvm7438.hil0.facebook.com', pid: 424242, logPath: '/tmp/green.log' }, { run })).error?.kind).toBe('invalid_task');
+    expect(calls).toHaveLength(0);
+    const result = await checkDelegateStatus(
+      { taskSlug: 'ember-task', node: 'devvm7438.hil0.facebook.com', pid: 424242, logPath: 'relative/green.log' },
+      { run },
+    );
+    expect(result.ok).toBe(true);
+    expect(calls[0].script).not.toContain('relative/green.log');
+  });
+
+  it('reports a failed probe as a node error, not a status', async () => {
+    const run = async () => ({ code: 1, stdout: '', stderr: 'dial error' });
+    const result = await checkDelegateStatus({ taskSlug: 'ember-task', node: 'devvm7438.hil0.facebook.com', pid: 424242, logPath: '/tmp/green.log' }, { run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('node_error');
+    expect(result.status).toBeUndefined();
   });
 });
 

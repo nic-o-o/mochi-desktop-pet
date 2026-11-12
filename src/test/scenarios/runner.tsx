@@ -387,6 +387,19 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         logPath: '/home/zixuanchen/logs/green-1.log',
         decision: 'DECIDE repair: validation failures',
       }),
+    checkDelegateStatus: (req) =>
+      Promise.resolve({
+        ok: true as const,
+        status: {
+          kind: 'working' as const,
+          taskSlug: String(req.taskSlug),
+          pid: req.pid,
+          logPath: req.logPath,
+          lastDecision: 'DECIDE FIX: validation failures',
+          lastActivityAgeSecs: 60,
+          checkedAtMs: Date.now(),
+        },
+      }),
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,

@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DELEGATE_NODE_STORAGE_KEY,
+  DELEGATE_STATUS_LABELS,
+  formatActivityAge,
   loadDelegateNode,
   loadDelegations,
   normalizeDelegateNode,
@@ -67,6 +69,30 @@ describe('delegate node', () => {
   it('remembers which devserver a delegation ran on', () => {
     saveDelegations([record({ node: 'devvm7438.hil0.facebook.com' })]);
     expect(loadDelegations()[0].node).toBe('devvm7438.hil0.facebook.com');
+  });
+});
+
+describe('live status display', () => {
+  it('labels every status concisely', () => {
+    expect(DELEGATE_STATUS_LABELS).toEqual({
+      starting: 'Green starting',
+      working: 'Green working',
+      blocked: 'Green blocked',
+      done: 'Green done',
+      stopped: 'Green not running',
+      unknown: 'Green status unknown',
+    });
+  });
+
+  it('formats log activity as just now, minutes, or hours', () => {
+    expect(formatActivityAge(null)).toBeNull();
+    expect(formatActivityAge(undefined)).toBeNull();
+    expect(formatActivityAge(0)).toBe('just now');
+    expect(formatActivityAge(59)).toBe('just now');
+    expect(formatActivityAge(120)).toBe('2m ago');
+    expect(formatActivityAge(3599)).toBe('59m ago');
+    expect(formatActivityAge(3600)).toBe('1h ago');
+    expect(formatActivityAge(8100)).toBe('2h ago');
   });
 });
 
