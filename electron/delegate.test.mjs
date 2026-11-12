@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
 import {
   cloneSshUrl,
   delegateToGreen,
   isTaskSlug,
+  normalizeDelegateNode,
   parseGreenStarted,
   parseTaskShow,
   repoCandidatePath,
   repoDirName,
+  runNodeExec,
   taskCommitSha,
 } from './delegate.mjs';
 
@@ -19,10 +22,16 @@ const TASK_SHOW = JSON.stringify({
 
 /* A fake node runner: each script it is asked to run resolves from a canned
    answer keyed by what the script contains. */
+const NODE = 'devvm7438.hil0.facebook.com';
+
+async function delegateWithNode(req, deps) {
+  return delegateToGreen({ node: NODE, ...req }, deps);
+}
+
 function fakeRun(answers) {
   const calls = [];
-  const run = async ({ cwd, script }) => {
-    calls.push({ cwd, script });
+  const run = async ({ node, cwd, script }) => {
+    calls.push({ node, cwd, script });
     for (const [needle, result] of answers) {
       if (script.includes(needle)) return typeof result === 'function' ? result({ cwd, script }) : result;
     }
@@ -137,10 +146,80 @@ describe('parseGreenStarted', () => {
   });
 });
 
+describe('normalizeDelegateNode', () => {
+  it('trims, lowercases, and strips a scheme and path', () => {
+    expect(normalizeDelegateNode(' devvm7438.hil0.facebook.com ')).toBe('devvm7438.hil0.facebook.com');
+    expect(normalizeDelegateNode('HTTPS://DevVM7438.Hil0.Facebook.Com/')).toBe('devvm7438.hil0.facebook.com');
+    expect(normalizeDelegateNode('https://devvm7438.hil0.facebook.com/some/path')).toBe('devvm7438.hil0.facebook.com');
+    expect(normalizeDelegateNode('zixuanchen-mac')).toBe('zixuanchen-mac');
+  });
+
+  it('rejects empty, spaced, and shell-shaped input', () => {
+    expect(normalizeDelegateNode('')).toBeNull();
+    expect(normalizeDelegateNode(null)).toBeNull();
+    expect(normalizeDelegateNode('not a node!!')).toBeNull();
+    expect(normalizeDelegateNode('a..b')).toBeNull();
+    expect(normalizeDelegateNode('-bad')).toBeNull();
+    expect(normalizeDelegateNode('bad-')).toBeNull();
+    expect(normalizeDelegateNode('bad; rm -rf /')).toBeNull();
+    expect(normalizeDelegateNode('a_b')).toBeNull();
+  });
+});
+
+describe('delegate node', () => {
+  it('refuses to run without a node', async () => {
+    const fake = happyRun();
+    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('node_missing');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('refuses an invalid node without running anything', async () => {
+    const fake = happyRun();
+    const result = await delegateToGreen({ taskSlug: 'ember-task', node: 'not a node!!' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('node_missing');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('runs on the node it was given, normalized, not on any hardcoded node', async () => {
+    const fake = happyRun();
+    const result = await delegateToGreen(
+      { taskSlug: 'ember-task', node: '  HTTPS://Other-Devvm.Hil0.Facebook.Com/ ' },
+      { run: fake.run },
+    );
+    expect(result.ok).toBe(true);
+    expect(fake.calls.length).toBeGreaterThan(0);
+    expect(fake.calls.every((c) => c.node === 'other-devvm.hil0.facebook.com')).toBe(true);
+  });
+
+  it('passes the requested node to agentcloudctl instead of a hardcoded one', async () => {
+    const captured = [];
+    const spawnImpl = (bin, args) => {
+      captured.push({ bin, args });
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'out');
+        child.stderr.emit('data', 'err');
+        child.emit('close', 0);
+      });
+      return child;
+    };
+    const result = await runNodeExec({ node: 'other-devvm.hil0.facebook.com', script: 'true' }, spawnImpl);
+    expect(result).toEqual({ code: 0, stdout: 'out', stderr: 'err', timedOut: false });
+    const args = captured[0].args;
+    expect(args[args.indexOf('--node') + 1]).toBe('other-devvm.hil0.facebook.com');
+  });
+});
+
 describe('delegateToGreen', () => {
   it('checks Green, resolves and verifies the repo, runs doctor, then launches detached with Codex', async () => {
     const fake = happyRun();
-    const result = await delegateToGreen({ taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen' }, { run: fake.run });
     expect(result).toMatchObject({
       ok: true,
       taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen',
@@ -171,7 +250,7 @@ describe('delegateToGreen', () => {
       ['test -d', { code: 1, stdout: '', stderr: '' }],
       ['pull --ff-only', OK],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-review-turnaround-study-install-time-bef-da119-zixuanchen' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('task_dir_missing');
     expect(result.error?.message).toContain('/home/zixuanchen/AAI/swe-bench-aai-labs-ember/ember-review-turnaround-study-install-time-bef-da119-zixuanchen');
@@ -183,7 +262,7 @@ describe('delegateToGreen', () => {
 
   it('rejects an invalid slug without running anything', async () => {
     const fake = happyRun();
-    const result = await delegateToGreen({ taskSlug: 'not a slug' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'not a slug' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('invalid_task');
     expect(fake.calls).toHaveLength(0);
@@ -207,7 +286,7 @@ describe('delegateToGreen', () => {
       ['doctor', OK],
       ['--detach', { code: 0, stdout: 'worker pid: 7\nlog: /tmp/g.log\n', stderr: '' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(true);
     expect(fake.calls.some((c) => c.script.includes('agent-market skill install green --agent codex --scope user --force'))).toBe(true);
   });
@@ -217,7 +296,7 @@ describe('delegateToGreen', () => {
       ['SKILL.md', { code: 1, stdout: '', stderr: '' }],
       ['agent-market skill install green', { code: 1, stdout: '', stderr: 'agent-market: command not found' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('green_missing');
     expect(result.error?.fix).toContain('agent-market skill install green');
@@ -231,7 +310,7 @@ describe('delegateToGreen', () => {
       ['test -e', OK],
       ['rev-parse', { code: 3, stdout: '', stderr: 'fatal: not a git repository' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('repo_not_found');
     expect(result.error?.message).toContain('~/AAI/swe-bench-aai-labs-ember');
@@ -245,7 +324,7 @@ describe('delegateToGreen', () => {
       ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\nhttps://github.com/someone-else/other.git\n', stderr: '' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('repo_not_found');
     expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
@@ -260,7 +339,7 @@ describe('delegateToGreen', () => {
       ['test -d', OK],
       ['doctor', { code: 1, stdout: '', stderr: 'muse: command not found' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('doctor_failed');
     expect(result.error?.message).toContain('muse');
@@ -279,7 +358,7 @@ describe('delegateToGreen', () => {
       ['doctor', OK],
       ['--detach', { code: 1, stdout: '', stderr: 'converge-locks: task already has a worker' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: failing.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: failing.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('launch_failed');
     expect(result.error?.message).toContain('already has a worker');
@@ -303,7 +382,7 @@ describe('delegateToGreen', () => {
       ['doctor', OK],
       ['--detach', { code: 0, stdout: 'worker pid: 8\nlog: /tmp/g2.log\n', stderr: '' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(true);
     expect(result.pid).toBe(8);
     const pull = fake.calls.find((c) => c.script.includes('pull --ff-only'));
@@ -320,7 +399,7 @@ describe('delegateToGreen', () => {
       ['test -d', { code: 1, stdout: '', stderr: '' }],
       ['pull --ff-only', { code: 1, stdout: '', stderr: 'fatal: Not possible to fast-forward, aborting.' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('checkout_stale');
     expect(result.error?.message).toContain('Not possible to fast-forward');
@@ -339,7 +418,7 @@ describe('delegateToGreen', () => {
       ['doctor', OK],
       ['--detach', { code: 0, stdout: 'worker pid: 9\nlog: /tmp/g3.log\n', stderr: '' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(true);
     expect(result.pid).toBe(9);
     const clone = fake.calls.find((c) => c.script.includes('git clone'));
@@ -357,7 +436,7 @@ describe('delegateToGreen', () => {
       ['test -e', { code: 1, stdout: '', stderr: '' }],
       ['git clone', { code: 128, stdout: '', stderr: 'fatal: Could not read from remote repository.' }],
     ]);
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run: fake.run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('repo_not_found');
     expect(result.error?.message).toContain('Could not read from remote repository');
@@ -370,7 +449,7 @@ describe('delegateToGreen', () => {
       error.code = 'ENOENT';
       throw error;
     };
-    const result = await delegateToGreen({ taskSlug: 'ember-task' }, { run });
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('agentcloud_missing');
   });

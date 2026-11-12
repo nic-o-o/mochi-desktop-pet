@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DelegateRow } from './DelegateRow.tsx';
-import { DELEGATIONS_STORAGE_KEY } from './delegations.ts';
+import { DELEGATE_NODE_STORAGE_KEY, DELEGATIONS_STORAGE_KEY } from './delegations.ts';
 import type { DelegateResult } from './delegations.ts';
 
 const STARTED: DelegateResult = {
@@ -22,8 +22,11 @@ const FAILED: DelegateResult = {
   error: { kind: 'repo_not_found', message: 'Task checkout not found.', fix: 'Clone it to ~/AAI/swe-bench-aai-labs-ember.' },
 };
 
+const NODE = 'devvm7438.hil0.facebook.com';
+
 beforeEach(() => {
   localStorage.clear();
+  localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, NODE);
 });
 
 afterEach(cleanup);
@@ -46,7 +49,7 @@ describe('DelegateRow', () => {
     render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={onDelegate} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delegate to agent' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delegate to Codex' }));
-    expect(onDelegate).toHaveBeenCalledWith('ember-task');
+    expect(onDelegate).toHaveBeenCalledWith('ember-task', NODE);
     await waitFor(() => expect(screen.getByText(/worker 424242/)).toBeTruthy());
     expect(screen.getByText(/green-1\.log/)).toBeTruthy();
     const saved = JSON.parse(localStorage.getItem(DELEGATIONS_STORAGE_KEY) ?? '[]') as Array<{ pid: number; logPath: string }>;
@@ -61,6 +64,40 @@ describe('DelegateRow', () => {
     await waitFor(() => expect(screen.getByText(/Task checkout not found/)).toBeTruthy());
     expect(screen.getByText(/Clone it to/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Delegate/ })).toBeTruthy();
+  });
+
+  it('asks for the devserver the first time, saves it, and passes the normalized node', async () => {
+    localStorage.removeItem(DELEGATE_NODE_STORAGE_KEY);
+    const onDelegate = vi.fn(async () => STARTED);
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={onDelegate} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delegate to agent' }));
+    const input = screen.getByRole('textbox', { name: 'Devserver' }) as HTMLInputElement;
+    const confirm = screen.getByRole('button', { name: 'Delegate to Codex' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: '  HTTPS://DevVM7438.Hil0.Facebook.Com/ ' } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(onDelegate).toHaveBeenCalledWith('ember-task', NODE);
+    expect(localStorage.getItem(DELEGATE_NODE_STORAGE_KEY)).toBe(NODE);
+    await waitFor(() => expect(screen.getByText(/worker 424242/)).toBeTruthy());
+  });
+
+  it('keeps Confirm disabled for an invalid devserver, and lets the saved one be changed', async () => {
+    localStorage.removeItem(DELEGATE_NODE_STORAGE_KEY);
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delegate to agent' }));
+    const input = screen.getByRole('textbox', { name: 'Devserver' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'not a node!!' } });
+    expect((screen.getByRole('button', { name: 'Delegate to Codex' }) as HTMLButtonElement).disabled).toBe(true);
+
+    cleanup();
+    localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, NODE);
+    render(<DelegateRow taskId="644347" taskSlug="ember-task" onDelegate={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delegate to agent' }));
+    expect(screen.getByText('devvm7438.hil0.facebook.com')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    const changeInput = screen.getByRole('textbox', { name: 'Devserver' }) as HTMLInputElement;
+    expect(changeInput.value).toBe(NODE);
   });
 
   it('shows a saved delegation without launching again', () => {

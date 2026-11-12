@@ -7,8 +7,8 @@
  * Mochi never hand-writes a repair prompt: Green authors the repair prompt
  * from the task findings itself.
  *
- * Launching runs through agentcloudctl on the devserver the user owns
- * (devvm7438): check Green is installed there (install it if needed), resolve
+ * Launching runs through agentcloudctl on the devserver the user named
+ * (asked the first time they delegate, then saved): check Green is installed there (install it if needed), resolve
  * the task repo from the task's sourceRepo, clone the checkout if it is
  * missing, verify it, fast-forward it when the task directory is missing from
  * a stale checkout, check the task directory exists, run Green's doctor to
@@ -21,16 +21,31 @@
  * fast-forward merge is ever applied to a checkout (never a rebase or a
  * checkout of another commit), and only cloning creates a new checkout.
  *
- * Failures come back as one of: invalid_task, agentcloud_missing, node_error,
- * green_missing, repo_not_found, task_dir_missing, checkout_stale,
- * doctor_failed, launch_failed. The last launch step may report ok with
- * timedOut when the worker started but its first decision had not landed
- * before the wait ended.
+ * Failures come back as one of: invalid_task, node_missing,
+ * agentcloud_missing, node_error, green_missing, repo_not_found,
+ * task_dir_missing, checkout_stale, doctor_failed, launch_failed. The last
+ * launch step may report ok with timedOut when the worker started but its
+ * first decision had not landed before the wait ended.
  */
 import { spawn } from 'node:child_process';
 
-export const DELEGATE_NODE = 'devvm7438.hil0.facebook.com';
 export const AGENTCLOUD_BIN = process.env.MOCHI_AGENTCLOUD_BIN ?? '/usr/local/bin/agentcloudctl';
+
+/**
+ * A devserver node id, as the user typed it: trimmed, lowercased, scheme and
+ * trailing path stripped, and rejected when it is not one hostname-like
+ * token. Mirrors normalizeDelegateNode in src/mochi/delegations.ts, which is
+ * only the picker-side check; this one is authoritative before any
+ * agentcloudctl call. Keep the two in sync. There is deliberately no
+ * default node: running on someone else's devserver must be asked for.
+ */
+export function normalizeDelegateNode(input) {
+  if (typeof input !== 'string') return null;
+  let value = input.trim().toLowerCase().replace(/^https?:\/\//, '');
+  value = (value.split('/')[0] ?? '').replace(/\.+$/, '');
+  if (!value || value.length > 253 || value.includes('..')) return null;
+  return /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(value) ? value : null;
+}
 /** Green on the devserver, addressed through the remote home directory. */
 export const GREEN_DIR = '$HOME/.claude/skills/green';
 export const GREEN_SKILL_FILE = `${GREEN_DIR}/SKILL.md`;
@@ -197,7 +212,7 @@ export function parseGreenStarted(text) {
  * throwing, so callers can tell a missing agentcloudctl apart from a failed
  * command. `cwd` is the working directory on the node when given.
  */
-export function runNodeExec({ cwd, script, timeoutMs }, spawnImpl = spawn) {
+export function runNodeExec({ node, cwd, script, timeoutMs }, spawnImpl = spawn) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -205,7 +220,7 @@ export function runNodeExec({ cwd, script, timeoutMs }, spawnImpl = spawn) {
     let settled = false;
     let child;
     try {
-      const args = ['node', 'exec', '--node', DELEGATE_NODE, ...(cwd ? ['--cwd', cwd] : []), '--', 'bash', '-c', script];
+      const args = ['node', 'exec', '--node', node, ...(cwd ? ['--cwd', cwd] : []), '--', 'bash', '-c', script];
       child = spawnImpl(AGENTCLOUD_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
     } catch (error) {
       resolve({ code: null, stdout: '', stderr: '', error });
@@ -256,14 +271,18 @@ function nodeError(taskSlug, result, step) {
  * (or a classified failure); it never throws, so the renderer always gets an
  * answer it can show.
  */
-export async function delegateToGreen({ taskSlug }, { run = runNodeExec } = {}) {
+export async function delegateToGreen({ taskSlug, node: nodeInput }, { run = runNodeExec } = {}) {
   const slug = String(taskSlug ?? '');
   if (!isTaskSlug(slug)) {
     return fail(slug, 'invalid_task', `Not a Codimango task slug: ${slug || '(empty)'}.`, 'Pick the task from the panel.');
   }
+  const node = normalizeDelegateNode(nodeInput);
+  if (!node) {
+    return fail(slug, 'node_missing', 'No devserver was named for this delegation.', 'Enter the devserver node id in the Delegate picker, then try again.');
+  }
   const safeRun = async (job) => {
     try {
-      return await run(job);
+      return await run({ node, ...job });
     } catch (error) {
       return { code: null, stdout: '', stderr: String(error?.message ?? error), error };
     }

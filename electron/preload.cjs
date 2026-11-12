@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
   logEvent: (event) => ipcRenderer.send('mochi:log-event', event),
   usageSummary: () => ipcRenderer.invoke('mochi:usage-summary'),
   listAgentReviews: () => ipcRenderer.invoke('mochi:agent-reviews-list'),
-  delegateToGreen: (taskSlug) => ipcRenderer.invoke('mochi:green-delegate', taskSlug),
+  delegateToGreen: (taskSlug, node) => ipcRenderer.invoke('mochi:green-delegate', taskSlug, node),
   startAgentReview: (req) => ipcRenderer.invoke('mochi:agent-review-start', req),
   cancelAgentReview: (id) => ipcRenderer.invoke('mochi:agent-review-cancel', id),
   listReviewSkills: () => ipcRenderer.invoke('mochi:review-skills-list'),

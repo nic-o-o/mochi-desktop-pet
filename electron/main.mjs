@@ -214,7 +214,7 @@ ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
 
 // Delegate a "needs revision" task to Green on the devserver: the renderer
 // sends only the task slug; every check and the launch happen here.
-ipcMain.handle('mochi:green-delegate', (_event, taskSlug) => delegateToGreen({ taskSlug: String(taskSlug ?? '') }));
+ipcMain.handle('mochi:green-delegate', (_event, taskSlug, node) => delegateToGreen({ taskSlug: String(taskSlug ?? ''), node: String(node ?? '') }));
 
 ipcMain.handle('mochi:agent-review-start', (_event, req) =>
   agentReviews?.start({

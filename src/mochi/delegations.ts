@@ -30,12 +30,46 @@ export interface DelegationRecord {
   pid: number | null;
   logPath: string | null;
   repo: string | null;
+  node?: string;
   startedAtMs: number;
   errorMessage?: string;
   errorFix?: string;
 }
 
 export const DELEGATIONS_STORAGE_KEY = 'mochi.delegations.v1';
+export const DELEGATE_NODE_STORAGE_KEY = 'mochi.delegate-node.v1';
+
+/**
+ * A devserver node id, as the user typed it: trimmed, lowercased, scheme and
+ * trailing path stripped, and rejected when it is not one hostname-like
+ * token. Mirrors normalizeDelegateNode in electron/delegate.mjs, which is
+ * the authoritative check before any agentcloudctl call; keep the two in
+ * sync.
+ */
+export function normalizeDelegateNode(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  let value = input.trim().toLowerCase().replace(/^https?:\/\//, '');
+  value = (value.split('/')[0] ?? '').replace(/\.+$/, '');
+  if (!value || value.length > 253 || value.includes('..')) return null;
+  return /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(value) ? value : null;
+}
+
+/** The devserver the user named the first time they delegated, if any. */
+export function loadDelegateNode(): string | null {
+  try {
+    return normalizeDelegateNode(localStorage.getItem(DELEGATE_NODE_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function saveDelegateNode(node: string): void {
+  try {
+    localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, node);
+  } catch {
+    /* storage unavailable — the node still applies for this delegation */
+  }
+}
 const MAX_RECORDS = 20;
 
 function isRecord(value: unknown): value is DelegationRecord {

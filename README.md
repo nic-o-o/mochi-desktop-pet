@@ -77,8 +77,8 @@ you read the report, decide, and submit in Codimango (Open in Codimango).
 ## Delegate to agent (desktop shell)
 
 Each row in Needs revision has **Delegate to agent**: pick Codex and confirm,
-and Mochi launches the `$green` skill on your devserver (`devvm7438`, via
-`agentcloudctl`) to repair that task — Green reads the validation findings,
+and Mochi launches the `$green` skill on your devserver (asked the first
+time you delegate, then saved, via `agentcloudctl`) to repair that task — Green reads the validation findings,
 hands the repair to Codex, proves it locally, pushes, and waits for
 validation, detached for up to 10 hours. Mochi reports the worker pid and
 log path when the first decision lands; it does not write the repair prompt

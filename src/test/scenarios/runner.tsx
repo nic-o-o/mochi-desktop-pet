@@ -312,6 +312,8 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
   if (sc.given?.sections) localStorage.setItem('mochi.sections.v1', JSON.stringify(sc.given.sections));
   if (sc.given?.section_order) localStorage.setItem('mochi.sections.order.v1', JSON.stringify(sc.given.section_order));
   if (sc.given?.notify) localStorage.setItem('mochi.notify.v1', JSON.stringify(sc.given.notify));
+  // Delegation already asked for its devserver in this harness, so the picker shows the saved one.
+  localStorage.setItem('mochi.delegate-node.v1', 'devvm7438.hil0.facebook.com');
 
   window.mochiShell = {
     getDisplayBounds: () => Promise.resolve({ x: 0, y: 0, width: 1280, height: 800 }),

@@ -8,7 +8,7 @@
 import { useId, useState } from 'react';
 import { delegateAvailable, delegateToGreen } from './shell.ts';
 import type { DelegateResult } from './delegations.ts';
-import { loadDelegations, recordDelegation, saveDelegations } from './delegations.ts';
+import { loadDelegateNode, loadDelegations, normalizeDelegateNode, recordDelegation, saveDelegateNode, saveDelegations } from './delegations.ts';
 import type { DelegationRecord } from './delegations.ts';
 import { logClick, logClose } from './usage.ts';
 
@@ -21,12 +21,17 @@ export function DelegateRow({
   taskId: string;
   taskSlug: string;
   detail?: string;
-  onDelegate?: (slug: string) => Promise<DelegateResult | null>;
+  onDelegate?: (slug: string, node: string) => Promise<DelegateResult | null>;
 }) {
   const uid = useId();
   const [picking, setPicking] = useState(false);
   const [starting, setStarting] = useState(false);
   const [record, setRecord] = useState<DelegationRecord | null>(() => loadDelegations().find((r) => r.taskSlug === taskSlug) ?? null);
+  const [savedNode, setSavedNode] = useState<string | null>(() => loadDelegateNode());
+  const [nodeInput, setNodeInput] = useState(savedNode ?? '');
+  const [editingNode, setEditingNode] = useState(() => loadDelegateNode() === null);
+  const node = editingNode ? normalizeDelegateNode(nodeInput) : savedNode;
+  const displayNode = node ?? 'your devserver';
   const canDelegate = Boolean(onDelegate) || delegateAvailable();
   if (!canDelegate) return null;
 
@@ -36,12 +41,17 @@ export function DelegateRow({
   };
 
   const confirm = async () => {
+    const targetNode = editingNode ? normalizeDelegateNode(nodeInput) : savedNode;
+    if (!targetNode) return;
+    saveDelegateNode(targetNode);
+    setSavedNode(targetNode);
+    setEditingNode(false);
     logClick('glance_panel', 'delegate_start', { section: 'needs_revision', task_id: taskId, agent: 'codex' });
     setPicking(false);
     setStarting(true);
     let result: DelegateResult | null;
     try {
-      result = onDelegate ? await onDelegate(taskSlug) : await delegateToGreen(taskSlug);
+      result = onDelegate ? await onDelegate(taskSlug, targetNode) : await delegateToGreen(taskSlug, targetNode);
     } catch {
       result = null;
     }
@@ -54,6 +64,7 @@ export function DelegateRow({
           pid: result.pid ?? null,
           logPath: result.logPath ?? null,
           repo: result.repo ?? null,
+          node: targetNode,
           startedAtMs: Date.now(),
         }
       : {
@@ -63,6 +74,7 @@ export function DelegateRow({
           pid: null,
           logPath: null,
           repo: null,
+          node: targetNode,
           startedAtMs: Date.now(),
           errorMessage: result?.error?.message ?? 'Delegate needs the desktop shell.',
           errorFix: result?.error?.fix,
@@ -77,6 +89,7 @@ export function DelegateRow({
         <ul className="agent-status-list">
           <li className="agent-status agent-done">
             Green started
+            {record.node ? ` on ${record.node}` : ''}
             {record.pid != null ? ` — worker ${record.pid}` : ''}
             {record.logPath ? `. Log: ${record.logPath}` : ''}
           </li>
@@ -101,6 +114,37 @@ export function DelegateRow({
       {picking && (
         <fieldset className="agent-picker" aria-describedby={`${uid}-note`}>
           <legend>Delegate to agent</legend>
+          {editingNode ? (
+            <>
+              <label className="small agent-picker-label" htmlFor={`${uid}-node`}>
+                Devserver
+              </label>
+              <input
+                id={`${uid}-node`}
+                aria-label="Devserver"
+                type="text"
+                value={nodeInput}
+                onChange={(e) => setNodeInput(e.target.value)}
+                placeholder="Devserver node id"
+                autoComplete="off"
+              />
+              <p className="muted small">Asked once and saved for future delegations. Enter the AgentCloud node id for your devserver.</p>
+            </>
+          ) : (
+            <p className="muted small">
+              Devserver: <code>{savedNode}</code>{' '}
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => {
+                  setNodeInput(savedNode ?? '');
+                  setEditingNode(true);
+                }}
+              >
+                Change
+              </button>
+            </p>
+          )}
           <span className="small agent-picker-label">Repair agent</span>
           <label className="agent-choice">
             <input type="radio" name={`${uid}-model`} defaultChecked />
@@ -111,7 +155,7 @@ export function DelegateRow({
             {detail ? ` — failing checks: ${detail}` : ''}
           </p>
           <p className="muted small">
-            Runs Green on devvm7438 with Codex (<code>green {taskSlug} --live --hardening --detach --agent codex</code>). Green repairs the task, proves
+            Runs Green on {displayNode} with Codex (<code>green {taskSlug} --live --hardening --detach --agent codex</code>). Green repairs the task, proves
             it locally, pushes, and waits for validation — up to 10 hours, detached. Before launching, Mochi checks Green is installed on the devserver
             (installing it if needed), clones the task checkout if it is missing, fast-forwards it to origin/main if the task directory is missing from a
             stale checkout, and runs <code>doctor --install-hooks</code> in the task checkout.
@@ -127,7 +171,7 @@ export function DelegateRow({
             >
               Cancel
             </button>
-            <button type="button" className="btn-primary" onClick={() => void confirm()}>
+            <button type="button" className="btn-primary" disabled={!node} onClick={() => void confirm()}>
               Delegate to Codex
             </button>
           </div>

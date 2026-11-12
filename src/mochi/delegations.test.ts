@@ -1,6 +1,15 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadDelegations, parseDelegations, recordDelegation, saveDelegations } from './delegations.ts';
+import {
+  DELEGATE_NODE_STORAGE_KEY,
+  loadDelegateNode,
+  loadDelegations,
+  normalizeDelegateNode,
+  parseDelegations,
+  recordDelegation,
+  saveDelegateNode,
+  saveDelegations,
+} from './delegations.ts';
 import type { DelegationRecord } from './delegations.ts';
 
 const record = (over: Partial<DelegationRecord> = {}): DelegationRecord => ({
@@ -30,6 +39,34 @@ describe('parseDelegations', () => {
     saveDelegations([record()]);
     expect(loadDelegations()).toEqual([record()]);
     expect(loadDelegations()).toEqual(loadDelegations());
+  });
+});
+
+describe('delegate node', () => {
+  it('normalizes a node id and rejects shell-shaped input', () => {
+    expect(normalizeDelegateNode(' devvm7438.hil0.facebook.com ')).toBe('devvm7438.hil0.facebook.com');
+    expect(normalizeDelegateNode('HTTPS://DevVM7438.Hil0.Facebook.Com/')).toBe('devvm7438.hil0.facebook.com');
+    expect(normalizeDelegateNode('zixuanchen-mac')).toBe('zixuanchen-mac');
+    expect(normalizeDelegateNode('')).toBeNull();
+    expect(normalizeDelegateNode(null)).toBeNull();
+    expect(normalizeDelegateNode('not a node!!')).toBeNull();
+    expect(normalizeDelegateNode('a..b')).toBeNull();
+    expect(normalizeDelegateNode('bad; rm -rf /')).toBeNull();
+  });
+
+  it('remembers the devserver once asked, and treats junk storage as unset', () => {
+    expect(loadDelegateNode()).toBeNull();
+    saveDelegateNode('devvm7438.hil0.facebook.com');
+    expect(loadDelegateNode()).toBe('devvm7438.hil0.facebook.com');
+    saveDelegateNode(' DevVM7438.Hil0.Facebook.Com/ ');
+    expect(loadDelegateNode()).toBe('devvm7438.hil0.facebook.com');
+    localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, '!!!');
+    expect(loadDelegateNode()).toBeNull();
+  });
+
+  it('remembers which devserver a delegation ran on', () => {
+    saveDelegations([record({ node: 'devvm7438.hil0.facebook.com' })]);
+    expect(loadDelegations()[0].node).toBe('devvm7438.hil0.facebook.com');
   });
 });
 
