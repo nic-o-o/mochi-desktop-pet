@@ -13,6 +13,9 @@
  * 2 s, run in parallel), and its blockers ride along as `submitBlockers`.
  * submit-status doesn't see the benchmark canary scan (only the submit route
  * rechecks it), so the row also carries that scan result as `canaryScan`.
+ * `task list` stopped including qualitativeResult (seen 2026-11-13), so for
+ * those same passing drafts the scan is read from `task show` when the list
+ * row lacks it.
  *
  * Failures come back as one of: cli_missing (not installed), login_required
  * (no or expired Nest token: run `codimango auth setup`), offline, error.
@@ -60,18 +63,21 @@ export function pickRow(task) {
         advisory: d?.advisory === true,
       }))
     : null;
-  // The benchmark canary scan result is the one part of qualitativeResult the panel reads.
-  const scan = task.qualitativeResult?.benchmarkCanaryScanResult;
-  row.canaryScan =
-    scan && typeof scan === 'object'
-      ? {
-          outcome: String(scan.outcome ?? ''),
-          commitSha: scan.commitSha ?? null,
-          scannerVersion: scan.scannerVersion ?? null,
-          retryable: scan.retryable === true,
-        }
-      : null;
+  row.canaryScan = pickCanaryScan(task);
   return row;
+}
+
+/** The benchmark canary scan result, the one part of qualitativeResult the panel reads; null when absent. */
+export function pickCanaryScan(task) {
+  const scan = task?.qualitativeResult?.benchmarkCanaryScanResult;
+  return scan && typeof scan === 'object'
+    ? {
+        outcome: String(scan.outcome ?? ''),
+        commitSha: scan.commitSha ?? null,
+        scannerVersion: scan.scannerVersion ?? null,
+        retryable: scan.retryable === true,
+      }
+    : null;
 }
 
 function parseJson(text) {
@@ -195,12 +201,24 @@ export function fetchSubmitBlockers(id) {
   return runJsonCommand(['task', 'submit-status', String(id)]).then((r) => (r.ok ? pickSubmitBlockers(r.body) : null));
 }
 
-/** Attach `submitBlockers` to your drafts whose validation passes. */
-export async function addSubmitBlockers(rows, fetchBlockers = fetchSubmitBlockers) {
+/** The canary scan for one task from `task show`, or null when the read fails or has none. */
+export function fetchCanaryScan(id) {
+  return runJsonCommand(['task', 'show', String(id)]).then((r) => (r.ok ? pickCanaryScan(r.body) : null));
+}
+
+/**
+ * Attach `submitBlockers` to your drafts whose validation passes, and the
+ * canary scan from `task show` when the list row didn't carry one.
+ */
+export async function addSubmitBlockers(rows, fetchBlockers = fetchSubmitBlockers, fetchScan = fetchCanaryScan) {
   const passing = rows.filter((r) => r.status === 'draft' && r.validationStatus === 'passing');
-  const results = await Promise.all(passing.map((r) => fetchBlockers(r.id)));
+  const [results, scans] = await Promise.all([
+    Promise.all(passing.map((r) => fetchBlockers(r.id))),
+    Promise.all(passing.map((r) => (r.canaryScan ? r.canaryScan : fetchScan(r.id)))),
+  ]);
   passing.forEach((r, i) => {
     r.submitBlockers = results[i];
+    r.canaryScan = scans[i] ?? null;
   });
   return rows;
 }
