@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OverviewPanel } from './OverviewPanel.tsx';
+import { DELEGATIONS_STORAGE_KEY, DELEGATE_NODE_STORAGE_KEY } from './delegations.ts';
 import { DEFAULT_NOTIFY } from './notifyPrefs.ts';
 import type { NotifyPrefs } from './notifyPrefs.ts';
 import { DEFAULT_SECTIONS, DEFAULT_SECTION_ORDER } from './sections.ts';
@@ -151,6 +152,90 @@ describe('OverviewPanel section drag handles', () => {
     expect(headingOrder()).toEqual(['Ready for submission', 'Needs revision', 'Waiting for your review']);
     fireEvent.click(screen.getByRole('button', { name: 'Notification settings' }));
     expect(screen.queryByText('Notify me about')).toBeNull();
+  });
+
+  it('puts the Green status on its own line below the validation failure, at meta size', async () => {
+    localStorage.clear();
+    localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, 'devvm7438.hil0.facebook.com');
+    localStorage.setItem(
+      DELEGATIONS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          taskSlug: 'ember-task',
+          agent: 'codex',
+          status: 'started',
+          pid: 99,
+          logPath: '/tmp/old.log',
+          repo: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember',
+          node: 'devvm7438.hil0.facebook.com',
+          startedAtMs: 1000,
+        },
+      ]),
+    );
+    (window as unknown as { mochiShell: unknown }).mochiShell = {
+      delegateToGreen: vi.fn(),
+      checkDelegateStatus: async () => ({
+        ok: true,
+        status: { kind: 'working', taskSlug: 'ember-task', pid: 99, logPath: '/tmp/old.log', checkedAtMs: 1000 },
+      }),
+      checkTaskHandler: async () => ({
+        ok: true,
+        probe: {
+          handler: 'green',
+          pid: 99,
+          logPath: '/tmp/old.log',
+          agent: 'codex',
+          kind: 'working',
+          lastDecision: 'DECIDE FIX: x',
+          lastActivityAgeSecs: 60,
+          waitingMins: null,
+          waitingReason: null,
+          blockedReason: null,
+          hasBlocked: false,
+          hasTimingZero: false,
+          leaseAgeSecs: null,
+          checkedAtMs: 1000,
+        },
+      }),
+    };
+    try {
+      const revision = task('v2', { title: 'ember-task', priority: 'high', status: 'revision_required', checkSummary: 'internal repo guard +4' });
+      render(
+        <OverviewPanel
+          position={{ x: 0, y: 0 }}
+          pending={[]}
+          revisions={[revision]}
+          drafts={[]}
+          submittable={[]}
+          sections={DEFAULT_SECTIONS}
+          onSectionsChange={() => {}}
+          sectionOrder={DEFAULT_SECTION_ORDER}
+          onSectionOrderChange={() => {}}
+          notify={DEFAULT_NOTIFY}
+          onNotifyChange={() => {}}
+          reviewsCompleted={0}
+          submissionsCompleted={0}
+          goals={{ reviewGoal: 5, submissionGoal: 2 }}
+          nowMs={NOW}
+          onSaveGoals={() => {}}
+          onClose={() => {}}
+          onOpenTask={() => {}}
+        />,
+      );
+      await waitFor(() => expect(screen.getByText('Green working')).toBeTruthy());
+      const label = screen.getByText('Green working');
+      const meta = label.closest('.glance-meta');
+      expect(meta).not.toBeNull();
+      expect(meta?.textContent).toContain('Validation failed · internal repo guard +4');
+      const validation = screen.getByText('Validation failed · internal repo guard +4');
+      expect(validation.closest('.glance-meta-line')).not.toBe(label.closest('.glance-meta-line'));
+      expect(label.tagName).toBe('SPAN');
+      expect(label.className).toContain('agent-done');
+    } finally {
+      delete (window as unknown as { mochiShell?: unknown }).mochiShell;
+      localStorage.clear();
+      cleanup();
+    }
   });
 
   it('keeps only one header menu open: the bell closes the filter menu', () => {

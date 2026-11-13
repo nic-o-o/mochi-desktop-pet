@@ -29,7 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewSkill } from './agentReview.mjs';
-import { checkDelegateStatus, delegateToGreen } from './delegate.mjs';
+import { checkDelegateStatus, checkTaskHandler, delegateToGreen, installDocker, stopGreenWorker } from './delegate.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog, readEvents, usageSummary } from './events.mjs';
@@ -214,7 +214,9 @@ ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
 
 // Delegate a "needs revision" task to Green on the devserver: the renderer
 // sends only the task slug; every check and the launch happen here.
-ipcMain.handle('mochi:green-delegate', (_event, taskSlug, node) => delegateToGreen({ taskSlug: String(taskSlug ?? ''), node: String(node ?? '') }));
+ipcMain.handle('mochi:green-delegate', (_event, taskSlug, node, agent) =>
+  delegateToGreen({ taskSlug: String(taskSlug ?? ''), node: String(node ?? ''), agent: typeof agent === 'string' ? agent : undefined }),
+);
 ipcMain.handle('mochi:green-delegate-status', (_event, req) =>
   checkDelegateStatus({
     taskSlug: String(req?.taskSlug ?? ''),
@@ -223,6 +225,23 @@ ipcMain.handle('mochi:green-delegate-status', (_event, req) =>
     logPath: String(req?.logPath ?? ''),
   }),
 );
+ipcMain.handle('mochi:green-handler-status', (_event, req) =>
+  checkTaskHandler({
+    taskSlug: String(req?.taskSlug ?? ''),
+    node: String(req?.node ?? ''),
+    pid: req?.pid == null ? null : Number(req.pid),
+    logPath: String(req?.logPath ?? ''),
+  }),
+);
+ipcMain.handle('mochi:green-stop-worker', (_event, req) =>
+  stopGreenWorker({
+    taskSlug: String(req?.taskSlug ?? ''),
+    node: String(req?.node ?? ''),
+    pid: Number(req?.pid),
+    logPath: String(req?.logPath ?? ''),
+  }),
+);
+ipcMain.handle('mochi:green-install-docker', (_event, taskSlug, node) => installDocker({ taskSlug: String(taskSlug ?? ''), node: String(node ?? '') }));
 
 ipcMain.handle('mochi:agent-review-start', (_event, req) =>
   agentReviews?.start({
