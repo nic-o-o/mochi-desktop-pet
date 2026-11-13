@@ -1854,6 +1854,14 @@ html.mochi-shell .expanded-view {
   margin: 2px 6px 6px;
 }
 
+/* "Show notifications" at the end of the bell menu: a plain underlined link. */
+.section-menu-link {
+  display: block;
+  margin: 0 6px 6px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ------------------------------------------- bubble link + row highlight -- */
 .bubble-link-btn {
   margin-left: auto;

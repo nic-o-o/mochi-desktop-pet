@@ -1000,6 +1000,7 @@ export default function App() {
           }}
           highlightTaskId={highlightTaskId}
           unread={unread}
+          onShowNotifications={cycleNotification}
           reviewsCompleted={weekly.reviewsCompleted}
           submissionsCompleted={weekly.submissionsCompleted}
           goals={goals}

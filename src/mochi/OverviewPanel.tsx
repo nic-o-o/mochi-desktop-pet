@@ -58,6 +58,8 @@ interface OverviewPanelProps {
   highlightTaskId?: string | null;
   /** Unread notifications, for the header bell's count. */
   unread?: number;
+  /** "Show notifications" at the end of the bell menu: replay the bubbles, latest first. */
+  onShowNotifications?: () => void;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
   onCopyStats?: () => Promise<boolean>;
   /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
@@ -615,19 +617,22 @@ export function SectionFilter({
 
 /** Header bell menu: which notification kinds may pop the bubble. It opens like
  * the filter menu, anchored to the bell. Past notices still replay from the
- * pet's bell and the shortcut, whatever is switched off here. */
+ * pet's bell and the shortcut, whatever is switched off here, and from the
+ * "Show notifications" line at the end of this menu. */
 export function NotifyMenu({
   notify,
   onNotifyChange,
   open,
   onOpenChange,
   unread,
+  onShowNotifications,
 }: {
   notify: NotifyPrefs;
   onNotifyChange: (next: NotifyPrefs) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   unread?: number;
+  onShowNotifications?: () => void;
 }) {
   const shownNotify = partitionEnabled(NOTIFY_KINDS, ({ key }) => notify[key]);
   return (
@@ -669,6 +674,19 @@ export function NotifyMenu({
             </label>
           ))}
           <p className="muted small section-menu-note">Switched-off kinds don&apos;t pop up; the pet bell replays past ones.</p>
+          {onShowNotifications && (
+            <button
+              type="button"
+              className="btn-link section-menu-link"
+              onClick={() => {
+                logClick('glance_panel', 'notifications', { unread_count: unread ?? 0 });
+                onOpenChange(false);
+                onShowNotifications();
+              }}
+            >
+              {unread ? `Show notifications (${unread > 9 ? '9+' : unread} new)` : 'Show notifications'}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -725,6 +743,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
               open={openMenu === 'notify'}
               onOpenChange={(next) => setOpenMenu(next ? 'notify' : null)}
               unread={props.unread}
+              onShowNotifications={props.onShowNotifications}
             />
           )}
           {!props.setup && (
