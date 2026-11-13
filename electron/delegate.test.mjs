@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
 import {
   checkDelegateStatus,
+  checkTaskHandler,
   cloneSshUrl,
   delegateToGreen,
+  installDocker,
+  isDelegateAgent,
+  parseDoctorOutput,
+  parseDockerProbeOutput,
+  parseExistingWorkerOutput,
+  parseLogDetailOutput,
+  stopGreenWorker,
   deriveDelegateStatus,
   isTaskSlug,
   doctorProblems,
@@ -287,6 +295,9 @@ describe('checkDelegateStatus', () => {
     expect(calls[0].script).toContain('/tmp/green.log');
     expect(calls[0].script).toContain('tail -n 200');
     expect(calls[0].script).toContain('loop.py');
+    // The decision is searched in the whole log, not just the last 200
+    // lines: a worker waiting hours past its DECIDE is still working.
+    expect(calls[0].script).toContain('grep -F " DECIDE " "$log"');
   });
 
   it('reports a dead worker as done when its log ends with a zero timing', async () => {
@@ -375,6 +386,91 @@ describe('delegate node', () => {
   });
 });
 
+describe('parseExistingWorkerOutput', () => {
+  it('reads the holder pid, log path, and agent off the probe output', () => {
+    expect(parseExistingWorkerOutput('WORKER_PID=2353662\nWORKER_LOG=/tmp/green.ember-task.log\nWORKER_AGENT=muse\n')).toEqual({
+      pid: 2353662,
+      logPath: '/tmp/green.ember-task.log',
+      agent: 'muse',
+    });
+  });
+
+  it('rejects a missing, dead, or unusable worker', () => {
+    expect(parseExistingWorkerOutput('')).toBeNull();
+    expect(parseExistingWorkerOutput('WORKER_PID=0\nWORKER_LOG=/tmp/g.log\n')).toBeNull();
+    expect(parseExistingWorkerOutput('WORKER_PID=12\nWORKER_LOG=relative/g.log\n')).toBeNull();
+    expect(parseExistingWorkerOutput('WORKER_PID=12\n')).toBeNull();
+    expect(parseExistingWorkerOutput('WORKER_PID=abc\nWORKER_LOG=/tmp/g.log\n')).toBeNull();
+  });
+
+  it('leaves an unrecognized agent unset for the caller to default', () => {
+    expect(parseExistingWorkerOutput('WORKER_PID=12\nWORKER_LOG=/tmp/g.log\nWORKER_AGENT=claude\n')).toEqual({ pid: 12, logPath: '/tmp/g.log', agent: null });
+  });
+});
+
+describe('parseDoctorOutput', () => {
+  const READY = `repository      /home/debrax/AAI/swe-bench-aai-labs-ember
+codimango       /usr/local/bin/codimango
+codex           /usr/local/bin/codex
+muse            /usr/local/bin/muse
+git             /usr/local/bin/git
+docker          /usr/bin/docker
+codimango CLI   current command surface ready
+repair model    avocado-code-flex: ready
+push guard      already active in /home/debrax/AAI/swe-bench-aai-labs-ember/.git/green-hooks
+ok`;
+
+  it('spots a missing Docker binary in an otherwise passing doctor run', () => {
+    const output = READY.replace('docker          /usr/bin/docker', 'docker          MISSING -- local task proof').replace('\nok', '\nnot ready');
+    expect(parseDoctorOutput(output)).toEqual({ dockerMissing: true, ready: false, missingBinaries: ['docker'] });
+  });
+
+  it('reports ready when every check passes', () => {
+    expect(parseDoctorOutput(READY)).toEqual({ dockerMissing: false, ready: true, missingBinaries: [] });
+  });
+
+  it('defaults safely on empty or unfamiliar output', () => {
+    expect(parseDoctorOutput('')).toEqual({ dockerMissing: false, ready: false, missingBinaries: [] });
+    expect(parseDoctorOutput('push guard      already active in /tmp/x\nok')).toEqual({ dockerMissing: false, ready: true, missingBinaries: [] });
+  });
+});
+
+describe('parseDockerProbeOutput', () => {
+  it('reads the install environment off the probe lines', () => {
+    expect(
+      parseDockerProbeOutput('DOCKER_BIN=/usr/bin/docker\nDOCKER_DAEMON=1\nOS_ID=centos\nHAS_DNF=1\nHAS_YUM=0\nHAS_APT=0\nHAS_SYSTEMCTL=1\nSUDO_OK=1\n'),
+    ).toEqual({ dockerBin: '/usr/bin/docker', daemonReachable: true, osId: 'centos', hasDnf: true, hasYum: false, hasApt: false, hasSystemctl: true, sudoOk: true });
+  });
+
+  it('defaults a missing or hostile probe to install nothing', () => {
+    expect(parseDockerProbeOutput('')).toEqual({ dockerBin: null, daemonReachable: false, osId: null, hasDnf: false, hasYum: false, hasApt: false, hasSystemctl: false, sudoOk: false });
+    expect(parseDockerProbeOutput('DOCKER_BIN=relative/docker\nDOCKER_DAEMON=1\nSUDO_OK=1\n')).toEqual({ dockerBin: null, daemonReachable: false, osId: null, hasDnf: false, hasYum: false, hasApt: false, hasSystemctl: false, sudoOk: true });
+  });
+});
+
+describe('parseLogDetailOutput', () => {
+  it('reads the active wait and the blocked closure reason off the last lines', () => {
+    const parsed = parseLogDetailOutput(
+      'WAITING_LINE=15:31:36    waiting 80m for Agentic trial-output review, Codex run\nLAST_LINE=15:31:36    waiting 80m for Agentic trial-output review, Codex run\nCLOSURE_LINE=\n',
+    );
+    expect(parsed).toEqual({ waitingActive: true, waitingMins: 80, waitingReason: 'Agentic trial-output review, Codex run', blockedReason: null, hasBlocked: false });
+  });
+
+  it('does not treat a stale wait as active once the worker moves on', () => {
+    const parsed = parseLogDetailOutput(
+      'WAITING_LINE=15:00:00    waiting 5m for Agentic trial-output review\nLAST_LINE=15:31:36  DECIDE FIX: 1 finding(s)\nCLOSURE_LINE=GREEN_REPAIR_CLOSURE: BLOCKED — F2: the contract cannot work\n',
+    );
+    expect(parsed.waitingActive).toBe(false);
+    expect(parsed.waitingMins).toBeNull();
+    expect(parsed.blockedReason).toBe('F2: the contract cannot work');
+    expect(parsed.hasBlocked).toBe(true);
+  });
+
+  it('defaults empty output without throwing', () => {
+    expect(parseLogDetailOutput('')).toEqual({ waitingActive: false, waitingMins: null, waitingReason: null, blockedReason: null, hasBlocked: false });
+  });
+});
+
 describe('delegateToGreen', () => {
   it('checks Green, resolves and verifies the repo, runs doctor, then launches detached with Codex', async () => {
     const fake = happyRun();
@@ -398,6 +494,106 @@ describe('delegateToGreen', () => {
     expect(fake.calls.findIndex((c) => c.script.includes('test -d'))).toBeLessThan(
       fake.calls.findIndex((c) => c.script.includes('doctor --install-hooks')),
     );
+  });
+
+  it('launches with Muse when Muse is chosen, and installs Green for Muse', async () => {
+    let checked = 0;
+    const fake = fakeRun([
+      [
+        'SKILL.md',
+        () => {
+          checked += 1;
+          return checked === 1 ? { code: 1, stdout: '', stderr: '' } : OK;
+        },
+      ],
+      ['agent-market skill install green', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
+      ['doctor', OK],
+      ['--detach', { code: 0, stdout: 'worker pid: 7\nlog: /tmp/g.log\n', stderr: '' }],
+    ]);
+    const result = await delegateWithNode({ taskSlug: 'ember-task', agent: 'muse' }, { run: fake.run });
+    expect(result).toMatchObject({ ok: true, agent: 'muse' });
+    const launch = fake.calls.at(-1);
+    expect(launch.script).toContain('--agent muse');
+    expect(fake.calls.some((c) => c.script.includes('agent-market skill install green --agent muse --scope user --force'))).toBe(true);
+  });
+
+  it('rejects MetaCode and Claude Code without running anything', async () => {
+    expect(isDelegateAgent('muse')).toBe(true);
+    expect(isDelegateAgent('codex')).toBe(true);
+    expect(isDelegateAgent('metacode')).toBe(false);
+    expect(isDelegateAgent('claude')).toBe(false);
+    for (const agent of ['metacode', 'claude']) {
+      const fake = happyRun();
+      const result = await delegateWithNode({ taskSlug: 'ember-task', agent }, { run: fake.run });
+      expect(result.ok).toBe(false);
+      expect(result.error?.kind).toBe('invalid_agent');
+      expect(result.agent).toBe('codex');
+      expect(fake.calls).toHaveLength(0);
+    }
+  });
+
+  it('returns the worker holding the remote lease instead of failing when the launch is refused', async () => {
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
+      ['doctor', OK],
+      [
+        '--detach',
+        {
+          code: 64,
+          stdout: 'worker pid: 3591932\nlog: /tmp/green.ember-task.20261112-151816.0ihmu90p.log\nrefusing: another unattended worker holds the remote lease for ember-task\n',
+          stderr: '',
+        },
+      ],
+      [
+        'mochi-discover-worker',
+        {
+          code: 0,
+          stdout: 'WORKER_PID=2353662\nWORKER_LOG=/tmp/green.ember-task.20261112-135356.q_oey57t.log\nWORKER_AGENT=codex\n',
+          stderr: '',
+        },
+      ],
+    ]);
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result).toMatchObject({
+      ok: true,
+      agent: 'codex',
+      pid: 2353662,
+      logPath: '/tmp/green.ember-task.20261112-135356.q_oey57t.log',
+      repo: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember',
+      alreadyRunning: true,
+    });
+  });
+
+  it('still fails the launch when refused by the lease but no worker is found', async () => {
+    const fake = fakeRun([
+      ['SKILL.md', OK],
+      ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+      ['test -e', OK],
+      ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+      ['test -d', OK],
+      ['doctor', OK],
+      [
+        '--detach',
+        {
+          code: 64,
+          stdout: 'refusing: another unattended worker holds the remote lease for ember-task\n',
+          stderr: '',
+        },
+      ],
+      ['mochi-discover-worker', OK],
+    ]);
+    const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('launch_failed');
+    expect(result.error?.message).toContain('holds the remote lease');
   });
 
   it('fails closed when the task directory is missing from the checkout, before doctor or launch', async () => {
@@ -505,7 +701,7 @@ describe('delegateToGreen', () => {
     expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
   });
 
-  it('names a missing tool from the doctor report, with how to fix it', async () => {
+  it('names a missing tool from the doctor report, with how to fix it, and tags Docker', async () => {
     const report = [
       'repository      /home/debrax/AAI/swe-bench-aai-labs-ember',
       'codimango       /usr/local/bin/codimango',
@@ -528,6 +724,7 @@ describe('delegateToGreen', () => {
     ]);
     const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
     expect(result.error?.kind).toBe('doctor_failed');
+    expect(result.error?.check).toBe('docker');
     expect(result.error?.message).toBe("Green isn't ready on the devserver: docker is missing (local task proof). Nothing was launched.");
     expect(result.error?.fix).toMatch(/Install Docker on the devserver/);
     expect(result.error?.fix).not.toMatch(/install-hooks/);
@@ -640,5 +837,229 @@ describe('delegateToGreen', () => {
     const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('agentcloud_missing');
+  });
+});
+
+const HANDLER_STATUS_OUTPUT =
+  'PID_ALIVE=1\nLOG_EXISTS=1\nLOG_AGE_SECS=45\nDECIDE_LINE=13:54:27  DECIDE FIX: 1 finding(s) from codimango\nHAS_BLOCKED=0\nHAS_TIMING_ZERO=0\n';
+const HANDLER_DETAIL_WAITING =
+  'WAITING_LINE=15:31:36    waiting 80m for Agentic trial-output review, Codex run\nLAST_LINE=15:31:36    waiting 80m for Agentic trial-output review, Codex run\nCLOSURE_LINE=\n';
+
+function handlerRun(overrides = {}) {
+  return fakeRun([
+    ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
+    ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
+    [
+      'mochi-discover-worker',
+      overrides.discover ?? { code: 0, stdout: 'WORKER_PID=2353662\nWORKER_LOG=/tmp/green.ember-task.log\nWORKER_AGENT=codex\n', stderr: '' },
+    ],
+    ['PID_ALIVE=', overrides.status ?? { code: 0, stdout: HANDLER_STATUS_OUTPUT, stderr: '' }],
+    ['mochi-log-detail', overrides.detail ?? { code: 0, stdout: HANDLER_DETAIL_WAITING, stderr: '' }],
+    ['mochi-lease-age', overrides.lease ?? { code: 0, stdout: `LEASE_TS=${Math.floor(Date.now() / 1000) - 3600}\n`, stderr: '' }],
+  ]);
+}
+
+describe('checkTaskHandler', () => {
+  it('finds a live worker by discovery and reports its wait, without a saved record', async () => {
+    const fake = handlerRun();
+    const result = await checkTaskHandler({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(true);
+    expect(result.probe).toMatchObject({
+      handler: 'green',
+      pid: 2353662,
+      logPath: '/tmp/green.ember-task.log',
+      agent: 'codex',
+      kind: 'working',
+      waitingMins: 80,
+      waitingReason: 'Agentic trial-output review, Codex run',
+      lastActivityAgeSecs: 45,
+    });
+    expect(typeof result.probe.leaseAgeSecs).toBe('number');
+    expect(result.probe.leaseAgeSecs).toBeGreaterThan(3500);
+    expect(fake.calls.find((c) => c.script.includes('mochi-lease-age'))?.cwd).toBe('/home/zixuanchen/AAI/swe-bench-aai-labs-ember');
+  });
+
+  it('reports no handler when discovery finds nothing and no record is given', async () => {
+    const fake = handlerRun({ discover: OK });
+    const result = await checkTaskHandler({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(true);
+    expect(result.probe).toMatchObject({ handler: 'none', pid: null, logPath: null, kind: null });
+    expect(fake.calls.some((c) => c.script.includes('PID_ALIVE='))).toBe(false);
+    expect(fake.calls.some((c) => c.script.includes('mochi-log-detail'))).toBe(false);
+    expect(fake.calls.some((c) => c.script.includes('mochi-lease-age'))).toBe(false);
+  });
+
+  it('reads dead-worker evidence from the saved log when discovery finds nothing', async () => {
+    const fake = handlerRun({
+      discover: OK,
+      status: { code: 0, stdout: 'PID_ALIVE=0\nLOG_EXISTS=1\nLOG_AGE_SECS=900\nDECIDE_LINE=\nHAS_BLOCKED=1\nHAS_TIMING_ZERO=0\n', stderr: '' },
+      detail: { code: 0, stdout: 'WAITING_LINE=\nLAST_LINE=GREEN_REPAIR_CLOSURE: BLOCKED — F2: the contract cannot work\nCLOSURE_LINE=GREEN_REPAIR_CLOSURE: BLOCKED — F2: the contract cannot work\n', stderr: '' },
+    });
+    const result = await checkTaskHandler({ taskSlug: 'ember-task', node: NODE, pid: 99, logPath: '/tmp/old.log' }, { run: fake.run });
+    expect(result.ok).toBe(true);
+    expect(result.probe).toMatchObject({ handler: 'none', pid: 99, logPath: '/tmp/old.log', kind: 'blocked', blockedReason: 'F2: the contract cannot work' });
+  });
+
+  it('reports a probe failure instead of inventing a handler', async () => {
+    const fake = handlerRun({ status: { code: 1, stdout: '', stderr: 'boom' } });
+    const result = await checkTaskHandler({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('node_error');
+  });
+
+  it('rejects an invalid slug or node without running anything', async () => {
+    const fake = handlerRun();
+    expect((await checkTaskHandler({ taskSlug: 'not a slug', node: NODE }, { run: fake.run })).ok).toBe(false);
+    expect((await checkTaskHandler({ taskSlug: 'ember-task', node: 'not a node!!' }, { run: fake.run })).ok).toBe(false);
+    expect(fake.calls).toHaveLength(0);
+  });
+});
+
+describe('stopGreenWorker', () => {
+  it('stops only a verified worker, then confirms it is gone', async () => {
+    let verifies = 0;
+    const fake = fakeRun([
+      [
+        'mochi-verify-worker',
+        () => {
+          verifies += 1;
+          return { code: 0, stdout: verifies === 1 ? 'WORKER_ALIVE=1\n' : 'WORKER_ALIVE=0\n', stderr: '' };
+        },
+      ],
+      ['mochi-stop-worker', OK],
+      ['mochi-discover-worker', OK],
+    ]);
+    const result = await stopGreenWorker({ taskSlug: 'ember-task', node: NODE, pid: 99, logPath: '/tmp/old.log' }, { run: fake.run, pollIntervalMs: 5, maxPolls: 3 });
+    expect(result).toMatchObject({ ok: true, stopped: true, pid: 99 });
+    expect(fake.calls.some((c) => c.script.includes('kill 99'))).toBe(true);
+  });
+
+  it('never kills a pid that is not this task\u2019s Green worker', async () => {
+    const fake = fakeRun([['mochi-verify-worker', { code: 0, stdout: 'WORKER_ALIVE=0\n', stderr: '' }]]);
+    const result = await stopGreenWorker({ taskSlug: 'ember-task', node: NODE, pid: 99, logPath: '/tmp/old.log' }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('not_a_worker');
+    expect(fake.calls.some((c) => c.script.includes('kill'))).toBe(false);
+  });
+
+  it('reports failure when the worker survives SIGTERM instead of escalating', async () => {
+    const fake = fakeRun([
+      ['mochi-verify-worker', { code: 0, stdout: 'WORKER_ALIVE=1\n', stderr: '' }],
+      ['mochi-stop-worker', OK],
+      ['mochi-discover-worker', { code: 0, stdout: 'WORKER_PID=99\nWORKER_LOG=/tmp/old.log\nWORKER_AGENT=codex\n', stderr: '' }],
+    ]);
+    const result = await stopGreenWorker({ taskSlug: 'ember-task', node: NODE, pid: 99, logPath: '/tmp/old.log' }, { run: fake.run, pollIntervalMs: 5, maxPolls: 2 });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('stop_failed');
+    expect(fake.calls.filter((c) => c.script.includes('kill')).length).toBe(1);
+    expect(fake.calls.some((c) => c.script.includes('kill -9') || c.script.includes('kill -KILL'))).toBe(false);
+  });
+});
+
+const DOCKER_PRESENT = 'DOCKER_BIN=/usr/bin/docker\nDOCKER_DAEMON=1\nOS_ID=centos\nHAS_DNF=1\nHAS_YUM=0\nHAS_APT=0\nHAS_SYSTEMCTL=1\nSUDO_OK=1\n';
+const DOCKER_MISSING_DNF = 'DOCKER_BIN=\nDOCKER_DAEMON=0\nOS_ID=centos\nHAS_DNF=1\nHAS_YUM=0\nHAS_APT=0\nHAS_SYSTEMCTL=1\nSUDO_OK=1\n';
+
+describe('installDocker', () => {
+  it('does nothing privileged when Docker is already present and reachable', async () => {
+    const fake = fakeRun([['mochi-docker-probe', { code: 0, stdout: DOCKER_PRESENT, stderr: '' }]]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result).toMatchObject({ ok: true, alreadyInstalled: true, daemonReachable: true });
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls.some((c) => c.script.includes('mochi-docker-install'))).toBe(false);
+  });
+
+  it('installs with dnf, starts the daemon, adds the group, and verifies', async () => {
+    let probes = 0;
+    const fake = fakeRun([
+      [
+        'mochi-docker-probe',
+        () => {
+          probes += 1;
+          return { code: 0, stdout: probes === 1 ? DOCKER_MISSING_DNF : DOCKER_PRESENT, stderr: '' };
+        },
+      ],
+      ['mochi-docker-install', OK],
+      ['mochi-docker-daemon', OK],
+      ['mochi-docker-group', OK],
+    ]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result).toMatchObject({ ok: true, daemonReachable: true });
+    expect(fake.calls.find((c) => c.script.includes('mochi-docker-install'))?.script).toContain('dnf install -y docker-ce');
+    expect(probes).toBe(2);
+  });
+
+  it('installs with apt on Debian-family devservers', async () => {
+    let probes = 0;
+    const fake = fakeRun([
+      [
+        'mochi-docker-probe',
+        () => {
+          probes += 1;
+          return {
+            code: 0,
+            stdout: probes === 1 ? 'DOCKER_BIN=\nDOCKER_DAEMON=0\nOS_ID=ubuntu\nHAS_DNF=0\nHAS_YUM=0\nHAS_APT=1\nHAS_SYSTEMCTL=1\nSUDO_OK=1\n' : DOCKER_PRESENT.replace('centos', 'ubuntu'),
+            stderr: '',
+          };
+        },
+      ],
+      ['mochi-docker-install', OK],
+      ['mochi-docker-daemon', OK],
+      ['mochi-docker-group', OK],
+    ]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(true);
+    expect(fake.calls.find((c) => c.script.includes('mochi-docker-install'))?.script).toContain('apt-get install -y docker.io');
+  });
+
+  it('refuses to guess on an unsupported system and never runs sudo', async () => {
+    const fake = fakeRun([['mochi-docker-probe', { code: 0, stdout: 'DOCKER_BIN=\nDOCKER_DAEMON=0\nOS_ID=\nHAS_DNF=0\nHAS_YUM=0\nHAS_APT=0\nHAS_SYSTEMCTL=0\nSUDO_OK=1\n', stderr: '' }]]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('unsupported_os');
+    expect(fake.calls.some((c) => c.script.includes('mochi-docker-install'))).toBe(false);
+  });
+
+  it('fails closed when sudo needs a password instead of hanging on a prompt', async () => {
+    const fake = fakeRun([['mochi-docker-probe', { code: 0, stdout: DOCKER_MISSING_DNF.replace('SUDO_OK=1', 'SUDO_OK=0'), stderr: '' }]]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('sudo_required');
+    expect(fake.calls.some((c) => c.script.includes('mochi-docker-install'))).toBe(false);
+  });
+
+  it('fails closed when the daemon will not start, before touching the group', async () => {
+    const fake = fakeRun([
+      ['mochi-docker-probe', { code: 0, stdout: DOCKER_MISSING_DNF, stderr: '' }],
+      ['mochi-docker-install', OK],
+      ['mochi-docker-daemon', { code: 1, stdout: '', stderr: 'Failed to start docker.service' }],
+    ]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('daemon_failed');
+    expect(fake.calls.some((c) => c.script.includes('mochi-docker-group'))).toBe(false);
+  });
+
+  it('reports a permission problem when only sudo can reach the daemon after install', async () => {
+    let probes = 0;
+    const fake = fakeRun([
+      [
+        'mochi-docker-probe',
+        () => {
+          probes += 1;
+          return {
+            code: 0,
+            stdout: probes === 1 ? DOCKER_MISSING_DNF : 'DOCKER_BIN=/usr/bin/docker\nDOCKER_DAEMON=0\nOS_ID=centos\nHAS_DNF=1\nHAS_YUM=0\nHAS_APT=0\nHAS_SYSTEMCTL=1\nSUDO_OK=1\n',
+            stderr: '',
+          };
+        },
+      ],
+      ['mochi-docker-install', OK],
+      ['mochi-docker-daemon', OK],
+      ['mochi-docker-group', OK],
+      ['mochi-docker-sudo-info', OK],
+    ]);
+    const result = await installDocker({ taskSlug: 'ember-task', node: NODE }, { run: fake.run });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('docker_permission');
   });
 });
