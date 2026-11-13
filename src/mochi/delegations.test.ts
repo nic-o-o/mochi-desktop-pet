@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  DELEGATE_AGENT_OPTIONS,
   DELEGATE_NODE_STORAGE_KEY,
   DELEGATE_STATUS_LABELS,
+  isDelegateAgent,
+  isDockerMissingFailure,
   loadDelegateNode,
+  removeDelegation,
   loadDelegations,
   normalizeDelegateNode,
   parseDelegations,
@@ -107,5 +111,51 @@ describe('recordDelegation', () => {
     const next = recordDelegation([], record({ status: 'failed', pid: null, logPath: null, errorMessage: 'repo not found' }));
     expect(next[0].status).toBe('failed');
     expect(next[0].errorMessage).toBe('repo not found');
+  });
+});
+
+describe('delegate agent options', () => {
+  it('offers Muse and Codex, with MetaCode and Claude Code unavailable', () => {
+    expect(DELEGATE_AGENT_OPTIONS).toEqual([
+      { id: 'muse', label: 'Muse', available: true },
+      { id: 'codex', label: 'Codex', available: true },
+      { id: 'metacode', label: 'MetaCode', available: false },
+      { id: 'claude', label: 'Claude Code', available: false },
+    ]);
+  });
+
+  it('accepts only Muse and Codex as Green repair agents', () => {
+    expect(isDelegateAgent('muse')).toBe(true);
+    expect(isDelegateAgent('codex')).toBe(true);
+    expect(isDelegateAgent('metacode')).toBe(false);
+    expect(isDelegateAgent('claude')).toBe(false);
+    expect(isDelegateAgent('')).toBe(false);
+    expect(isDelegateAgent(null)).toBe(false);
+  });
+});
+
+describe('docker-missing failures', () => {
+  it('recognizes the docker check, and falls back to the old message text for records saved before it', () => {
+    expect(isDockerMissingFailure(record({ status: 'failed', errorKind: 'doctor_failed', errorCheck: 'docker' }))).toBe(true);
+    expect(
+      isDockerMissingFailure(
+        record({
+          status: 'failed',
+          errorKind: 'doctor_failed',
+          errorMessage: 'Green doctor failed in /home/debrax/AAI/x. docker          MISSING -- local task proof',
+        }),
+      ),
+    ).toBe(true);
+    expect(isDockerMissingFailure(record({ status: 'failed', errorKind: 'doctor_failed', errorMessage: 'Green doctor failed.' }))).toBe(false);
+    expect(isDockerMissingFailure(record())).toBe(false);
+    expect(isDockerMissingFailure(null)).toBe(false);
+  });
+
+  it('removes one task record without mutating the list', () => {
+    const other = record({ taskSlug: 'other-task' });
+    const before = [record(), other];
+    const next = removeDelegation(before, 'ember-task');
+    expect(next).toEqual([other]);
+    expect(before).toHaveLength(2);
   });
 });

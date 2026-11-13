@@ -16,11 +16,11 @@ import {
 } from './logic.ts';
 import { AgentRow } from './AgentRow.tsx';
 import type { AgentReviewControls } from './AgentRow.tsx';
-import { DelegateRow } from './DelegateRow.tsx';
+import { DelegateRow, TaskHandlerStatus } from './DelegateRow.tsx';
 import { HarvesterRow } from './HarvesterRow.tsx';
 import type { HarvesterTaskStatus } from './shell.ts';
 import { delegateAvailable } from './shell.ts';
-import { jobsForTask } from './agentReviews.ts';
+import { isActive, jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
 import type { SetupKind } from './SetupCard.tsx';
 import { SEV_LINES_MAX, sevHeadline } from './sevs.ts';
@@ -255,6 +255,12 @@ function GlanceRow({
   useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
   /* Ready drafts get Submit in the flag slot (drafts + ready-for-submission sections). */
   const showSubmit = kind === 'draft' && t.draftState === 'ready' && canSubmit();
+  /* Revision rows delegate to Green (desktop shell only); the status label
+     sits on the meta line and the picker below it share this one guard. */
+  /* Harvester already has this task: don't offer a second agent (Green) that would push over it. */
+  const showDelegate = kind === 'revision' && !harvesterStatus && delegateAvailable();
+  /* An Ask-agent review on this row is named in the status line; it never blocks a Green repair. */
+  const reviewJobRunning = agentReview ? jobsForTask(agentReview.jobs, t.id).some(isActive) : false;
   const [phase, setPhase] = useState<SubmitPhase>('idle');
   const [note, setNote] = useState('');
   const clickFields = { section, task_id: t.id, ms_since_panel_open: msSincePanelOpen() };
@@ -308,34 +314,41 @@ function GlanceRow({
         {t.title}
       </button>
       <div className="glance-meta">
-        <span className="muted">
-          {t.subtitle
-            ? t.subtitle
-            : kind === 'revision'
-              ? t.checkSummary
-                ? `Validation failed · ${t.checkSummary}`
-                : `${t.type} · ${formatSla(t.slaDueMs, nowMs)}`
-              : t.submittedBy
-                ? `Submitted by ${t.submittedBy}`
-                : `Assigned by ${t.requester}`}
-        </span>
-        {showSubmit ? (
-          phase === 'idle' || phase === 'confirming' ? (
-            <button
-              type="button"
-              className="btn-link agent-link"
-              onClick={() => {
-                logClick('glance_panel', 'submit_button', { ...clickFields, action: 'open_confirm' });
-                setPhase('confirming');
-              }}
-            >
-              Submit
-            </button>
+        <div className="glance-meta-line">
+          <span className="muted">
+            {t.subtitle
+              ? t.subtitle
+              : kind === 'revision'
+                ? t.checkSummary
+                  ? `Validation failed · ${t.checkSummary}`
+                  : `${t.type} · ${formatSla(t.slaDueMs, nowMs)}`
+                : t.submittedBy
+                  ? `Submitted by ${t.submittedBy}`
+                  : `Assigned by ${t.requester}`}
+          </span>
+          {showSubmit ? (
+            phase === 'idle' || phase === 'confirming' ? (
+              <button
+                type="button"
+                className="btn-link agent-link"
+                onClick={() => {
+                  logClick('glance_panel', 'submit_button', { ...clickFields, action: 'open_confirm' });
+                  setPhase('confirming');
+                }}
+              >
+                Submit
+              </button>
+            ) : (
+              <span className="muted small">{phase === 'done' ? 'Submitted ✓' : note}</span>
+            )
           ) : (
-            <span className="muted small">{phase === 'done' ? 'Submitted ✓' : note}</span>
-          )
-        ) : (
-          <RowFlag flag={flag} />
+            <RowFlag flag={flag} />
+          )}
+        </div>
+        {showDelegate && (
+          <div className="glance-meta-line">
+            <TaskHandlerStatus taskSlug={t.title} reviewJobRunning={reviewJobRunning} />
+          </div>
         )}
       </div>
       {kind === 'pending' && agentReview && (
@@ -345,10 +358,7 @@ function GlanceRow({
       {kind !== 'pending' && harvesterStatus && (
         <HarvesterRow taskId={t.id} status={harvesterStatus} nowMs={nowMs} onChanged={harvester?.refresh} />
       )}
-      {/* Harvester already has this task: don't offer a second agent that would push over it. */}
-      {kind === 'revision' && !harvesterStatus && delegateAvailable() && (
-        <DelegateRow taskId={t.id} taskSlug={t.title} detail={t.checkSummary} />
-      )}
+      {showDelegate && <DelegateRow taskId={t.id} taskSlug={t.title} detail={t.checkSummary} />}
       {showSubmit && phase === 'confirming' && (
         <div className="agent-row">
           <fieldset className="agent-picker">

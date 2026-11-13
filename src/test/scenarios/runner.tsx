@@ -126,6 +126,7 @@ export interface ScenarioFile {
 }
 
 interface Harness {
+  delegated: Set<string>;
   opened: string[];
   clipboard: string[];
   reports: ProblemReportState[];
@@ -293,6 +294,7 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
   const given = sc.given?.customize;
   const givenLooks = (given?.looks ?? []).map(lookFor);
   const h: Harness = {
+    delegated: new Set(),
     opened: [],
     clipboard: [],
     reports: [],
@@ -419,8 +421,9 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       h.agentJobs = h.agentJobs.map((j) => (j.id === id ? { ...j, status: 'failed', endedAtMs: Date.now(), failure: agentFailure('cancelled') } : j));
       return Promise.resolve(h.agentJobs);
     },
-    delegateToGreen: (taskSlug) =>
-      Promise.resolve({
+    delegateToGreen: (taskSlug) => {
+      h.delegated.add(String(taskSlug));
+      return Promise.resolve({
         ok: true as const,
         taskSlug: String(taskSlug),
         agent: 'codex' as const,
@@ -428,7 +431,8 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         pid: 424242,
         logPath: '/home/zixuanchen/logs/green-1.log',
         decision: 'DECIDE repair: validation failures',
-      }),
+      });
+    },
     checkDelegateStatus: (req) =>
       Promise.resolve({
         ok: true as const,
@@ -442,6 +446,30 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
           checkedAtMs: Date.now(),
         },
       }),
+    checkTaskHandler: (req) => {
+      const delegated = h.delegated.has(String(req.taskSlug));
+      return Promise.resolve({
+        ok: true as const,
+        probe: {
+          handler: delegated ? ('green' as const) : ('none' as const),
+          pid: delegated ? 424242 : null,
+          logPath: delegated ? '/home/zixuanchen/logs/green-1.log' : null,
+          agent: delegated ? ('codex' as const) : null,
+          kind: delegated ? ('working' as const) : null,
+          lastDecision: delegated ? 'DECIDE FIX: validation failures' : null,
+          lastActivityAgeSecs: delegated ? 60 : null,
+          waitingMins: null,
+          waitingReason: null,
+          blockedReason: null,
+          hasBlocked: false,
+          hasTimingZero: false,
+          leaseAgeSecs: null,
+          checkedAtMs: Date.now(),
+        },
+      });
+    },
+    stopGreenWorker: (req) => Promise.resolve({ ok: true as const, taskSlug: String(req.taskSlug), pid: req.pid, stopped: true }),
+    installDocker: (taskSlug) => Promise.resolve({ ok: true as const, taskSlug: String(taskSlug), alreadyInstalled: true, daemonReachable: true }),
   };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,

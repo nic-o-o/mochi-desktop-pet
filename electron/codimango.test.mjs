@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSubmitBlockers, classifyFailure, isAllowedLink, pickRow, pickSubmitBlockers, pickSubmitSha } from './codimango.mjs';
+import { addSubmitBlockers, classifyFailure, isAllowedLink, pickCanaryScan, pickRow, pickSubmitBlockers, pickSubmitSha } from './codimango.mjs';
 
 describe('classifyFailure', () => {
   it('reports a missing CLI', () => {
@@ -115,12 +115,56 @@ describe('addSubmitBlockers', () => {
       { id: '4', status: 'draft', validationStatus: 'passing' },
     ];
     const asked = [];
-    await addSubmitBlockers(rows, async (id) => {
-      asked.push(id);
-      return id === '4' ? null : ['Provenance SUSPECT'];
-    });
+    await addSubmitBlockers(
+      rows,
+      async (id) => {
+        asked.push(id);
+        return id === '4' ? null : ['Provenance SUSPECT'];
+      },
+      async () => null,
+    );
     expect(asked).toEqual(['1', '4']);
     expect(rows.map((r) => r.submitBlockers)).toEqual([['Provenance SUSPECT'], undefined, undefined, null]);
+  });
+
+  it('reads the canary scan from task show for passing drafts the list row left without one', async () => {
+    const listed = { outcome: 'clean', commitSha: 'a', scannerVersion: 'canary-scan-v1', retryable: false };
+    const shown = { outcome: 'incomplete', commitSha: 'b', scannerVersion: 'canary-scan-v1', retryable: false };
+    const rows = [
+      { id: '1', status: 'draft', validationStatus: 'passing', canaryScan: listed },
+      { id: '2', status: 'draft', validationStatus: 'passing', canaryScan: null },
+      { id: '3', status: 'draft', validationStatus: 'failed', canaryScan: null },
+    ];
+    const shownFor = [];
+    await addSubmitBlockers(
+      rows,
+      async () => [],
+      async (id) => {
+        shownFor.push(id);
+        return shown;
+      },
+    );
+    expect(shownFor).toEqual(['2']);
+    expect(rows.map((r) => r.canaryScan)).toEqual([listed, shown, null]);
+  });
+});
+
+describe('pickCanaryScan', () => {
+  it('reads the scan from a task show body (173718: read budget exhausted)', () => {
+    expect(
+      pickCanaryScan({
+        qualitativeResult: {
+          benchmarkCanaryScanResult: {
+            commitSha: 'efa7c1f7fa1e17fbcbc6cf427ade52f3e6772ac9',
+            outcome: 'incomplete',
+            reason: 'read_budget_exhausted',
+            retryable: false,
+            scannerVersion: 'canary-scan-v1',
+          },
+        },
+      }),
+    ).toEqual({ outcome: 'incomplete', commitSha: 'efa7c1f7fa1e17fbcbc6cf427ade52f3e6772ac9', scannerVersion: 'canary-scan-v1', retryable: false });
+    expect(pickCanaryScan({})).toBeNull();
   });
 });
 
