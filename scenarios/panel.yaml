@@ -113,11 +113,11 @@ scenarios:
       - open_menu
       - expect:
           see: [Show in panel]
-          not_see: [Report a problem…, Copy my review stats, Share usage data]
+          not_see: [Report a problem…, Share usage data]
       - open_settings
       - expect:
-          see: [Settings, Customize Mochi…, Open at login, Share usage data, Help, Copy my review stats, Report a problem…]
-          not_see: [Show in panel]
+          see: [Settings, Customize Mochi…, Open at login, Share usage data, Help, Report a problem…]
+          not_see: [Show in panel, Copy my review stats]
           events:
             - { event: mochi_click, surface: glance_panel, component: settings }
       - toggle_section: Share usage data

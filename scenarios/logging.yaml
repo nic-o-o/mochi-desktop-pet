@@ -140,15 +140,3 @@ scenarios:
             - { event: mochi_click, component: goal_stepper, goal: reviews, old_value: 5, new_value: 6 }
             - { event: mochi_click, component: goal_stepper, goal: accepted, old_value: 2, new_value: 1 }
           event_count: { match: { event: mochi_daily_active }, count: 1 }
-
-  - id: log-usage-in-copied-stats
-    title: Copy my review stats includes the usage summary
-    given: { live: two_reviews }
-    steps:
-      - start
-      - click_pet
-      - open_settings
-      - click: Copy my review stats
-      - expect:
-          clipboard: [Mochi review stats, Mochi usage (last 7 days on this Mac; counts only)]
-          events: [{ event: mochi_click, surface: glance_panel, component: copy_stats }]

@@ -63,7 +63,6 @@ interface OverviewPanelProps {
   /** "Show notifications" at the end of the bell menu: replay the bubbles, latest first. */
   onShowNotifications?: () => void;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
-  onCopyStats?: () => Promise<boolean>;
   /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
   onReportProblem?: () => Promise<boolean>;
   /** Opens Customize Mochi (filter menu footer); only when this build can draw pets. */
@@ -561,13 +560,11 @@ export function SectionFilter({
 export function SettingsMenu({
   open,
   onOpenChange,
-  onCopyStats,
   onReportProblem,
   onCustomize,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCopyStats?: () => Promise<boolean>;
   onReportProblem?: () => Promise<boolean>;
   onCustomize?: () => void;
 }) {
@@ -577,18 +574,14 @@ export function SettingsMenu({
     const id = window.setTimeout(() => setReportState('idle'), 4000);
     return () => window.clearTimeout(id);
   }, [reportState]);
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
-  useEffect(() => {
-    if (copyState === 'idle') return;
-    const id = window.setTimeout(() => setCopyState('idle'), 2000);
-    return () => window.clearTimeout(id);
-  }, [copyState]);
   /* Read fresh each time the menu opens: the dock menu can change these too. */
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [node, setNode] = useState<string | null>(null);
+  /* Bumped by Change so the saved devserver is read again. */
+  const [nodeVersion, setNodeVersion] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- nodeVersion only forces a fresh read
+  const node = useMemo(() => (open ? loadDelegateNode() : null), [open, nodeVersion]);
   useEffect(() => {
     if (!open) return;
-    setNode(loadDelegateNode());
     let live = true;
     void appSettings().then((next) => live && setSettings(next));
     return () => {
@@ -674,7 +667,7 @@ export function SettingsMenu({
                 onClick={() => {
                   logClick('glance_panel', 'delegate_node_forget');
                   forgetDelegateNode();
-                  setNode(null);
+                  setNodeVersion((v) => v + 1);
                 }}
                 title="Forget it; the next delegation asks again"
               >
@@ -682,20 +675,7 @@ export function SettingsMenu({
               </button>
             </div>
           )}
-          {(onCopyStats || onReportProblem) && <p className="section-menu-title settings-menu-group">Help</p>}
-          {onCopyStats && (
-            <button
-              type="button"
-              className="section-menu-action"
-              onClick={() => {
-                logClick('glance_panel', 'copy_stats');
-                void onCopyStats().then((ok) => setCopyState(ok ? 'copied' : 'failed'));
-              }}
-              title="Copies your review speed before and since installing Mochi, to send to the Mochi team"
-            >
-              {copyState === 'copied' ? 'Copied ✓' : copyState === 'failed' ? "Couldn't copy" : 'Copy my review stats'}
-            </button>
-          )}
+          {onReportProblem && <p className="section-menu-title settings-menu-group">Help</p>}
           {onReportProblem && (
             <button
               type="button"
@@ -869,7 +849,6 @@ export function OverviewPanel(props: OverviewPanelProps) {
             <SettingsMenu
               open={openMenu === 'settings'}
               onOpenChange={(next) => setOpenMenu(next ? 'settings' : null)}
-              onCopyStats={props.onCopyStats}
               onCustomize={props.onCustomize}
               onReportProblem={props.onReportProblem}
             />

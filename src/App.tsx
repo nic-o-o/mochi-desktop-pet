@@ -15,7 +15,7 @@ import {
 import type { PlacedRect, Rect, WeeklyGoals, XY } from './mochi/logic.ts';
 import { PET_POS_STORAGE_KEY, loadGoals, saveGoals } from './mochi/mockData.ts';
 import { useTasks } from './mochi/useTasks.ts';
-import { advanceStudy, loadStudy, saveStudy, studyReport } from './mochi/study.ts';
+import { advanceStudy, loadStudy, saveStudy } from './mochi/study.ts';
 import type { StudyRecord } from './mochi/study.ts';
 import { SECTIONS, loadSectionOrder, loadSectionPrefs, saveSectionOrder, saveSectionPrefs, visibleStatuses } from './mochi/sections.ts';
 import type { SectionOrder, SectionPrefs } from './mochi/sections.ts';
@@ -42,7 +42,6 @@ import {
   reportProblem,
   startAgentReview,
   syncBounds,
-  usageSummary,
 } from './mochi/shell.ts';
 import type { ProblemReportState } from './mochi/shell.ts';
 import { OverviewPanel } from './mochi/OverviewPanel.tsx';
@@ -270,17 +269,6 @@ export default function App() {
   );
   const startProblemReport = useCallback(() => reportProblem(reportState), [reportState]);
   useEffect(() => onReportRequest(() => void startProblemReport()), [startProblemReport]);
-  const copyStats = useCallback(async () => {
-    const study = studyRef.current ?? loadStudy();
-    if (!study) return false;
-    try {
-      const usage = await usageSummary();
-      await navigator.clipboard.writeText(studyReport(study, snapshot, Date.now()) + (usage ? `\n\n${usage}` : ''));
-      return true;
-    } catch {
-      return false;
-    }
-  }, [snapshot]);
   /* Missing CLI or sign-in: the panel shows setup steps. The last failure stays
      up while "Check connection" runs, and clears only on a successful read. */
   const setupKind =
@@ -977,7 +965,6 @@ export default function App() {
           revisions={revisions}
           drafts={drafts}
           submittable={submittable}
-          onCopyStats={status === 'mock' ? undefined : copyStats}
           onReportProblem={status === 'mock' ? undefined : startProblemReport}
           onCustomize={looks.state.available ? openCustomize : undefined}
           sections={sections}

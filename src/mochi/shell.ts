@@ -71,8 +71,6 @@ export interface MochiShell {
   openLink?: (url: string) => Promise<boolean>;
   /** Append a usage event to events.jsonl (main adds the common columns). */
   logEvent?: (event: UsageEvent) => void;
-  /** Last 7 days of usage as paste-able counts; null if nothing is logged. */
-  usageSummary?: () => Promise<string | null>;
   /** Codimango SEVs, already filtered (open in the last week, or mitigated in the last day). */
   listSevs?: () => Promise<Sev[]>;
   /** The SEV list changed (read every ten minutes); returns unsubscribe. */
@@ -249,12 +247,6 @@ export function reportProblem(state: ProblemReportState): Promise<boolean> {
 
 export function logEvent(event: UsageEvent): void {
   bridge()?.logEvent?.(event);
-}
-
-export function usageSummary(): Promise<string | null> {
-  const b = bridge();
-  if (!b?.usageSummary) return Promise.resolve(null);
-  return b.usageSummary().catch(() => null);
 }
 
 export function onScreenLock(callback: (locked: boolean) => void): () => void {

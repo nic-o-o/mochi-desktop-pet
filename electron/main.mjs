@@ -32,7 +32,7 @@ import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewS
 import { checkDelegateStatus, delegateToGreen } from './delegate.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
-import { createEventLog, readEvents, usageSummary } from './events.mjs';
+import { createEventLog } from './events.mjs';
 import { FLUSH_MS, flushSender, loadSharing, setSharing } from './sender.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
@@ -284,7 +284,6 @@ ipcMain.handle('mochi:look-delete', (_event, id) => customizer?.remove(String(id
 
 ipcMain.handle('mochi:agent-review-cancel', (_event, id) => agentReviews?.cancel(String(id)) ?? []);
 
-ipcMain.handle('mochi:usage-summary', () => (events ? usageSummary(readEvents(events.file, Date.now())) : null));
 
 /** Hourly CPU and memory across Mochi's processes (logging plan: mochi_resource). */
 function sampleResources() {

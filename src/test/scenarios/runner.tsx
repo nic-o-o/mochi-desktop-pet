@@ -333,7 +333,6 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     openLink: (url) => (h.opened.push(url), Promise.resolve(true)),
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
     logEvent: (event) => void h.events.push(event),
-    usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
     listSevs: () => Promise.resolve((sc.given?.sevs ?? []).map((g) => givenSev(g, now))),
     onSevsChanged: (cb) => ((h.sevListener = cb), () => {}),
     listAgentReviews: () => Promise.resolve(h.agentJobs),
