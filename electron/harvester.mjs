@@ -310,7 +310,7 @@ export async function harvesterStatusesOnNode({ node, token = '' }, { run }) {
   return { available: true, statuses };
 }
 
-async function remoteAction({ node, token = '', argv }, { run }) {
+async function remoteAction({ node, argv }, { run }) {
   let res;
   try {
     res = await run({ node, script: remoteScript(argv), timeoutMs: REMOTE_TIMEOUT_MS });
@@ -325,7 +325,7 @@ async function remoteAction({ node, token = '', argv }, { run }) {
 /** Stop a run on the devserver's board. */
 export function stopHarvesterRunOnNode({ node, base, runId, token = '' }, { run }) {
   if (!REMOTE_BASE.test(str(base)) || !str(runId).trim()) return Promise.resolve({ ok: false, error: 'No Harvester run to stop.' });
-  return remoteAction({ node, token, argv: ['stop', token, base, str(runId)] }, { run });
+  return remoteAction({ node, argv: ['stop', token, base, str(runId)] }, { run });
 }
 
 /** Restart a task's revival on the devserver's board (publishes, like any revival). */
@@ -333,5 +333,5 @@ export function restartHarvesterTaskOnNode({ node, base, repo, taskName, intent,
   if (!REMOTE_BASE.test(str(base)) || !TASK_NAME.test(str(taskName)) || !str(repo).trim()) {
     return Promise.resolve({ ok: false, error: 'Not a task Harvester can restart.' });
   }
-  return remoteAction({ node, token, argv: ['restart', token, base, str(repo), str(taskName), intent === 'revision' ? 'revision' : 'revive'] }, { run });
+  return remoteAction({ node, argv: ['restart', token, base, str(repo), str(taskName), intent === 'revision' ? 'revision' : 'revive'] }, { run });
 }
