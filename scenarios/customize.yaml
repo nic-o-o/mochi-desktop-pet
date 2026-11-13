@@ -16,7 +16,7 @@ scenarios:
       - start
       - expect: { pet_look: classic }
       - click_pet
-      - open_menu
+      - open_settings
       - click: Customize Mochi…
       - expect:
           see: [Describe your Mochi, My Mochis, Classic]
@@ -42,7 +42,7 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
+      - open_settings
       - click: Customize Mochi…
       - fill: { label: Describe your Mochi, text: "a scary dragon #refused" }
       - click: Draw Mochi
@@ -58,7 +58,7 @@ scenarios:
       - start
       - expect: { pet_look: custom }
       - click_pet
-      - open_menu
+      - open_settings
       - click: Customize Mochi…
       - click: Reset to classic Mochi
       - expect:
@@ -72,7 +72,7 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
+      - open_settings
       - click: Customize Mochi…
       - press: Delete a fluffy bunny
       - expect:
@@ -86,5 +86,5 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
-      - expect: { see: [Show in panel], not_see: [Customize Mochi…] }
+      - open_settings
+      - expect: { see: [Settings, Share usage data], not_see: [Customize Mochi…] }

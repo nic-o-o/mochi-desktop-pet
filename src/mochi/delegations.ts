@@ -99,6 +99,15 @@ export function loadDelegateNode(): string | null {
   }
 }
 
+/** Forget the saved devserver: the next delegation asks for it again. */
+export function forgetDelegateNode(): void {
+  try {
+    localStorage.removeItem(DELEGATE_NODE_STORAGE_KEY);
+  } catch {
+    /* storage unavailable — nothing saved to forget */
+  }
+}
+
 export function saveDelegateNode(node: string): void {
   try {
     localStorage.setItem(DELEGATE_NODE_STORAGE_KEY, node);

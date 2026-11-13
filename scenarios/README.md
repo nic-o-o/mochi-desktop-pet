@@ -67,6 +67,7 @@ review skill answers ("## Review summary", "## Structured form"). `report:` in
 | `close_panel`, `hide_pet`, `restore_pet` | Panel ×, hide to the paw, click the paw |
 | `bubble_older`, `bubble_newer` | › and ‹ in the bubble |
 | `open_menu`, `toggle_section: Drafts` | ≡ menu (again to close); tick or untick a section by its label |
+| `open_settings` | ⚙ Settings menu: Customize Mochi, Open at login, Share usage data, delegation devserver, Help (`toggle_section` ticks its checkboxes too) |
 | `open_notify_menu` | Bell menu (again to close); tick or untick a notification kind by its label with `toggle_section` |
 | `drag_section: { label: Waiting for your review, dy: -40 }` | Drag a section header's handle that far up (negative) or down in the main panel |
 | `delegate_task: ember-results-sync` | Open the Delegate picker for that revision row and confirm with Codex |

@@ -46,7 +46,7 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
+      - open_settings
       - click: Report a problem…
       - expect:
           report: { status: ok, failureKind: null, counts: { reviews: 1, revisions: 0, drafts: 1 } }
@@ -70,7 +70,7 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
+      - open_settings
       - click: Copy my review stats
       - expect:
           clipboard: [Mochi review stats]

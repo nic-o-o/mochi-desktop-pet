@@ -147,7 +147,7 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
+      - open_settings
       - click: Copy my review stats
       - expect:
           clipboard: [Mochi review stats, Mochi usage (last 7 days on this Mac; counts only)]

@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('mochiShell', {
     ipcRenderer.on('mochi:agent-reviews', listener);
     return () => ipcRenderer.removeListener('mochi:agent-reviews', listener);
   },
+  appSettings: () => ipcRenderer.invoke('mochi:app-settings'),
+  setAppSetting: (key, value) => ipcRenderer.invoke('mochi:app-setting-set', key, value === true),
   looksState: () => ipcRenderer.invoke('mochi:looks-state'),
   generatePet: (text) => ipcRenderer.invoke('mochi:pet-generate', text),
   cancelPetGenerate: () => ipcRenderer.invoke('mochi:pet-generate-cancel'),
