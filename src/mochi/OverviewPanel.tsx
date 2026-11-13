@@ -356,7 +356,7 @@ function GlanceRow({
       )}
       {/* Second status line: the agent working on this task (Harvester), under the validation line above. */}
       {kind !== 'pending' && harvesterStatus && (
-        <HarvesterRow taskId={t.id} status={harvesterStatus} nowMs={nowMs} onChanged={harvester?.refresh} />
+        <HarvesterRow taskId={t.id} status={harvesterStatus} revision={kind === 'revision'} nowMs={nowMs} onChanged={harvester?.refresh} />
       )}
       {showDelegate && <DelegateRow taskId={t.id} taskSlug={t.title} detail={t.checkSummary} />}
       {showSubmit && phase === 'confirming' && (

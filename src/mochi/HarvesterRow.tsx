@@ -2,7 +2,9 @@
  * working, stuck, done or stopped — with Harvester's own one-line reason, and
  * the matching action. Active runs offer Stop (Harvester won't restart a task
  * while its run is active); stopped runs offer Restart, which publishes: it
- * pushes to the task and posts a comment. Both ask first.
+ * pushes to the task and posts a comment. Both ask first. On a Needs revision
+ * row Restart uses Harvester's revision workflow (address the reviewer's
+ * request); on drafts, the run's own intent.
  */
 import { useState } from 'react';
 import { HARVESTER_LABELS, sinceLabel } from './harvester.ts';
@@ -15,6 +17,7 @@ type Phase = 'idle' | 'confirm-stop' | 'confirm-restart' | 'working' | 'error' |
 export function HarvesterRow({
   taskId,
   status,
+  revision = false,
   nowMs,
   onChanged,
   stop = stopHarvesterRun,
@@ -22,6 +25,8 @@ export function HarvesterRow({
 }: {
   taskId: string;
   status: HarvesterTaskStatus;
+  /** A Needs revision row: Restart asks Harvester to address the reviewer's request, not just repair validation. */
+  revision?: boolean;
   nowMs: number;
   /** Re-read statuses after an action. */
   onChanged?: () => void;
@@ -38,10 +43,10 @@ export function HarvesterRow({
     setPhase('working');
     setNote(kind === 'stop' ? 'Stopping…' : 'Restarting…');
     logClick('glance_panel', kind === 'stop' ? 'harvester_stop' : 'harvester_restart', fields);
-    const res = await (kind === 'stop' ? stop(status) : restart(status));
+    const res = await (kind === 'stop' ? stop(status) : restart({ ...status, intent: revision ? 'revision' : status.intent }));
     if (res.ok) {
       setPhase('sent');
-      setNote(kind === 'stop' ? 'Stopped. Restart when you are ready.' : 'Restarted: Harvester queued a new run.');
+      setNote(kind === 'stop' ? 'Stopped. Restart when you are ready.' : 'Restarted: Harvester queued it again.');
       onChanged?.();
     } else {
       setPhase('error');
@@ -49,15 +54,43 @@ export function HarvesterRow({
     }
   }
 
+  const canStop = (status.kind === 'stuck' || status.kind === 'working') && Boolean(status.runId);
+  const canRestart = status.kind === 'stopped';
+  const showAction = phase === 'idle' || phase === 'sent' || phase === 'error';
   return (
     <div className="agent-row harvester-row">
-      <ul className="agent-status-list">
-        <li className={`agent-status ${tone}`} title={status.reason || undefined}>
+      {/* Same shape as the validation line above: text on the left, the action in the flag's slot on the right. */}
+      <div className="glance-meta-line">
+        <span className={`agent-status ${tone}`} title={status.reason || undefined}>
           {HARVESTER_LABELS[status.kind]}
           {status.reason ? ` · ${status.reason}` : ''}
           {since ? <span className="muted"> · {since}</span> : null}
-        </li>
-      </ul>
+        </span>
+        {showAction && canStop && (
+          <button
+            type="button"
+            className="btn-link agent-link glance-action"
+            onClick={() => {
+              logClick('glance_panel', 'harvester_stop_open', fields);
+              setPhase('confirm-stop');
+            }}
+          >
+            Stop
+          </button>
+        )}
+        {showAction && canRestart && (
+          <button
+            type="button"
+            className="btn-link agent-link glance-action"
+            onClick={() => {
+              logClick('glance_panel', 'harvester_restart_open', fields);
+              setPhase('confirm-restart');
+            }}
+          >
+            Restart
+          </button>
+        )}
+      </div>
       {phase === 'confirm-stop' ? (
         <fieldset className="agent-picker">
           <legend>Stop Harvester</legend>
@@ -79,7 +112,8 @@ export function HarvesterRow({
         <fieldset className="agent-picker">
           <legend>Restart Harvester</legend>
           <p className="muted small">
-            Harvester starts a new run on <code>{status.taskName}</code>. It pushes its repairs to the task and posts a comment, like any Harvester
+            Harvester queues <code>{status.taskName}</code> again
+            {revision ? ' to address the requested revisions' : ''}. It pushes its repairs to the task and posts a comment, like any Harvester
             revival.
           </p>
           <div className="agent-picker-actions">
@@ -91,35 +125,9 @@ export function HarvesterRow({
             </button>
           </div>
         </fieldset>
-      ) : (
-        <div className="agent-row-actions">
-          {phase === 'working' || phase === 'sent' || phase === 'error' ? <span className={`small ${phase === 'error' ? 'agent-failed' : 'muted'}`}>{note}</span> : null}
-          {phase !== 'working' && (status.kind === 'stuck' || status.kind === 'working') && status.runId && (
-            <button
-              type="button"
-              className="btn-link agent-link"
-              onClick={() => {
-                logClick('glance_panel', 'harvester_stop_open', fields);
-                setPhase('confirm-stop');
-              }}
-            >
-              Stop
-            </button>
-          )}
-          {phase !== 'working' && status.kind === 'stopped' && (
-            <button
-              type="button"
-              className="btn-link agent-link"
-              onClick={() => {
-                logClick('glance_panel', 'harvester_restart_open', fields);
-                setPhase('confirm-restart');
-              }}
-            >
-              Restart
-            </button>
-          )}
-        </div>
-      )}
+      ) : phase === 'working' || phase === 'sent' || phase === 'error' ? (
+        <p className={`agent-note small ${phase === 'error' ? 'agent-failed' : 'muted'}`}>{note}</p>
+      ) : null}
     </div>
   );
 }

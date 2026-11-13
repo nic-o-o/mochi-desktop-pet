@@ -25,8 +25,8 @@
  * by an agent with its revive skill — the script reads Harvester's run records
  * (~/.cache/harvester-board/runs, which the skill's launcher shares with the
  * board), uses Harvester's own runner to check each process is alive and to
- * read its taskflow state, stops with runner.cancel and restarts with the
- * skill's launch.py.
+ * read its taskflow state, stops with runner.cancel and restarts the way the
+ * skill's launch.py does (queue, then its queue drainer), keeping the intent.
  */
 
 export const HARVESTER_PORTS = [44101, 44100, 44102, 44103, 44104, 44105, 44106, 44107, 44108, 44109];
@@ -48,6 +48,12 @@ function epochMs(v) {
   if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
   const t = Date.parse(str(v));
   return Number.isNaN(t) ? null : t;
+}
+
+/** The newest of these timestamps, in ms, or null. */
+function latestMs(values) {
+  const ms = values.map(epochMs).filter((v) => v != null);
+  return ms.length ? Math.max(...ms) : null;
 }
 
 /** The board's own one-line reason for a run, trimmed to one line. */
@@ -74,7 +80,14 @@ function endedReason(last) {
  */
 export function mapRun(run) {
   const state = str(run?.state);
-  const detail = isObj(run?.detail) ? run.detail : {};
+  /* Harvester reuses one record per task across cycles; a restart re-queues it
+     (lifecycle_started_at moves) but its taskflow state stays from the last
+     cycle until the new one writes. Older than the cycle = not this run's. */
+  const cycleMs = epochMs(run?.lifecycle_started_at);
+  const rawDetail = isObj(run?.detail) ? run.detail : {};
+  const detailMs = epochMs(rawDetail.at);
+  const detail = cycleMs != null && detailMs != null && detailMs < cycleMs ? {} : rawDetail;
+  run = { ...run, detail };
   const phase = str(isObj(detail.timing) ? detail.timing.phase : '');
   const outcome = str(detail.outcome);
   const restarts = Number.isFinite(Number(run?.restart_count)) ? Number(run.restart_count) : 0;
@@ -94,7 +107,7 @@ export function mapRun(run) {
     runId: str(run?.id) || null,
     intent: str(run?.intent) === 'revision' ? 'revision' : 'revive',
     restartCount: restarts,
-    sinceMs: epochMs(run?.last_progress_at) ?? epochMs(run?.ended_at) ?? epochMs(run?.started_at),
+    sinceMs: latestMs([run?.last_progress_at, detail.at, run?.moved_at, run?.lifecycle_started_at, run?.ended_at, run?.started_at]),
     startedMs: epochMs(run?.started_at),
   };
 }
@@ -214,7 +227,7 @@ export function restartHarvesterTask({ base, repo, taskName, intent, owner, toke
  * the devserver's own user, which Harvester requires to match the board owner.
  */
 const REMOTE_SCRIPT = String.raw`
-import contextlib, getpass, glob, io, json, os, ssl, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import contextlib, getpass, glob, io, json, os, ssl, sys, time, urllib.error, urllib.parse, urllib.request
 ctx = ssl._create_unverified_context()
 args = sys.argv[2:]
 mode, token = args[0], args[1]
@@ -238,8 +251,9 @@ def trim(run):
     f = run.get("failure") if isinstance(run.get("failure"), dict) else {}
     t = d.get("timing") if isinstance(d.get("timing"), dict) else {}
     keep = {k: run.get(k) for k in ("id", "task_name", "state", "stalled_since", "restart_count", "error",
-                                    "started_at", "ended_at", "intent", "last_progress_at", "process_ended")}
-    keep["detail"] = {"detail": d.get("detail"), "means": d.get("means"), "outcome": d.get("outcome"),
+                                    "started_at", "ended_at", "intent", "last_progress_at", "process_ended",
+                                    "lifecycle_started_at", "moved_at")}
+    keep["detail"] = {"detail": d.get("detail"), "means": d.get("means"), "outcome": d.get("outcome"), "at": d.get("at"),
                       "timing": {"phase": t.get("phase")}}
     keep["failure"] = {"cause": f.get("cause"), "message": f.get("message")}
     return keep
@@ -322,8 +336,6 @@ def disk_status():
                 alive = drain
             if not alive:
                 run["process_ended"] = True
-        if not run.get("last_progress_at") and detail.get("at"):
-            run["last_progress_at"] = detail.get("at")
         groups.setdefault(str(r.get("repo_root") or ""), []).append(trim(run))
     return {"available": bool(recs), "boards": [{"base": "disk", "repo": k, "runs": v} for k, v in groups.items()]}
 def disk_action():
@@ -335,20 +347,28 @@ def disk_action():
             return {"ok": False, "error": "Harvester has no record of that run on the devserver."}
         res, err = load_runner(engine).cancel(args[3], actor=getpass.getuser())
         return {"ok": res is not None and not err, "error": str(err) if err else None}
-    repo_root, name = args[3], args[4]
+    # What the revive skill's launch.py does, with the intent kept: "revision"
+    # makes Harvester address the reviewer's request (launch.py always revives).
+    repo_root, name, intent = args[3], args[4], args[5]
     rec = next((r for r in recs if r.get("task_name") == name), None)
     engine = engine_for([rec] if rec else [])
     launcher = os.path.join(engine or "", "skills", "revive", "scripts", "launch.py")
-    if not engine or not os.path.isfile(launcher):
+    if not engine or not os.path.isfile(launcher) or not os.path.isdir(repo_root):
         return {"ok": False, "error": "Couldn't find Harvester's launcher on the devserver."}
-    argv0 = str(((rec or {}).get("argv") or [""])[0])
-    python = argv0 if os.path.basename(argv0).startswith("python") and os.path.isfile(argv0) else sys.executable
-    cmd = [python, launcher, name] + (["--project", repo_root] if repo_root and os.path.isdir(repo_root) else [])
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=45, stdin=subprocess.DEVNULL)
-    if p.returncode == 0:
-        return {"ok": True, "error": None}
-    lines = [l for l in (p.stderr or p.stdout or "").splitlines() if l.strip()]
-    return {"ok": False, "error": (lines[-1] if lines else "Harvester's launcher failed.")[:300]}
+    sys.path.insert(0, os.path.dirname(launcher))
+    with contextlib.redirect_stdout(io.StringIO()):
+        import launch
+        for env in getattr(launch.runner, "INHERITED_LEASE_ENVS", ()):
+            os.environ.pop(env, None)
+        config_root, task_path = launch.resolve(name, repo_root)
+        started, queued, errors = launch.runner.queue_revives(
+            repo_root=str(config_root), repo=config_root.name, tasks=[task_path.name],
+            actor=getpass.getuser(), worker_mode="1p", publish=True, local_docker=True,
+            intent="revision" if intent == "revision" else "revive")
+        if errors and not started and not queued:
+            return {"ok": False, "error": "; ".join(str(e) for e in errors)[:300]}
+        launch._ensure_promoter(config_root)
+    return {"ok": True, "error": None}
 out = {}
 if mode == "status":
     bases = ["https://localhost:%d" % p for p in range(44200, 44210)] + ["http://127.0.0.1:%d" % p for p in range(44100, 44110)]

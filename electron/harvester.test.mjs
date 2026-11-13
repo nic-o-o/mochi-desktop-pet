@@ -51,6 +51,25 @@ describe('mapRun', () => {
   });
 });
 
+describe('a restarted task (Harvester re-queues the same record)', () => {
+  it('ignores taskflow state from the previous cycle and times the status from the restart', () => {
+    const run = {
+      state: 'queued',
+      started_at: '2026-10-23T22:26:18Z',
+      lifecycle_started_at: '2026-11-13T23:50:16Z',
+      moved_at: '2026-11-13T23:50:16Z',
+      detail: { outcome: 'infrastructure_blocked', detail: 'Nest has not created a validation commit', at: Date.parse('2026-11-01T20:28:00Z') / 1000, timing: { phase: 'platform_blocked' } },
+    };
+    expect(mapRun(run)).toMatchObject({ kind: 'working', reason: 'Queued', sinceMs: Date.parse('2026-11-13T23:50:16Z') });
+  });
+
+  it('keeps taskflow state written during the current cycle', () => {
+    const at = Date.parse('2026-11-13T23:55:00Z') / 1000;
+    const run = { state: 'running', lifecycle_started_at: '2026-11-13T23:50:16Z', detail: { detail: 'Repairing, round 1', at, timing: { phase: 'platform_blocked' } } };
+    expect(mapRun(run)).toMatchObject({ kind: 'stuck', reason: 'Repairing, round 1', sinceMs: at * 1000 });
+  });
+});
+
 describe('runReason', () => {
   it('prefers detail.detail, then means, then failure.cause, one line and capped', () => {
     expect(runReason({ detail: { detail: 'oracle 1/3 failing\nmore', means: 'x' } })).toBe('oracle 1/3 failing');
@@ -237,11 +256,26 @@ describe('devserver script without a board', () => {
         'def cancel(run_id, actor=""):',
         '    _log({"cancel": run_id, "actor": actor})',
         '    return {"id": run_id}, None',
+        'def queue_revives(*, repo_root, repo, tasks, actor="", worker_mode="", publish=True, local_docker=True, intent="revive"):',
+        '    _log({"queue": tasks, "repo": repo, "actor": actor, "publish": publish, "intent": intent})',
+        '    return [], tasks, []',
       ].join('\n'),
     );
     fs.writeFileSync(
       path.join(engine, 'skills/revive/scripts/launch.py'),
-      'import json, os, sys\nwith open(os.environ["FAKE_LOG"], "a") as f: f.write(json.dumps({"launch": sys.argv[1:]}) + "\\n")\nprint("Revive started")\n',
+      [
+        'import os, pathlib, sys',
+        'sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "ui"))',
+        'import runner',
+        'print("noise on stdout")',
+        'def resolve(target, explicit_project=""):',
+        '    if target.startswith("missing"): raise ValueError("no task named " + target)',
+        '    root = pathlib.Path(explicit_project)',
+        '    return root, root / target',
+        'def _ensure_promoter(config_root):',
+        '    runner._log({"promoter": str(config_root)})',
+        '    return 1, config_root / "log"',
+      ].join('\n'),
     );
     const rec = (id, fields) => fs.writeFileSync(path.join(runs, `${id}.json`), JSON.stringify({ id, kind: 'taskflow', engine_checkout: engine, repo_root: project, ...fields }));
     rec('a-old', { task_name: 'ember-a', state: 'done', started_at: '2026-11-01T00:00:00Z' });
@@ -269,11 +303,20 @@ describe('devserver script without a board', () => {
     expect(out.boards[0]).toMatchObject({ base: 'disk', repo: h.project });
   });
 
-  it('stops with Harvester\'s cancel as this user and restarts with its revive launcher', () => {
+  it('stops with Harvester\'s cancel as this user and restarts like its revive launcher, keeping the intent', () => {
     const h = fakeHarvester();
+    const me = os.userInfo().username;
+    const repo = path.basename(h.project);
     expect(runScript(h, ['stop', '', 'disk', 'b'])).toEqual({ ok: true, error: null });
-    expect(runScript(h, ['restart', '', 'disk', h.project, 'ember-a', 'revive'])).toEqual({ ok: true, error: null });
+    expect(runScript(h, ['restart', '', 'disk', h.project, 'ember-a', 'revision'])).toEqual({ ok: true, error: null });
+    expect(runScript(h, ['restart', '', 'disk', h.project, 'ember-b', 'revive'])).toEqual({ ok: true, error: null });
     expect(runScript(h, ['stop', '', 'disk', 'nope']).ok).toBe(false);
-    expect(calls(h)).toEqual([{ cancel: 'b', actor: os.userInfo().username }, { launch: ['ember-a', '--project', h.project] }]);
+    expect(calls(h)).toEqual([
+      { cancel: 'b', actor: me },
+      { queue: ['ember-a'], repo, actor: me, publish: true, intent: 'revision' },
+      { promoter: h.project },
+      { queue: ['ember-b'], repo, actor: me, publish: true, intent: 'revive' },
+      { promoter: h.project },
+    ]);
   });
 });

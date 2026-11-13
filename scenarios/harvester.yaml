@@ -53,23 +53,39 @@ scenarios:
             - { event: mochi_click, surface: glance_panel, component: harvester_stop, task_id: v1, status: stuck }
 
   - id: harvester-restart-stopped
-    title: A stopped Harvester run restarts with the same workflow, after saying it will push
+    title: Restart on a Needs revision row asks Harvester to address the revisions, after saying it will push
     given:
       live: week
       harvester:
-        ember-results-sync: { kind: stopped, reason: "Exhausted the repair budget", intent: revision }
+        # The last run was a plain revive; a revision row still restarts as a revision.
+        ember-results-sync: { kind: stopped, reason: "Exhausted the repair budget", intent: revive }
     steps:
       - start
       - click_pet
       - expect: { see: ["Harvester stopped · Exhausted the repair budget"] }
       - click: Restart
-      - expect: { see: [It pushes its repairs to the task and posts a comment], harvester_calls: [] }
+      - expect: { see: [to address the requested revisions, It pushes its repairs to the task and posts a comment], harvester_calls: [] }
       - click: Restart
       - expect:
-          see: ["Restarted: Harvester queued a new run."]
+          see: ["Restarted: Harvester queued it again."]
           harvester_calls: [restart ember-results-sync revision]
           events:
             - { event: mochi_click, surface: glance_panel, component: harvester_restart, task_id: v1, status: stopped }
+
+  - id: harvester-restart-draft
+    title: Restart on a draft keeps the run's own workflow
+    given:
+      live: week
+      sections: { revisions: false, reviews: false, drafts: true }
+      harvester:
+        ember-draft-failing: { kind: stopped, reason: "Harvester stopped before finishing.", intent: revive }
+    steps:
+      - start
+      - click_pet
+      - click: Restart
+      - expect: { see: [It pushes its repairs to the task], not_see: [to address the requested revisions] }
+      - click: Restart
+      - expect: { harvester_calls: [restart ember-draft-failing revive] }
 
   - id: harvester-absent
     title: Without Harvester on this Mac, rows have no agent line
