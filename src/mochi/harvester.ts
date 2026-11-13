@@ -1,8 +1,10 @@
 /* Harvester's agent status for the panel: read from a Harvester board on this
- * Mac (electron/harvester.mjs) while the panel is open, every 30 seconds. With
- * no board, or in a plain browser, there are no statuses and rows show nothing.
+ * Mac and on the person's devserver (the one saved in Settings / Delegate),
+ * while the panel is open, every 30 seconds. With no board, or in a plain
+ * browser, there are no statuses and rows show nothing.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { loadDelegateNode } from './delegations.ts';
 import { harvesterStatus } from './shell.ts';
 import type { HarvesterTaskStatus } from './shell.ts';
 
@@ -25,7 +27,7 @@ export function useHarvesterStatuses(open: boolean): { statuses: Record<string, 
     };
   }, []);
   const refresh = useCallback(() => {
-    void harvesterStatus().then((res) => {
+    void harvesterStatus(loadDelegateNode()).then((res) => {
       if (live.current && res) setStatuses(res.available ? res.statuses : {});
     });
   }, []);

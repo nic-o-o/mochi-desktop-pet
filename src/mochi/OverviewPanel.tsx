@@ -34,7 +34,7 @@ import { SectionDragHandle } from './SectionDragHandle.tsx';
 import { useSectionDrag } from './useSectionDrag.ts';
 import { appSettings, canSubmit, setAppSetting, submitDryRun, submitSha, submitTask } from './shell.ts';
 import type { AppSettings } from './shell.ts';
-import { forgetDelegateNode, loadDelegateNode } from './delegations.ts';
+import { forgetDelegateNode, loadDelegateNode, normalizeDelegateNode, saveDelegateNode } from './delegations.ts';
 
 const KIND_SECTION: Record<'revision' | 'pending' | 'draft', SectionKey> = {
   revision: 'revisions',
@@ -601,8 +601,9 @@ export function SettingsMenu({
   }, [reportState]);
   /* Read fresh each time the menu opens: the dock menu can change these too. */
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  /* Bumped by Change so the saved devserver is read again. */
+  /* Bumped by Change and Save so the saved devserver is read again. */
   const [nodeVersion, setNodeVersion] = useState(0);
+  const [nodeInput, setNodeInput] = useState('');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- nodeVersion only forces a fresh read
   const node = useMemo(() => (open ? loadDelegateNode() : null), [open, nodeVersion]);
   useEffect(() => {
@@ -681,10 +682,11 @@ export function SettingsMenu({
               <span>Share usage data</span>
             </label>
           )}
-          {node && (
+          {/* The devserver Delegate runs Green on, and where Mochi looks for Harvester's board. */}
+          {node ? (
             <div className="settings-row">
-              <span className="settings-row-label" title={node}>
-                Delegation devserver: {node.split('.')[0]}
+              <span className="settings-row-label" title={`${node}: used by Delegate and for Harvester status`}>
+                Devserver: {node.split('.')[0]}
               </span>
               <button
                 type="button"
@@ -692,13 +694,38 @@ export function SettingsMenu({
                 onClick={() => {
                   logClick('glance_panel', 'delegate_node_forget');
                   forgetDelegateNode();
+                  setNodeInput(node);
                   setNodeVersion((v) => v + 1);
                 }}
-                title="Forget it; the next delegation asks again"
+                title="Change the devserver Mochi uses"
               >
                 Change
               </button>
             </div>
+          ) : (
+            <form
+              className="settings-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const next = normalizeDelegateNode(nodeInput);
+                if (!next) return;
+                logClick('glance_panel', 'delegate_node_set');
+                saveDelegateNode(next);
+                setNodeVersion((v) => v + 1);
+              }}
+            >
+              <input
+                className="settings-node-input"
+                aria-label="Devserver"
+                placeholder="Devserver, e.g. devvm1234.abc0.facebook.com"
+                value={nodeInput}
+                onChange={(e) => setNodeInput(e.target.value)}
+                autoComplete="off"
+              />
+              <button type="submit" className="btn-link" disabled={!normalizeDelegateNode(nodeInput)}>
+                Save
+              </button>
+            </form>
           )}
           {onReportProblem && <p className="section-menu-title settings-menu-group">Help</p>}
           {onReportProblem && (

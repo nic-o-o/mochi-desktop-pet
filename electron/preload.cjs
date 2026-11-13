@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('mochiShell', {
   checkTaskHandler: (req) => ipcRenderer.invoke('mochi:green-handler-status', req),
   stopGreenWorker: (req) => ipcRenderer.invoke('mochi:green-stop-worker', req),
   installDocker: (taskSlug, node) => ipcRenderer.invoke('mochi:green-install-docker', taskSlug, node),
-  harvesterStatus: () => ipcRenderer.invoke('mochi:harvester-status'),
+  harvesterStatus: (req) => ipcRenderer.invoke('mochi:harvester-status', req),
   stopHarvesterRun: (req) => ipcRenderer.invoke('mochi:harvester-stop', req),
   restartHarvesterTask: (req) => ipcRenderer.invoke('mochi:harvester-restart', req),
   startAgentReview: (req) => ipcRenderer.invoke('mochi:agent-review-start', req),

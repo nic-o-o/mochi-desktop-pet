@@ -187,3 +187,151 @@ export function restartHarvesterTask({ base, repo, taskName, intent, owner, toke
   if (!str(repo).trim()) return Promise.resolve({ ok: false, error: 'Unknown Harvester project.' });
   return post(fetchImpl, base, '/api/taskflow-bulk', { repo: str(repo), tasks: [str(taskName)], owner, intent: intent === 'revision' ? 'revision' : 'revive' }, token);
 }
+
+/* ---------------------------------------------------------------- devserver --
+ * Most people run Harvester on their devserver, where the board is HTTPS on
+ * localhost:44200–44209 (HTTP on 44100–44109 is checked too). It isn't
+ * reachable from the laptop, so Mochi runs one small Python script on the
+ * devserver through agentcloudctl (the same channel Delegate uses for Green):
+ * it finds the board, reads every project's runs (trimmed to the fields Mochi
+ * maps) and prints one JSON line. Stop and Restart go the same way, posting as
+ * the devserver's own user, which Harvester requires to match the board owner.
+ */
+const REMOTE_SCRIPT = String.raw`
+import getpass, json, ssl, sys, urllib.error, urllib.parse, urllib.request
+ctx = ssl._create_unverified_context()
+args = sys.argv[2:]
+mode, token = args[0], args[1]
+def call(url, body=None, timeout=15):
+    if token:
+        url += ("&" if "?" in url else "?") + "token=" + urllib.parse.quote(token)
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, method="POST" if data else "GET",
+                                 headers={"Content-Type": "application/json"} if data else {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+            raw = r.read()
+            return r.status, json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"null")
+        except Exception:
+            return e.code, None
+def trim(run):
+    d = run.get("detail") if isinstance(run.get("detail"), dict) else {}
+    f = run.get("failure") if isinstance(run.get("failure"), dict) else {}
+    t = d.get("timing") if isinstance(d.get("timing"), dict) else {}
+    keep = {k: run.get(k) for k in ("id", "task_name", "state", "stalled_since", "restart_count", "error",
+                                    "started_at", "ended_at", "intent", "last_progress_at")}
+    keep["detail"] = {"detail": d.get("detail"), "means": d.get("means"), "outcome": d.get("outcome"),
+                      "timing": {"phase": t.get("phase")}}
+    keep["failure"] = {"cause": f.get("cause"), "message": f.get("message")}
+    return keep
+out = {}
+if mode == "status":
+    bases = ["https://localhost:%d" % p for p in range(44200, 44210)] + ["http://127.0.0.1:%d" % p for p in range(44100, 44110)]
+    found, boards = False, []
+    for base in bases:
+        try:
+            code, projects = call(base + "/api/projects", timeout=2)
+        except Exception:
+            continue
+        if code != 200 or not isinstance(projects, list):
+            continue
+        found = True
+        for p in projects:
+            name = str((p or {}).get("name") or "").strip()
+            if not name:
+                continue
+            try:
+                c, st = call(base + "/api/taskflow-state?repo=" + urllib.parse.quote(name) + "&fast=1")
+            except Exception:
+                continue
+            if c == 200 and isinstance(st, dict):
+                boards.append({"base": base, "repo": name, "runs": [trim(r) for r in (st.get("runs") or []) if isinstance(r, dict)]})
+    out = {"available": found, "boards": boards}
+else:
+    base = args[2]
+    if mode == "stop":
+        route, body = "/api/cancel-run", {"id": args[3], "owner": getpass.getuser()}
+    else:
+        route, body = "/api/taskflow-bulk", {"repo": args[3], "tasks": [args[4]], "owner": getpass.getuser(), "intent": args[5]}
+    try:
+        code, res = call(base + route, body, timeout=30)
+        ok = 200 <= code < 300 and not (isinstance(res, dict) and res.get("ok") is False)
+        out = {"ok": ok, "error": None if ok else str((res or {}).get("error") or "Harvester answered %d." % code)}
+    except Exception:
+        out = {"ok": False, "error": "Couldn't reach Harvester on the devserver."}
+print("MOCHI_HARVESTER_JSON=" + json.dumps(out))
+`;
+const REMOTE_B64 = Buffer.from(REMOTE_SCRIPT).toString('base64');
+const REMOTE_BASE = /^(https:\/\/localhost:442\d\d|http:\/\/127\.0\.0\.1:441\d\d)$/;
+const REMOTE_TIMEOUT_MS = 60_000;
+const shq = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+
+/** The command that runs the board script on the devserver with these arguments. */
+export function remoteScript(argv) {
+  return `python3 -c "import base64,sys;exec(base64.b64decode(sys.argv[1]))" ${REMOTE_B64} ${argv.map(shq).join(' ')}`;
+}
+
+/** The JSON line the board script printed, or null. */
+export function parseRemoteOutput(stdout) {
+  const line = String(stdout ?? '')
+    .split('\n')
+    .reverse()
+    .find((l) => l.startsWith('MOCHI_HARVESTER_JSON='));
+  if (!line) return null;
+  try {
+    return JSON.parse(line.slice('MOCHI_HARVESTER_JSON='.length));
+  } catch {
+    return null;
+  }
+}
+
+/** Harvester statuses from the board on a devserver: { available, statuses } with `node` on each status. */
+export async function harvesterStatusesOnNode({ node, token = '' }, { run }) {
+  let res;
+  try {
+    res = await run({ node, script: remoteScript(['status', token]), timeoutMs: REMOTE_TIMEOUT_MS });
+  } catch {
+    return { available: false, statuses: {} };
+  }
+  const out = res && !res.error && res.code === 0 ? parseRemoteOutput(res.stdout) : null;
+  if (!out || out.available !== true) return { available: false, statuses: {} };
+  const statuses = {};
+  for (const board of Array.isArray(out.boards) ? out.boards : []) {
+    const base = str(board?.base);
+    if (!REMOTE_BASE.test(base)) continue;
+    for (const [name, status] of Object.entries(statusesFromRuns(board.runs, { base, repo: str(board.repo) }))) {
+      const prev = statuses[name];
+      if (!prev || (status.startedMs ?? 0) >= (prev.startedMs ?? 0)) statuses[name] = { ...status, node };
+    }
+  }
+  return { available: true, statuses };
+}
+
+async function remoteAction({ node, token = '', argv }, { run }) {
+  let res;
+  try {
+    res = await run({ node, script: remoteScript(argv), timeoutMs: REMOTE_TIMEOUT_MS });
+  } catch {
+    return { ok: false, error: "Couldn't reach the devserver." };
+  }
+  if (!res || res.error || res.code !== 0) return { ok: false, error: "Couldn't reach the devserver." };
+  const out = parseRemoteOutput(res.stdout);
+  return out ? { ok: out.ok === true, ...(out.ok ? {} : { error: str(out.error) || 'Harvester refused.' }) } : { ok: false, error: 'No answer from Harvester on the devserver.' };
+}
+
+/** Stop a run on the devserver's board. */
+export function stopHarvesterRunOnNode({ node, base, runId, token = '' }, { run }) {
+  if (!REMOTE_BASE.test(str(base)) || !str(runId).trim()) return Promise.resolve({ ok: false, error: 'No Harvester run to stop.' });
+  return remoteAction({ node, token, argv: ['stop', token, base, str(runId)] }, { run });
+}
+
+/** Restart a task's revival on the devserver's board (publishes, like any revival). */
+export function restartHarvesterTaskOnNode({ node, base, repo, taskName, intent, token = '' }, { run }) {
+  if (!REMOTE_BASE.test(str(base)) || !TASK_NAME.test(str(taskName)) || !str(repo).trim()) {
+    return Promise.resolve({ ok: false, error: 'Not a task Harvester can restart.' });
+  }
+  return remoteAction({ node, token, argv: ['restart', token, base, str(repo), str(taskName), intent === 'revision' ? 'revision' : 'revive'] }, { run });
+}

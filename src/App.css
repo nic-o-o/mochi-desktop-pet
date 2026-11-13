@@ -1902,6 +1902,16 @@ html.mochi-shell .expanded-view {
   font-size: 13px;
 }
 
+.settings-node-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
 .settings-row-label {
   overflow: hidden;
   text-overflow: ellipsis;

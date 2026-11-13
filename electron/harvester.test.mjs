@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { harvesterStatuses, mapRun, restartHarvesterTask, runReason, statusesFromRuns, stopHarvesterRun } from './harvester.mjs';
+import {
+  harvesterStatuses,
+  harvesterStatusesOnNode,
+  mapRun,
+  parseRemoteOutput,
+  remoteScript,
+  restartHarvesterTask,
+  restartHarvesterTaskOnNode,
+  runReason,
+  statusesFromRuns,
+  stopHarvesterRun,
+  stopHarvesterRunOnNode,
+} from './harvester.mjs';
 
 const T = 1_794_500_000; // seconds, like Harvester's records
 
@@ -119,5 +131,55 @@ describe('stop and restart', () => {
     expect((await stopHarvesterRun({ base: 'https://evil.example', runId: 'r1', owner: 'me' }, { fetchImpl })).ok).toBe(false);
     expect((await restartHarvesterTask({ base: 'http://127.0.0.1:44101', repo: 'ember', taskName: '../x', owner: 'me' }, { fetchImpl })).ok).toBe(false);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('devserver board (through agentcloudctl)', () => {
+  const NODE = 'devvm6833.dkl0.facebook.com';
+  const reply = (out) => async () => ({ code: 0, stdout: `note: dialing prod\nMOCHI_HARVESTER_JSON=${JSON.stringify(out)}\n`, stderr: '' });
+
+  it('maps the runs the remote script returns and tags each status with the node', async () => {
+    const calls = [];
+    const run = async (req) => {
+      calls.push(req);
+      return reply({ available: true, boards: [{ base: 'https://localhost:44201', repo: 'ember', runs: [{ id: 'r1', task_name: 'ember-a', state: 'remote_waiting' }] }] })();
+    };
+    const res = await harvesterStatusesOnNode({ node: NODE }, { run });
+    expect(res.available).toBe(true);
+    expect(res.statuses['ember-a']).toMatchObject({ kind: 'working', reason: 'Waiting for validation', base: 'https://localhost:44201', node: NODE });
+    expect(calls[0].node).toBe(NODE);
+    expect(calls[0].script).toContain("'status' ''");
+  });
+
+  it('is unavailable when the devserver has no board, is unreachable, or answers garbage', async () => {
+    expect(await harvesterStatusesOnNode({ node: NODE }, { run: reply({ available: false, boards: [] }) })).toEqual({ available: false, statuses: {} });
+    expect(await harvesterStatusesOnNode({ node: NODE }, { run: async () => ({ code: 1, stdout: '', stderr: 'refused' }) })).toEqual({ available: false, statuses: {} });
+    expect(await harvesterStatusesOnNode({ node: NODE }, { run: async () => ({ code: 0, stdout: 'nothing here', stderr: '' }) })).toEqual({ available: false, statuses: {} });
+  });
+
+  it('drops boards at addresses that are not the devserver loopback', async () => {
+    const res = await harvesterStatusesOnNode(
+      { node: NODE },
+      { run: reply({ available: true, boards: [{ base: 'https://evil.example:44201', repo: 'x', runs: [{ id: 'r', task_name: 't', state: 'running' }] }] }) },
+    );
+    expect(res.statuses).toEqual({});
+  });
+
+  it('stops and restarts through the script, passing Harvester refusals through', async () => {
+    const calls = [];
+    const run = async (req) => (calls.push(req.script), reply({ ok: false, error: 'a run is still active' })());
+    expect(await stopHarvesterRunOnNode({ node: NODE, base: 'https://localhost:44201', runId: 'r1' }, { run })).toEqual({ ok: false, error: 'a run is still active' });
+    await restartHarvesterTaskOnNode({ node: NODE, base: 'https://localhost:44201', repo: 'ember', taskName: 'ember-a', intent: 'revision' }, { run });
+    expect(calls[0]).toContain("'stop' '' 'https://localhost:44201' 'r1'");
+    expect(calls[1]).toContain("'restart' '' 'https://localhost:44201' 'ember' 'ember-a' 'revision'");
+    expect((await stopHarvesterRunOnNode({ node: NODE, base: 'http://evil', runId: 'r1' }, { run })).ok).toBe(false);
+    expect((await restartHarvesterTaskOnNode({ node: NODE, base: 'https://localhost:44201', repo: 'ember', taskName: '../x' }, { run })).ok).toBe(false);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('quotes script arguments so a token cannot break out of the shell command', () => {
+    expect(remoteScript(['status', "it's"])).toContain("'it'\\''s'");
+    expect(parseRemoteOutput('MOCHI_HARVESTER_JSON={"ok":true}')).toEqual({ ok: true });
+    expect(parseRemoteOutput('MOCHI_HARVESTER_JSON={bad')).toBeNull();
   });
 });
