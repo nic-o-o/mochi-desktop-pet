@@ -95,6 +95,10 @@ export interface MochiShell {
   delegateToGreen?: (taskSlug: string, node: string) => Promise<DelegateResult>;
   /** One live status probe for a launched delegation. */
   checkDelegateStatus?: (req: DelegateStatusRequest) => Promise<DelegateStatusResult>;
+  /** Harvester's agent status per task name, from a Harvester board on this Mac. */
+  harvesterStatus?: () => Promise<HarvesterStatuses>;
+  stopHarvesterRun?: (req: { base: string; runId: string }) => Promise<HarvesterActionResult>;
+  restartHarvesterTask?: (req: { base: string; repo: string; taskName: string; intent: 'revive' | 'revision' }) => Promise<HarvesterActionResult>;
   /** Read-only submission preflight for one task (main process). */
   submitDryRun?: (id: string) => Promise<SubmitDryRunResult>;
   /** Current commit SHA to pin a submission to (main process). */
@@ -377,6 +381,54 @@ export function delegateToGreen(taskSlug: string, node: string): Promise<Delegat
 }
 
 /** Fetch one live status for a launched delegation; null outside the desktop shell. */
+/** Harvester's view of one task (electron/harvester.mjs). */
+export interface HarvesterTaskStatus {
+  kind: 'working' | 'stuck' | 'done' | 'stopped';
+  /** Harvester's own run state, e.g. running, remote_waiting, cancelled. */
+  state: string;
+  /** One line from Harvester: why it's in this state. */
+  reason: string;
+  runId: string | null;
+  intent: 'revive' | 'revision';
+  restartCount: number;
+  sinceMs: number | null;
+  startedMs: number | null;
+  taskName: string;
+  base: string;
+  repo: string;
+}
+
+export interface HarvesterStatuses {
+  /** False when no Harvester board answers on this Mac. */
+  available: boolean;
+  statuses: Record<string, HarvesterTaskStatus>;
+}
+
+export interface HarvesterActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+export function harvesterStatus(): Promise<HarvesterStatuses | null> {
+  const b = bridge();
+  if (!b?.harvesterStatus) return Promise.resolve(null);
+  return b.harvesterStatus().catch(() => null);
+}
+
+export function stopHarvesterRun(s: HarvesterTaskStatus): Promise<HarvesterActionResult> {
+  const b = bridge();
+  if (!b?.stopHarvesterRun || !s.runId) return Promise.resolve({ ok: false, error: 'Stop needs the desktop app.' });
+  return b.stopHarvesterRun({ base: s.base, runId: s.runId }).catch(() => ({ ok: false, error: "Couldn't reach Harvester." }));
+}
+
+export function restartHarvesterTask(s: HarvesterTaskStatus): Promise<HarvesterActionResult> {
+  const b = bridge();
+  if (!b?.restartHarvesterTask) return Promise.resolve({ ok: false, error: 'Restart needs the desktop app.' });
+  return b
+    .restartHarvesterTask({ base: s.base, repo: s.repo, taskName: s.taskName, intent: s.intent })
+    .catch(() => ({ ok: false, error: "Couldn't reach Harvester." }));
+}
+
 export function checkDelegateStatus(req: DelegateStatusRequest): Promise<DelegateStatusResult | null> {
   const b = bridge();
   if (!b?.checkDelegateStatus) return Promise.resolve(null);

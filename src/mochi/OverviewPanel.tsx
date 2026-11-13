@@ -17,6 +17,8 @@ import {
 import { AgentRow } from './AgentRow.tsx';
 import type { AgentReviewControls } from './AgentRow.tsx';
 import { DelegateRow } from './DelegateRow.tsx';
+import { HarvesterRow } from './HarvesterRow.tsx';
+import type { HarvesterTaskStatus } from './shell.ts';
 import { delegateAvailable } from './shell.ts';
 import { jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
@@ -82,6 +84,8 @@ interface OverviewPanelProps {
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
   /** "Ask agents" on review rows (desktop shell only). */
   agentReview?: AgentReviewControls;
+  /** Agent line under drafts and revisions: what Harvester is doing with each task. */
+  harvester?: HarvesterControls;
   /** A direct submit landed: caller refreshes tasks (desktop shell only). */
   onSubmitted?: () => void;
   /** Open Codimango SEVs: one line each at the top, most severe first. */
@@ -218,6 +222,7 @@ function GlanceRow({
   onOpen,
   eventSection,
   agentReview,
+  harvester,
   onSubmitted,
   highlighted = false,
 }: {
@@ -231,6 +236,7 @@ function GlanceRow({
   /** Logging section override (ready-for-submission rows share the draft look). */
   eventSection?: SectionKey;
   agentReview?: AgentReviewControls;
+  harvester?: HarvesterControls;
   onSubmitted?: () => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
@@ -245,6 +251,7 @@ function GlanceRow({
         : pendingRowFlag(t.slaDueMs, nowMs);
   const section = SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]];
   const fields = { section, task_id: t.id, position, badge: flag.text };
+  const harvesterStatus = harvester?.statuses[t.title];
   useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
   /* Ready drafts get Submit in the flag slot (drafts + ready-for-submission sections). */
   const showSubmit = kind === 'draft' && t.draftState === 'ready' && canSubmit();
@@ -334,7 +341,12 @@ function GlanceRow({
       {kind === 'pending' && agentReview && (
         <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
       )}
-      {kind === 'revision' && delegateAvailable() && (
+      {/* Second status line: the agent working on this task (Harvester), under the validation line above. */}
+      {kind !== 'pending' && harvesterStatus && (
+        <HarvesterRow taskId={t.id} status={harvesterStatus} nowMs={nowMs} onChanged={harvester?.refresh} />
+      )}
+      {/* Harvester already has this task: don't offer a second agent that would push over it. */}
+      {kind === 'revision' && !harvesterStatus && delegateAvailable() && (
         <DelegateRow taskId={t.id} taskSlug={t.title} detail={t.checkSummary} />
       )}
       {showSubmit && phase === 'confirming' && (
@@ -387,6 +399,7 @@ function TaskSection({
   eventSection,
   emptyText,
   agentReview,
+  harvester,
   onSubmitted,
   highlightTaskId,
   dragHandle,
@@ -402,6 +415,7 @@ function TaskSection({
   eventSection?: SectionKey;
   emptyText?: string;
   agentReview?: AgentReviewControls;
+  harvester?: HarvesterControls;
   onSubmitted?: () => void;
   /** Grip at the head's left edge that reorders the section (main panel only). */
   dragHandle?: ReactNode;
@@ -456,6 +470,7 @@ function TaskSection({
                 onOpen={onOpen}
                 eventSection={eventSection}
                 agentReview={agentReview}
+                harvester={harvester}
                 onSubmitted={onSubmitted}
                 highlighted={t.id === highlightTaskId}
               />
@@ -777,6 +792,12 @@ export function NotifyMenu({
   );
 }
 
+/** Harvester's agent status per task name, and a re-read after Stop or Restart. */
+export interface HarvesterControls {
+  statuses: Record<string, HarvesterTaskStatus>;
+  refresh: () => void;
+}
+
 /** "Your week at a glance" — compact floating overview next to the pet. */
 export function OverviewPanel(props: OverviewPanelProps) {
   const { goals, reviewsCompleted, submissionsCompleted } = props;
@@ -944,6 +965,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                     eventSection={lists[key].eventSection}
                     emptyText={lists[key].emptyText}
                     agentReview={props.agentReview}
+                    harvester={props.harvester}
                     onSubmitted={props.onSubmitted}
                     highlightTaskId={props.highlightTaskId}
                     dragging={sectionDrag.draggingKey === key}

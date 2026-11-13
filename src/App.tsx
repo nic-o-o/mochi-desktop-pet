@@ -50,6 +50,7 @@ import type { SetupKind } from './mochi/SetupCard.tsx';
 import { sevBubbleText, useSevs } from './mochi/sevs.ts';
 import type { SevBubble } from './mochi/sevs.ts';
 import { ExpandedView } from './mochi/ExpandedView.tsx';
+import { useHarvesterStatuses } from './mochi/harvester.ts';
 import { elapsedMs, endPanelSession, logClick, logClose, logVpv, mark, startPanelSession, useVpv } from './mochi/usage.ts';
 import type { Mark } from './mochi/usage.ts';
 import './App.css';
@@ -238,6 +239,8 @@ export default function App() {
 
   /* Codimango rows in the desktop shell (refresh on panel open), mock data in a browser. */
   const { tasks, weekly, snapshot, status, failure, fetchedAtMs, refresh } = useTasks(panelOpen || expandedOpen, nowMs);
+  /* What Harvester is doing with each draft, read while the panel is open. */
+  const harvester = useHarvesterStatuses(panelOpen);
   /* Review-turnaround study: install time + "before" stats, kept locally (study.ts). */
   const studyRef = useRef<StudyRecord | null>(null);
   useEffect(() => {
@@ -988,6 +991,7 @@ export default function App() {
           highlightTaskId={highlightTaskId}
           unread={unread}
           onShowNotifications={cycleNotification}
+          harvester={harvester}
           reviewsCompleted={weekly.reviewsCompleted}
           submissionsCompleted={weekly.submissionsCompleted}
           goals={goals}

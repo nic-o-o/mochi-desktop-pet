@@ -38,6 +38,7 @@ import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 import { createSevWatch } from './sevs.mjs';
 import { createCustomizer } from './customize.mjs';
+import { harvesterStatuses, restartHarvesterTask, stopHarvesterRun } from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
 
@@ -215,6 +216,25 @@ ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
 // Delegate a "needs revision" task to Green on the devserver: the renderer
 // sends only the task slug; every check and the launch happen here.
 ipcMain.handle('mochi:green-delegate', (_event, taskSlug, node) => delegateToGreen({ taskSlug: String(taskSlug ?? ''), node: String(node ?? '') }));
+/* Harvester's agent status for drafts, from a Harvester board on this Mac
+   (electron/harvester.mjs). Loopback only, so Node's fetch (no proxy). A board
+   started with --token needs MOCHI_HARVESTER_TOKEN. Stop and Restart act as
+   this Mac's user, which Harvester requires to match the board's owner. */
+const harvesterToken = () => process.env.MOCHI_HARVESTER_TOKEN ?? '';
+ipcMain.handle('mochi:harvester-status', () => harvesterStatuses({ token: harvesterToken() }));
+ipcMain.handle('mochi:harvester-stop', (_event, req) =>
+  stopHarvesterRun({ base: req?.base, runId: req?.runId, owner: os.userInfo().username, token: harvesterToken() }),
+);
+ipcMain.handle('mochi:harvester-restart', (_event, req) =>
+  restartHarvesterTask({
+    base: req?.base,
+    repo: req?.repo,
+    taskName: req?.taskName,
+    intent: req?.intent,
+    owner: os.userInfo().username,
+    token: harvesterToken(),
+  }),
+);
 ipcMain.handle('mochi:green-delegate-status', (_event, req) =>
   checkDelegateStatus({
     taskSlug: String(req?.taskSlug ?? ''),

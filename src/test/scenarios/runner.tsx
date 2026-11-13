@@ -10,7 +10,7 @@ import type { AgentId, AgentJob, AgentReviewStart } from '../../mochi/agentRevie
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
 import type { Sev } from '../../mochi/sevs.ts';
 import type { LooksState, PetLook } from '../../mochi/looks.ts';
-import type { AppSettings, ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
+import type { AppSettings, HarvesterTaskStatus, ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
 import { resetUsageForTests } from '../../mochi/usage.ts';
 import { toSnapshot } from './fixtures.ts';
 import type { ShorthandSnapshot } from './fixtures.ts';
@@ -32,6 +32,8 @@ export interface Expectation {
   bubble?: string | 'none';
   /** Every opened link so far, by substring. */
   opened?: string[];
+  /** Stop / Restart calls sent to Harvester so far, e.g. "stop run-ember-x" or "restart ember-x revive". */
+  harvester_calls?: string[];
   /** The last clipboard write contains each string. */
   clipboard?: string[];
   /** The last problem report sent through the bridge (partial match). */
@@ -110,6 +112,8 @@ export interface Scenario {
     sevs?: GivenSev[];
     /** Customize Mochi: whether this build can draw pets, saved looks by description, and which is current. */
     customize?: { available?: boolean; looks?: string[]; current?: number };
+    /** A Harvester board on this Mac: its status per task name. */
+    harvester?: Record<string, { kind: HarvesterTaskStatus['kind']; reason?: string; state?: string; intent?: 'revive' | 'revision' }>;
   };
   steps: Step[];
 }
@@ -137,6 +141,9 @@ interface Harness {
   looks: LooksState;
   /** Settings menu toggles, as the main process would answer (a packaged app). */
   appSettings: AppSettings;
+  /** Harvester statuses by task name, and the Stop / Restart calls Mochi made. */
+  harvester: Record<string, HarvesterTaskStatus>;
+  harvesterCalls: string[];
 }
 
 /* A 1×1 PNG: stands in for every drawn pet. */
@@ -300,6 +307,25 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       currentId: given?.current !== undefined ? (givenLooks[given.current]?.id ?? null) : null,
     },
     appSettings: { openAtLogin: false, sharing: true },
+    harvester: Object.fromEntries(
+      Object.entries(sc.given?.harvester ?? {}).map(([taskName, g]) => [
+        taskName,
+        {
+          kind: g.kind,
+          state: g.state ?? (g.kind === 'working' ? 'running' : g.kind === 'done' ? 'done' : 'cancelled'),
+          reason: g.reason ?? '',
+          runId: `run-${taskName}`,
+          intent: g.intent ?? 'revive',
+          restartCount: 0,
+          sinceMs: now - 5 * 60_000,
+          startedMs: now - 60 * 60_000,
+          taskName,
+          base: 'http://127.0.0.1:44101',
+          repo: 'ember',
+        },
+      ]),
+    ),
+    harvesterCalls: [],
   };
   const storeState = () => ({ looks: h.looks.looks, currentId: h.looks.currentId });
   h.agentJobs = (sc.given?.agents ?? []).map((g, i) => givenJob(file, sc, g, now, i));
@@ -350,6 +376,15 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         ];
       }
       return Promise.resolve(h.agentJobs);
+    },
+    harvesterStatus: () => Promise.resolve({ available: Object.keys(h.harvester).length > 0, statuses: h.harvester }),
+    stopHarvesterRun: (req) => {
+      h.harvesterCalls.push(`stop ${req.runId}`);
+      return Promise.resolve({ ok: true });
+    },
+    restartHarvesterTask: (req) => {
+      h.harvesterCalls.push(`restart ${req.taskName} ${req.intent}`);
+      return Promise.resolve({ ok: true });
     },
     appSettings: () => Promise.resolve(h.appSettings),
     setAppSetting: (key, value) => {
@@ -596,6 +631,7 @@ async function checkExpectation(e: Expectation, h: Harness) {
         expect(h.opened.some((u) => u.includes(s)), `expected a link containing "${s}" to open; opened: ${JSON.stringify(h.opened)}`).toBe(true);
       }
       for (const s of e.clipboard ?? []) expect(h.clipboard.at(-1) ?? '', 'clipboard').toContain(s);
+      if (e.harvester_calls) expect(h.harvesterCalls, 'harvester calls').toEqual(e.harvester_calls);
       if (e.report) {
         const last = h.reports.at(-1);
         expect(last, 'a problem report was sent').toBeDefined();
