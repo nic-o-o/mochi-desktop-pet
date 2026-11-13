@@ -40,6 +40,20 @@ const electronVersion = JSON.parse(
   fs.readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8'),
 ).version;
 
+/* Proper signing: set APPLE_IDENTITY ("Developer ID Application: …") plus
+   APPLE_ID / APPLE_APP_PASSWORD / APPLE_TEAM_ID to ship a notarized build
+   with no Gatekeeper warning. Without them, falls back to ad-hoc (Open
+   Anyway on first launch). In CI these come from repo secrets. */
+const appleIdentity = process.env.APPLE_IDENTITY || null;
+const appleNotarize =
+  process.env.APPLE_ID && process.env.APPLE_APP_PASSWORD && process.env.APPLE_TEAM_ID
+    ? {
+        appleId: process.env.APPLE_ID,
+        appleIdPassword: process.env.APPLE_APP_PASSWORD,
+        teamId: process.env.APPLE_TEAM_ID,
+      }
+    : null;
+
 const [appDir] = await packager({
   dir: root,
   name: 'Mochi',
@@ -55,6 +69,17 @@ const [appDir] = await packager({
   // build/icon.svg is the source; `swift scripts/make-icon.swift` regenerates this.
   icon: path.join(root, 'build', 'icon.icns'),
   appCategoryType: 'public.app-category.productivity',
+  ...(appleIdentity
+    ? {
+        osxSign: {
+          identity: appleIdentity,
+          hardenedRuntime: true,
+          entitlements: path.join(root, 'build', 'entitlements.mac.plist'),
+          entitlementsInherit: path.join(root, 'build', 'entitlements.inherit.plist'),
+        },
+        ...(appleNotarize ? { osxNotarize: appleNotarize } : {}),
+      }
+    : {}),
 });
 
 const appPath = path.join(appDir, 'Mochi.app');
@@ -64,9 +89,13 @@ function run(cmd, args) {
   if (r.status !== 0) throw new Error(`${cmd} ${args[0]} failed (${r.status})`);
 }
 
-/* Packager edits the bundle after Electron's signature, which macOS then
-   reports as "damaged". Re-sign the whole bundle ad hoc. */
-run('codesign', ['--force', '--deep', '--sign', '-', appPath]);
+if (appleIdentity) {
+  console.log(`Signed with ${appleIdentity}${appleNotarize ? ' + notarized' : ' (not notarized)'}`);
+} else {
+  /* Packager edits the bundle after Electron's signature, which macOS then
+     reports as "damaged". Re-sign the whole bundle ad hoc. */
+  run('codesign', ['--force', '--deep', '--sign', '-', appPath]);
+}
 run('codesign', ['--verify', '--deep', '--strict', appPath]);
 console.log(`Built ${path.relative(root, appPath)}`);
 
@@ -79,6 +108,12 @@ try {
   fs.symlinkSync('/Applications', path.join(stage, 'Applications'));
   run('hdiutil', ['create', '-volname', 'Mochi', '-srcfolder', stage, '-ov', '-format', 'UDZO', '-quiet', dmgPath]);
   console.log(`Built ${path.relative(root, dmgPath)} (open it and drag Mochi to Applications)`);
+  if (appleNotarize) {
+    // Notarize + staple the DMG too, so first launch is warning-free.
+    const { notarize } = await import('@electron/notarize');
+    await notarize({ appPath: dmgPath, ...appleNotarize });
+    console.log(`Notarized ${path.relative(root, dmgPath)}`);
+  }
 } catch (err) {
   console.warn(`Skipped Mochi.dmg: ${err instanceof Error ? err.message : err}`);
 } finally {
