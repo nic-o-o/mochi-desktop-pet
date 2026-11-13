@@ -1,4 +1,4 @@
-# Setup card (CLI missing / signed out), Report a Problem and Copy my review stats.
+# Setup card (CLI missing / signed out) and Report a Problem.
 # Format: scenarios/README.md.
 
 fixtures:
@@ -46,7 +46,7 @@ scenarios:
     steps:
       - start
       - click_pet
-      - open_menu
+      - open_settings
       - click: Report a problem…
       - expect:
           report: { status: ok, failureKind: null, counts: { reviews: 1, revisions: 0, drafts: 1 } }
@@ -63,15 +63,3 @@ scenarios:
       - expect:
           panel: closed
           report: { status: offline, failureKind: offline }
-
-  - id: copy-review-stats
-    title: Copy my review stats puts a readable summary on the clipboard
-    given: { live: one_review }
-    steps:
-      - start
-      - click_pet
-      - open_menu
-      - click: Copy my review stats
-      - expect:
-          clipboard: [Mochi review stats]
-          see: [Copied ✓]

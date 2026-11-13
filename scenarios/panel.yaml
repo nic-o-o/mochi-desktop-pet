@@ -104,6 +104,27 @@ scenarios:
           see: [Waiting for your review, ember-draft-ready]
           not_see: [Needs revision, ember-results-sync]
 
+  - id: panel-settings-menu
+    title: Mochi's settings live under ⚙ Settings, apart from the ≡ Show in panel menu
+    given: { live: busy_week }
+    steps:
+      - start
+      - click_pet
+      - open_menu
+      - expect:
+          see: [Show in panel]
+          not_see: [Report a problem…, Share usage data]
+      - open_settings
+      - expect:
+          see: [Settings, Customize Mochi…, Open at login, Share usage data, Help, Report a problem…]
+          not_see: [Show in panel, Copy my review stats]
+          events:
+            - { event: mochi_click, surface: glance_panel, component: settings }
+      - toggle_section: Share usage data
+      - expect:
+          events:
+            - { event: mochi_click, surface: glance_panel, component: share_usage, enabled: false }
+
   - id: panel-last-section-locked
     title: The last section left on cannot be turned off
     given:

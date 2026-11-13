@@ -83,33 +83,6 @@ export function advanceStudy(
   return { ...current, before: turnaroundStats(snapshot.reviewing, from, current.installedAtMs) };
 }
 
-function statsLine(s: TurnaroundStats | null): string {
-  if (!s) return 'not measured yet';
-  if (s.count === 0) return 'no reviews delivered';
-  return `${s.count} reviews · median ${s.medianHours} h · p90 ${s.p90Hours} h`;
-}
-
-/** What "Copy my review stats" puts on the clipboard: a readable summary plus one JSON line. */
-export function studyReport(study: StudyRecord, snapshot: CodimangoSnapshot | null, nowMs: number): string {
-  const after = snapshot ? turnaroundStats(snapshot.reviewing, study.installedAtMs, nowMs + 1) : null;
-  const days = Math.floor((nowMs - study.installedAtMs) / DAY_MS);
-  const installed = new Date(study.installedAtMs).toISOString().slice(0, 10);
-  const json = {
-    v: 1,
-    installedAt: new Date(study.installedAtMs).toISOString(),
-    copiedAt: new Date(nowMs).toISOString(),
-    before: study.before,
-    after,
-  };
-  return [
-    `Mochi review stats (copied ${new Date(nowMs).toISOString().slice(0, 10)})`,
-    `Installed: ${installed} (${days === 0 ? 'today' : `${days}d ago`})`,
-    `Before Mochi (${BEFORE_WINDOW_DAYS} days before install): ${statsLine(study.before)}`,
-    `Since install: ${statsLine(after)}`,
-    JSON.stringify(json),
-  ].join('\n');
-}
-
 export function loadStudy(): StudyRecord | null {
   try {
     return parseStudy(localStorage.getItem(STUDY_STORAGE_KEY));

@@ -30,7 +30,9 @@ import type { NotifyPrefs } from './notifyPrefs.ts';
 import { SECTION_EVENT_NAME, logClick, logVpv, msSincePanelOpen, useVpv } from './usage.ts';
 import { SectionDragHandle } from './SectionDragHandle.tsx';
 import { useSectionDrag } from './useSectionDrag.ts';
-import { canSubmit, submitDryRun, submitSha, submitTask } from './shell.ts';
+import { appSettings, canSubmit, setAppSetting, submitDryRun, submitSha, submitTask } from './shell.ts';
+import type { AppSettings } from './shell.ts';
+import { forgetDelegateNode, loadDelegateNode } from './delegations.ts';
 
 const KIND_SECTION: Record<'revision' | 'pending' | 'draft', SectionKey> = {
   revision: 'revisions',
@@ -61,7 +63,6 @@ interface OverviewPanelProps {
   /** "Show notifications" at the end of the bell menu: replay the bubbles, latest first. */
   onShowNotifications?: () => void;
   /** Copies the tester's before/after review stats (filter menu footer); desktop shell only. */
-  onCopyStats?: () => Promise<boolean>;
   /** Copies diagnostics and opens #mochi-dogfood-feedback in Slack (filter menu footer). */
   onReportProblem?: () => Promise<boolean>;
   /** Opens Customize Mochi (filter menu footer); only when this build can draw pets. */
@@ -499,9 +500,6 @@ export function SectionFilter({
   order,
   open,
   onOpenChange,
-  onCopyStats,
-  onReportProblem,
-  onCustomize,
 }: {
   prefs: SectionPrefs;
   counts: Record<SectionKey, number>;
@@ -509,22 +507,7 @@ export function SectionFilter({
   order: SectionOrder;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCopyStats?: () => Promise<boolean>;
-  onReportProblem?: () => Promise<boolean>;
-  onCustomize?: () => void;
 }) {
-  const [reportState, setReportState] = useState<'idle' | 'sent' | 'failed'>('idle');
-  useEffect(() => {
-    if (reportState === 'idle') return;
-    const id = window.setTimeout(() => setReportState('idle'), 4000);
-    return () => window.clearTimeout(id);
-  }, [reportState]);
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
-  useEffect(() => {
-    if (copyState === 'idle') return;
-    const id = window.setTimeout(() => setCopyState('idle'), 2000);
-    return () => window.clearTimeout(id);
-  }, [copyState]);
   const onCount = SECTIONS.filter(({ key }) => prefs[key]).length;
   const shownSections = partitionEnabled(order, (key) => prefs[key]);
 
@@ -535,7 +518,7 @@ export function SectionFilter({
         className="icon-btn"
         aria-label="Choose sections"
         aria-expanded={open}
-        title="Choose sections"
+        title="Show in panel"
         onClick={() => onOpenChange(!open)}
       >
         <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6}>
@@ -566,19 +549,84 @@ export function SectionFilter({
               </div>
             );
           })}
-          {onCopyStats && (
-            <button
-              type="button"
-              className="section-menu-action"
-              onClick={() => {
-                logClick('glance_panel', 'copy_stats');
-                void onCopyStats().then((ok) => setCopyState(ok ? 'copied' : 'failed'));
-              }}
-              title="Copies your review speed before and since installing Mochi, to send to the Mochi team"
-            >
-              {copyState === 'copied' ? 'Copied ✓' : copyState === 'failed' ? "Couldn't copy" : 'Copy my review stats'}
-            </button>
-          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Header gear menu: Mochi's own settings and help, kept apart from what the
+ * panel shows (the filter menu) and from notifications (the bell menu). */
+export function SettingsMenu({
+  open,
+  onOpenChange,
+  onReportProblem,
+  onCustomize,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onReportProblem?: () => Promise<boolean>;
+  onCustomize?: () => void;
+}) {
+  const [reportState, setReportState] = useState<'idle' | 'sent' | 'failed'>('idle');
+  useEffect(() => {
+    if (reportState === 'idle') return;
+    const id = window.setTimeout(() => setReportState('idle'), 4000);
+    return () => window.clearTimeout(id);
+  }, [reportState]);
+  /* Read fresh each time the menu opens: the dock menu can change these too. */
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  /* Bumped by Change so the saved devserver is read again. */
+  const [nodeVersion, setNodeVersion] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- nodeVersion only forces a fresh read
+  const node = useMemo(() => (open ? loadDelegateNode() : null), [open, nodeVersion]);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void appSettings().then((next) => live && setSettings(next));
+    return () => {
+      live = false;
+    };
+  }, [open]);
+
+  function toggle(key: keyof AppSettings, value: boolean, component: string) {
+    logClick('glance_panel', component, { enabled: value });
+    void setAppSetting(key, value).then((next) => next && setSettings(next));
+  }
+
+  return (
+    <div className="settings-menu-wrap">
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Settings"
+        aria-expanded={open}
+        title="Settings"
+        onClick={() => {
+          if (!open) logClick('glance_panel', 'settings');
+          onOpenChange(!open);
+        }}
+      >
+        {/* cog outline (Feather "settings", MIT) */}
+        <svg
+          viewBox="0 0 24 24"
+          width={14}
+          height={14}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      {open && (
+        <div className="section-menu settings-menu" role="group" aria-label="Mochi settings">
+          <p className="section-menu-title">Settings</p>
           {onCustomize && (
             <button
               type="button"
@@ -592,6 +640,42 @@ export function SectionFilter({
               Customize Mochi…
             </button>
           )}
+          {typeof settings?.openAtLogin === 'boolean' && (
+            <label className="section-option">
+              <input
+                type="checkbox"
+                checked={settings.openAtLogin}
+                onChange={(e) => toggle('openAtLogin', e.target.checked, 'open_at_login')}
+              />
+              <span>Open at login</span>
+            </label>
+          )}
+          {settings && (
+            <label className="section-option">
+              <input type="checkbox" checked={settings.sharing} onChange={(e) => toggle('sharing', e.target.checked, 'share_usage')} />
+              <span>Share usage data</span>
+            </label>
+          )}
+          {node && (
+            <div className="settings-row">
+              <span className="settings-row-label" title={node}>
+                Delegation devserver: {node.split('.')[0]}
+              </span>
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => {
+                  logClick('glance_panel', 'delegate_node_forget');
+                  forgetDelegateNode();
+                  setNodeVersion((v) => v + 1);
+                }}
+                title="Forget it; the next delegation asks again"
+              >
+                Change
+              </button>
+            </div>
+          )}
+          {onReportProblem && <p className="section-menu-title settings-menu-group">Help</p>}
           {onReportProblem && (
             <button
               type="button"
@@ -715,8 +799,8 @@ export function OverviewPanel(props: OverviewPanelProps) {
   const shownSections = props.sectionOrder
     .map((key) => SECTIONS.find((s) => s.key === key))
     .filter((s): s is (typeof SECTIONS)[number] => !!s && props.sections[s.key] && lists[s.key].tasks.length > 0);
-  /* One header menu open at a time: the filter menu or the bell's notify menu. */
-  const [openMenu, setOpenMenu] = useState<'sections' | 'notify' | null>(null);
+  /* One header menu open at a time: the bell's notify menu, the filter menu or Settings. */
+  const [openMenu, setOpenMenu] = useState<'sections' | 'notify' | 'settings' | null>(null);
   /* Dragging a section header reorders the shown sections; the filter menu
      follows this order. Hidden sections keep their places. */
   const sectionsRef = useRef<HTMLDivElement | null>(null);
@@ -759,7 +843,12 @@ export function OverviewPanel(props: OverviewPanelProps) {
               order={props.sectionOrder}
               open={openMenu === 'sections'}
               onOpenChange={(next) => setOpenMenu(next ? 'sections' : null)}
-              onCopyStats={props.onCopyStats}
+            />
+          )}
+          {!props.setup && (
+            <SettingsMenu
+              open={openMenu === 'settings'}
+              onOpenChange={(next) => setOpenMenu(next ? 'settings' : null)}
               onCustomize={props.onCustomize}
               onReportProblem={props.onReportProblem}
             />
