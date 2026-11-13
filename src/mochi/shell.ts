@@ -58,6 +58,9 @@ export interface MochiShell {
   onSystemResumed?: (callback: () => void) => () => void;
   /** Dock menu "Report a Problem…" asks the renderer to start a report; returns unsubscribe. */
   onReportRequest?: (callback: () => void) => () => void;
+  /** Settings menu: Open at Login (null outside the packaged app) and Share Usage Data. */
+  appSettings?: () => Promise<AppSettings>;
+  setAppSetting?: (key: keyof AppSettings, value: boolean) => Promise<AppSettings>;
   /** Customize Mochi (main process): saved looks and whether pets can be drawn. */
   looksState?: () => Promise<LooksState>;
   /** Draw candidates for a description. */
@@ -78,8 +81,6 @@ export interface MochiShell {
   openLink?: (url: string) => Promise<boolean>;
   /** Append a usage event to events.jsonl (main adds the common columns). */
   logEvent?: (event: UsageEvent) => void;
-  /** Last 7 days of usage as paste-able counts; null if nothing is logged. */
-  usageSummary?: () => Promise<string | null>;
   /** Codimango SEVs, already filtered (open in the last week, or mitigated in the last day). */
   listSevs?: () => Promise<Sev[]>;
   /** The SEV list changed (read every ten minutes); returns unsubscribe. */
@@ -191,6 +192,24 @@ export function onSystemResumed(callback: () => void): () => void {
   return b.onSystemResumed(callback);
 }
 
+export interface AppSettings {
+  /** Null when it can't be set here (running from source). */
+  openAtLogin: boolean | null;
+  sharing: boolean;
+}
+
+export function appSettings(): Promise<AppSettings | null> {
+  const b = bridge();
+  if (!b?.appSettings) return Promise.resolve(null);
+  return b.appSettings().catch(() => null);
+}
+
+export function setAppSetting(key: keyof AppSettings, value: boolean): Promise<AppSettings | null> {
+  const b = bridge();
+  if (!b?.setAppSetting) return Promise.resolve(null);
+  return b.setAppSetting(key, value).catch(() => null);
+}
+
 export function looksState(): Promise<LooksState | null> {
   const b = bridge();
   if (!b?.looksState) return Promise.resolve(null);
@@ -244,12 +263,6 @@ export function reportProblem(state: ProblemReportState): Promise<boolean> {
 
 export function logEvent(event: UsageEvent): void {
   bridge()?.logEvent?.(event);
-}
-
-export function usageSummary(): Promise<string | null> {
-  const b = bridge();
-  if (!b?.usageSummary) return Promise.resolve(null);
-  return b.usageSummary().catch(() => null);
 }
 
 export function onScreenLock(callback: (locked: boolean) => void): () => void {

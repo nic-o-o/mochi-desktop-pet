@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceStudy, parseStudy, studyReport, turnaroundStats } from './study.ts';
+import { advanceStudy, parseStudy, turnaroundStats } from './study.ts';
 import type { CodimangoRow, CodimangoSnapshot } from './codimango.ts';
 
 const HOUR = 3_600_000;
@@ -61,24 +61,5 @@ describe('advanceStudy', () => {
     expect(parseStudy(JSON.stringify(s))).toEqual(s);
     expect(parseStudy('{"before":null}')).toBeNull();
     expect(parseStudy('nope')).toBeNull();
-  });
-});
-
-describe('studyReport', () => {
-  it('summarizes before and since install, plus a JSON line', () => {
-    const study = { installedAtMs: INSTALL, before: { count: 24, medianHours: 16.4, p90Hours: 74.7 } };
-    const rows = [
-      review('x', INSTALL + DAY, 6),
-      review('y', INSTALL + 2 * DAY, 10),
-      review('old', INSTALL - 3 * DAY, 50), // verdict before install, so not counted
-    ];
-    const text = studyReport(study, snap(rows), INSTALL + 12 * DAY);
-    const lines = text.split('\n');
-    expect(lines[1]).toBe('Installed: 2026-10-28 (12d ago)');
-    expect(lines[2]).toBe('Before Mochi (30 days before install): 24 reviews · median 16.4 h · p90 74.7 h');
-    expect(lines[3]).toBe('Since install: 2 reviews · median 6 h · p90 10 h');
-    const json = JSON.parse(lines[4]);
-    expect(json.after).toEqual({ count: 2, medianHours: 6, p90Hours: 10 });
-    expect(json.before.count).toBe(24);
   });
 });

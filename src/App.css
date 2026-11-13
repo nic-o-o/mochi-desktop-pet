@@ -1413,7 +1413,8 @@ html.mochi-shell .expanded-view {
 }
 
 .section-filter,
-.notify-filter {
+.notify-filter,
+.settings-menu-wrap {
   position: relative;
 }
 
@@ -1470,7 +1471,8 @@ html.mochi-shell .expanded-view {
 }
 
 .section-filter .icon-btn,
-.notify-filter .icon-btn {
+.notify-filter .icon-btn,
+.settings-menu-wrap .icon-btn {
   display: grid;
   place-items: center;
 }
@@ -1882,6 +1884,36 @@ html.mochi-shell .expanded-view {
 
 .section-menu-note {
   margin: 2px 6px 6px;
+}
+
+/* Settings (gear) menu: a group title for Help, and a label + link row. */
+.settings-menu-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.settings-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Show notifications" at the end of the bell menu: a plain underlined link. */
+.section-menu-link {
+  display: block;
+  margin: 0 6px 6px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* ------------------------------------------- bubble link + row highlight -- */

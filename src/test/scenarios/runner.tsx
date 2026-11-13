@@ -10,7 +10,7 @@ import type { AgentId, AgentJob, AgentReviewStart } from '../../mochi/agentRevie
 import type { CodimangoFetchResult, CodimangoSnapshot } from '../../mochi/codimango.ts';
 import type { Sev } from '../../mochi/sevs.ts';
 import type { LooksState, PetLook } from '../../mochi/looks.ts';
-import type { ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
+import type { AppSettings, ProblemReportState, UsageEvent } from '../../mochi/shell.ts';
 import { resetUsageForTests } from '../../mochi/usage.ts';
 import { toSnapshot } from './fixtures.ts';
 import type { ShorthandSnapshot } from './fixtures.ts';
@@ -136,6 +136,8 @@ interface Harness {
   agentListener?: (jobs: AgentJob[]) => void;
   sevListener?: (sevs: Sev[]) => void;
   looks: LooksState;
+  /** Settings menu toggles, as the main process would answer (a packaged app). */
+  appSettings: AppSettings;
 }
 
 /* A 1×1 PNG: stands in for every drawn pet. */
@@ -299,6 +301,7 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       looks: givenLooks,
       currentId: given?.current !== undefined ? (givenLooks[given.current]?.id ?? null) : null,
     },
+    appSettings: { openAtLogin: false, sharing: true },
   };
   const storeState = () => ({ looks: h.looks.looks, currentId: h.looks.currentId });
   h.agentJobs = (sc.given?.agents ?? []).map((g, i) => givenJob(file, sc, g, now, i));
@@ -332,7 +335,6 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
     openLink: (url) => (h.opened.push(url), Promise.resolve(true)),
     reportProblem: (state) => (h.reports.push(state), Promise.resolve(true)),
     logEvent: (event) => void h.events.push(event),
-    usageSummary: () => Promise.resolve('Mochi usage (last 7 days on this Mac; counts only)'),
     listSevs: () => Promise.resolve((sc.given?.sevs ?? []).map((g) => givenSev(g, now))),
     onSevsChanged: (cb) => ((h.sevListener = cb), () => {}),
     listAgentReviews: () => Promise.resolve(h.agentJobs),
@@ -350,6 +352,11 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         ];
       }
       return Promise.resolve(h.agentJobs);
+    },
+    appSettings: () => Promise.resolve(h.appSettings),
+    setAppSetting: (key, value) => {
+      h.appSettings = { ...h.appSettings, [key]: value };
+      return Promise.resolve(h.appSettings);
     },
     looksState: () => Promise.resolve(h.looks),
     /* Like the fake generator: three candidates, or the error named by "#kind" in the text. */
@@ -496,6 +503,9 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
         }
         case 'open_menu':
           fireEvent.click(mustFind('[aria-label="Choose sections"]', 'the ≡ menu button'));
+          break;
+        case 'open_settings':
+          fireEvent.click(mustFind('[aria-label="Settings"]', 'the ⚙ Settings button'));
           break;
         case 'open_notify_menu':
           fireEvent.click(mustFind('[aria-label="Notification settings"]', 'the bell button'));

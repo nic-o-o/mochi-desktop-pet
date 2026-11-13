@@ -32,7 +32,7 @@ import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewS
 import { checkDelegateStatus, checkTaskHandler, delegateToGreen, installDocker, stopGreenWorker } from './delegate.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
-import { createEventLog, readEvents, usageSummary } from './events.mjs';
+import { createEventLog } from './events.mjs';
 import { FLUSH_MS, flushSender, loadSharing, setSharing } from './sender.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
@@ -277,6 +277,23 @@ ipcMain.handle('mochi:review-skill-remove', (_event, id) => {
 });
 
 // Customize Mochi: availability and saved looks, drawing candidates, keeping one.
+/* Panel Settings menu: Open at Login (packaged app only, since from source it
+   would register the Electron binary) and Share Usage Data, same as the dock menu. */
+function appSettings() {
+  return {
+    openAtLogin: app.isPackaged ? app.getLoginItemSettings().openAtLogin : null,
+    sharing: loadSharing(app.getPath('userData')).sharing,
+  };
+}
+ipcMain.handle('mochi:app-settings', () => appSettings());
+ipcMain.handle('mochi:app-setting-set', (_event, key, value) => {
+  const on = value === true;
+  if (key === 'openAtLogin' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: on });
+  else if (key === 'sharing') setSharing(app.getPath('userData'), on);
+  else return appSettings();
+  if (app.isPackaged) setDockMenu();
+  return appSettings();
+});
 ipcMain.handle('mochi:looks-state', () => ({ available: customizer?.available() ?? false, practice: customizer?.practice() ?? false, ...(customizer?.state() ?? { looks: [], currentId: null }) }));
 ipcMain.handle('mochi:pet-generate', (_event, text) => customizer?.generate(String(text ?? '')) ?? { ok: false, error: { kind: 'error' } });
 ipcMain.handle('mochi:pet-generate-cancel', () => customizer?.cancel());
@@ -286,7 +303,6 @@ ipcMain.handle('mochi:look-delete', (_event, id) => customizer?.remove(String(id
 
 ipcMain.handle('mochi:agent-review-cancel', (_event, id) => agentReviews?.cancel(String(id)) ?? []);
 
-ipcMain.handle('mochi:usage-summary', () => (events ? usageSummary(readEvents(events.file, Date.now())) : null));
 
 /** Hourly CPU and memory across Mochi's processes (logging plan: mochi_resource). */
 function sampleResources() {

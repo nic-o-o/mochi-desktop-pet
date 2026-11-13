@@ -14,6 +14,7 @@ import {
   stopGreenWorker,
   deriveDelegateStatus,
   isTaskSlug,
+  doctorProblems,
   normalizeDelegateNode,
   parseDelegateStatusOutput,
   parseGreenStarted,
@@ -154,6 +155,36 @@ describe('parseGreenStarted', () => {
   it('tolerates a launch that reports only a log path', () => {
     expect(parseGreenStarted('log: /tmp/green.log\n')).toEqual({ pid: null, logPath: '/tmp/green.log', decision: null });
     expect(parseGreenStarted('nothing useful\n')).toEqual({ pid: null, logPath: null, decision: null });
+  });
+});
+
+describe('doctorProblems', () => {
+  it('names missing tools, a missing push guard, stale copies and an unreachable model', () => {
+    const found = doctorProblems(
+      [
+        'muse            MISSING -- instruction.md authoring',
+        'repair model    avocado-code-flex: Muse unavailable',
+        'skill conflict  stale codex copy at /home/x/.codex/skills/green',
+        '                run: agent-market skill install green --agent codex --force',
+        'push guard      not installed (/repo/.git/green-hooks)',
+        'not ready',
+      ].join('\n'),
+    );
+    expect(found.missing).toEqual(['muse']);
+    expect(found.problems).toEqual([
+      'muse is missing (instruction.md authoring)',
+      'the repair model is not reachable (avocado-code-flex: Muse unavailable)',
+      'stale Green copy: stale codex copy at /home/x/.codex/skills/green',
+      'the push guard is not installed',
+    ]);
+    expect(found.fix).toContain('Install the Muse CLI');
+    expect(found.fix).toContain('agent-market skill install green --agent codex --force');
+    expect(found.fix).toContain('install-hooks');
+  });
+
+  it('is null when the report names nothing (the caller shows the raw output)', () => {
+    expect(doctorProblems('muse: command not found')).toBeNull();
+    expect(doctorProblems('push guard      installed in /repo/.git/green-hooks\nok')).toBeNull();
   });
 });
 
@@ -670,29 +701,33 @@ describe('delegateToGreen', () => {
     expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
   });
 
-  it('names Docker as the failing doctor check instead of dumping the doctor table', async () => {
+  it('names a missing tool from the doctor report, with how to fix it, and tags Docker', async () => {
+    const report = [
+      'repository      /home/debrax/AAI/swe-bench-aai-labs-ember',
+      'codimango       /usr/local/bin/codimango',
+      'codex           /usr/local/bin/codex',
+      'muse            /usr/local/bin/muse',
+      'git             /usr/local/bin/git',
+      'docker          MISSING -- local task proof',
+      'codimango CLI  current command surface ready',
+      'repair model    avocado-code-flex: ready',
+      'push guard      already active in /home/debrax/AAI/swe-bench-aai-labs-ember/.git/green-hooks',
+      'not ready',
+    ].join('\n');
     const fake = fakeRun([
       ['SKILL.md', OK],
       ['task show', { code: 0, stdout: TASK_SHOW, stderr: '' }],
       ['test -e', OK],
       ['rev-parse', { code: 0, stdout: '/home/zixuanchen/AAI/swe-bench-aai-labs-ember\norg@github.com:codimango/swe-bench-aai-labs-ember.git\n', stderr: '' }],
       ['test -d', OK],
-      [
-        'doctor',
-        {
-          code: 1,
-          stdout:
-            'repository      /home/debrax/AAI/swe-bench-aai-labs-ember\ncodimango       /usr/local/bin/codimango\ncodex           /usr/local/bin/codex\nmuse            /usr/local/bin/muse\ngit             /usr/local/bin/git\ndocker          MISSING -- local task proof\ncodimango CLI   current command surface ready\nrepair model    avocado-code-flex: ready\npush guard      already active in /home/debrax/AAI/swe-bench-aai-labs-ember/.git/green-hooks\nnot ready',
-          stderr: '',
-        },
-      ],
+      ['doctor', { code: 1, stdout: report, stderr: 'note: --ws-url and AGENTCLOUD_ORCHESTRATOR_URL are both unset' }],
     ]);
     const result = await delegateWithNode({ taskSlug: 'ember-task' }, { run: fake.run });
-    expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe('doctor_failed');
     expect(result.error?.check).toBe('docker');
-    expect(result.error?.message).toContain('Docker is missing');
-    expect(result.error?.message).not.toContain('MISSING --');
+    expect(result.error?.message).toBe("Green isn't ready on the devserver: docker is missing (local task proof). Nothing was launched.");
+    expect(result.error?.fix).toMatch(/Install Docker on the devserver/);
+    expect(result.error?.fix).not.toMatch(/install-hooks/);
     expect(fake.calls.some((c) => c.script.includes('--detach'))).toBe(false);
   });
 

@@ -903,6 +903,49 @@ export function runNodeExec({ node, cwd, script, timeoutMs }, spawnImpl = spawn)
   });
 }
 
+/* How to fix each tool Green's doctor reports missing on the devserver. */
+const DOCTOR_FIXES = {
+  docker: 'Install Docker on the devserver (Harbor needs it): run /team-aai:setup-benchmark-env-devserver in Claude Code there.',
+  muse: 'Install the Muse CLI on the devserver with access to avocado-code-flex.',
+  codex: 'Install the Codex CLI on the devserver.',
+  codimango: 'Install codimango on the devserver: devfeature install codimango --persist, then codimango auth setup.',
+  git: 'Install git on the devserver.',
+};
+
+/**
+ * What Green's doctor says is wrong, from its report: missing tools ("docker
+ * MISSING -- local task proof"), stale skill copies, and a push guard that
+ * isn't installed. Returns { problems, fix } or null when nothing is named,
+ * so the caller falls back to the raw output.
+ */
+export function doctorProblems(text) {
+  const lines = String(text ?? '').split('\n');
+  const missing = [];
+  const problems = [];
+  const fixes = [];
+  for (const line of lines) {
+    const tool = /^(\w+)\s+MISSING\s+--\s+(.+)$/.exec(line.trim());
+    if (tool) {
+      missing.push(tool[1]);
+      problems.push(`${tool[1]} is missing (${tool[2].trim()})`);
+      if (DOCTOR_FIXES[tool[1]]) fixes.push(DOCTOR_FIXES[tool[1]]);
+    }
+    const stale = /^skill conflict\s+(.+)$/.exec(line.trim());
+    if (stale) problems.push(`stale Green copy: ${stale[1].trim()}`);
+    const run = /^run:\s+(agent-market skill install .+)$/.exec(line.trim());
+    if (run) fixes.push(`Run ${run[1].trim()} on the devserver.`);
+    if (/^push guard\s+/.test(line.trim()) && !/^push guard\s+(installed|already active)\b/.test(line.trim())) {
+      problems.push('the push guard is not installed');
+      fixes.push('Run doctor --install-hooks in the task checkout on the devserver.');
+    }
+    if (/^repair model\s+\S+:\s+(?!ready|check skipped)(.+)$/.test(line.trim())) {
+      problems.push(`the repair model is not reachable (${line.trim().replace(/^repair model\s+/, '')})`);
+    }
+  }
+  if (problems.length === 0) return null;
+  return { problems, missing, fix: fixes.join(' ') || null };
+}
+
 function tailOf(result) {
   return `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim().slice(-500).trim();
 }
@@ -1049,6 +1092,23 @@ export async function delegateToGreen({ taskSlug, node: nodeInput, agent: agentI
   if (doctored.error) return nodeErrorFor(doctored, 'running Green doctor');
   if (doctored.code !== 0 || doctored.timedOut) {
     const doctorOutput = `${doctored.stdout ?? ''}\n${doctored.stderr ?? ''}`;
+    /* Name what's wrong when the report says; otherwise show the raw tail.
+       When Docker is among the missing tools, tag the failure so the row
+       can offer the Install Docker action instead of just the fix text. */
+    const found = doctored.timedOut ? null : doctorProblems(doctorOutput);
+    if (found) {
+      return {
+        ok: false,
+        taskSlug: slug,
+        agent,
+        error: {
+          kind: 'doctor_failed',
+          ...(found.missing.includes('docker') ? { check: 'docker' } : {}),
+          message: `Green isn't ready on the devserver: ${found.problems.join('; ')}. Nothing was launched.`,
+          fix: found.fix ?? 'Run doctor --install-hooks in the task checkout on the devserver.',
+        },
+      };
+    }
     if (parseDoctorOutput(doctorOutput).dockerMissing) {
       return {
         ok: false,

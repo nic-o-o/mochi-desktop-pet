@@ -24,7 +24,6 @@ contextBridge.exposeInMainWorld('mochiShell', {
   submitTask: (id, sha) => ipcRenderer.invoke('mochi:submit-task', id, sha),
   openLink: (url) => ipcRenderer.invoke('mochi:open-link', url),
   logEvent: (event) => ipcRenderer.send('mochi:log-event', event),
-  usageSummary: () => ipcRenderer.invoke('mochi:usage-summary'),
   listAgentReviews: () => ipcRenderer.invoke('mochi:agent-reviews-list'),
   delegateToGreen: (taskSlug, node, agent) => ipcRenderer.invoke('mochi:green-delegate', taskSlug, node, agent),
   checkDelegateStatus: (req) => ipcRenderer.invoke('mochi:green-delegate-status', req),
@@ -41,6 +40,8 @@ contextBridge.exposeInMainWorld('mochiShell', {
     ipcRenderer.on('mochi:agent-reviews', listener);
     return () => ipcRenderer.removeListener('mochi:agent-reviews', listener);
   },
+  appSettings: () => ipcRenderer.invoke('mochi:app-settings'),
+  setAppSetting: (key, value) => ipcRenderer.invoke('mochi:app-setting-set', key, value === true),
   looksState: () => ipcRenderer.invoke('mochi:looks-state'),
   generatePet: (text) => ipcRenderer.invoke('mochi:pet-generate', text),
   cancelPetGenerate: () => ipcRenderer.invoke('mochi:pet-generate-cancel'),
