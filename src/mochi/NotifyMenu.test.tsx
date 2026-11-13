@@ -109,3 +109,33 @@ describe('NotifyMenu', () => {
     }
   });
 });
+
+describe('NotifyMenu: Show notifications', () => {
+  it('ends with a Show notifications line that closes the menu and shows the bubbles', () => {
+    let shown = 0;
+    function WithShow() {
+      const [open, setOpen] = useState(true);
+      return (
+        <NotifyMenu
+          notify={DEFAULT_NOTIFY}
+          onNotifyChange={() => {}}
+          open={open}
+          onOpenChange={setOpen}
+          unread={3}
+          onShowNotifications={() => shown++}
+        />
+      );
+    }
+    render(<WithShow />);
+    const menu = document.querySelector('.section-menu');
+    expect(menu?.lastElementChild?.textContent).toBe('Show notifications (3 new)');
+    fireEvent.click(screen.getByText('Show notifications (3 new)'));
+    expect(shown).toBe(1);
+    expect(document.querySelector('.section-menu')).toBeNull();
+  });
+
+  it('has no Show notifications line without a handler', () => {
+    render(<Harness />);
+    expect(screen.queryByText(/Show notifications/)).toBeNull();
+  });
+});

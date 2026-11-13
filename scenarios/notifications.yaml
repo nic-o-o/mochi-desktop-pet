@@ -130,6 +130,20 @@ scenarios:
           events:
             - { event: mochi_click, surface: glance_panel, component: notify_menu }
 
+  - id: notif-bell-menu-show-notifications
+    title: "\"Show notifications\" at the end of the bell menu shows the bubbles, latest first"
+    given: { saved: quiet_day, live: i_rejected_a_review }
+    steps:
+      - start
+      - click_pet
+      - press: Notification settings
+      - click: Show notifications
+      - expect:
+          bubble: Task Rejected
+          not_see: [Notify me about]
+          events:
+            - { event: mochi_click, surface: glance_panel, component: notifications }
+
   - id: notif-own-verdict-quiet
     title: Your own verdict on a review is saved to history but does not pop
     given: { saved: quiet_day, live: i_rejected_a_review }
