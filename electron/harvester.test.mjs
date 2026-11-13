@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   harvesterStatuses,
@@ -177,9 +181,99 @@ describe('devserver board (through agentcloudctl)', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('maps runs read from disk: a run whose process ended is stopped, with Harvester\'s last word', async () => {
+    const runs = [
+      { id: 'r1', task_name: 'ember-a', state: 'running', process_ended: true, detail: { detail: 'published abc is still being validated by Nest' } },
+      { id: 'r2', task_name: 'ember-b', state: 'running' },
+    ];
+    const res = await harvesterStatusesOnNode({ node: NODE }, { run: reply({ available: true, boards: [{ base: 'disk', repo: '/home/me/.config/harvester/projects/ember', runs }] }) });
+    expect(res.statuses['ember-a']).toMatchObject({
+      kind: 'stopped',
+      reason: 'Harvester stopped before finishing. Last: published abc is still being validated by Nest',
+      base: 'disk',
+    });
+    expect(res.statuses['ember-b'].kind).toBe('working');
+    expect(mapRun({ state: 'remote_waiting', process_ended: true }).reason).toBe('Harvester stopped before finishing.');
+  });
+
+  it('stops and restarts a board-less run through the script', async () => {
+    const calls = [];
+    const run = async (req) => (calls.push(req.script), reply({ ok: true })());
+    expect(await stopHarvesterRunOnNode({ node: NODE, base: 'disk', runId: 'r1' }, { run })).toEqual({ ok: true });
+    await restartHarvesterTaskOnNode({ node: NODE, base: 'disk', repo: '/p/ember', taskName: 'ember-a', intent: 'revive' }, { run });
+    expect(calls[0]).toContain("'stop' '' 'disk' 'r1'");
+    expect(calls[1]).toContain("'restart' '' 'disk' '/p/ember' 'ember-a' 'revive'");
+  });
+
   it('quotes script arguments so a token cannot break out of the shell command', () => {
     expect(remoteScript(['status', "it's"])).toContain("'it'\\''s'");
     expect(parseRemoteOutput('MOCHI_HARVESTER_JSON={"ok":true}')).toEqual({ ok: true });
     expect(parseRemoteOutput('MOCHI_HARVESTER_JSON={bad')).toBeNull();
+  });
+});
+
+// The devserver script itself, run here against a fake Harvester: run records in
+// CARD_BOARD_RUNS and an engine checkout whose runner answers liveness, taskflow
+// state and cancel, and whose revive launcher records how it was called.
+describe('devserver script without a board', () => {
+  const NOW = Date.now() / 1000;
+  function fakeHarvester() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mochi-hv-'));
+    const runs = path.join(root, 'runs');
+    const engine = path.join(root, 'engine');
+    const project = path.join(root, 'project');
+    const log = path.join(root, 'calls.jsonl');
+    for (const d of [runs, path.join(engine, 'ui'), path.join(engine, 'skills/revive/scripts'), project]) fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(
+      path.join(engine, 'ui/runner.py'),
+      [
+        'import json, os',
+        'def _log(v):',
+        '    with open(os.environ["FAKE_LOG"], "a") as f: f.write(json.dumps(v) + "\\n")',
+        'def taskflow_detail(rec):',
+        `    return {"outcome": "remote_waiting", "detail": "last word for " + rec["id"], "at": ${Math.round(NOW)}}`,
+        'def _run_alive(rec):',
+        '    return rec.get("pid") == 4242',
+        'def cancel(run_id, actor=""):',
+        '    _log({"cancel": run_id, "actor": actor})',
+        '    return {"id": run_id}, None',
+      ].join('\n'),
+    );
+    fs.writeFileSync(
+      path.join(engine, 'skills/revive/scripts/launch.py'),
+      'import json, os, sys\nwith open(os.environ["FAKE_LOG"], "a") as f: f.write(json.dumps({"launch": sys.argv[1:]}) + "\\n")\nprint("Revive started")\n',
+    );
+    const rec = (id, fields) => fs.writeFileSync(path.join(runs, `${id}.json`), JSON.stringify({ id, kind: 'taskflow', engine_checkout: engine, repo_root: project, ...fields }));
+    rec('a-old', { task_name: 'ember-a', state: 'done', started_at: '2026-11-01T00:00:00Z' });
+    rec('a-new', { task_name: 'ember-a', state: 'running', pid: 1, started_at: '2026-11-09T00:00:00Z' });
+    rec('b', { task_name: 'ember-b', state: 'running', pid: 4242, started_at: '2026-11-09T00:00:00Z' });
+    rec('c', { task_name: 'ember-c', state: 'queued', started_at: '2026-11-09T00:00:00Z' });
+    rec('card', { task_name: 'ember-d', kind: 'card', state: 'running' });
+    fs.writeFileSync(path.join(runs, 'mismatch.json'), JSON.stringify({ id: 'other', kind: 'taskflow', task_name: 'ember-e', state: 'running' }));
+    return { root, runs, project, log };
+  }
+  const runScript = (h, argv) =>
+    parseRemoteOutput(execFileSync('/bin/sh', ['-c', remoteScript(argv)], { env: { ...process.env, HOME: h.root, CARD_BOARD_RUNS: h.runs, FAKE_LOG: h.log }, encoding: 'utf8' }));
+  const calls = (h) => fs.readFileSync(h.log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+  it('reads the latest record per task and marks runs whose process is gone', (ctx) => {
+    const h = fakeHarvester();
+    const out = runScript(h, ['status', '']);
+    if (out.boards.some((b) => b.base !== 'disk')) ctx.skip(); // a real board is running on this Mac
+    expect(out.available).toBe(true);
+    const runs = Object.fromEntries(out.boards.flatMap((b) => b.runs).map((r) => [r.task_name, r]));
+    expect(Object.keys(runs).sort()).toEqual(['ember-a', 'ember-b', 'ember-c']);
+    expect(runs['ember-a']).toMatchObject({ id: 'a-new', process_ended: true, detail: { detail: 'last word for a-new' } });
+    expect(runs['ember-b'].process_ended).toBeFalsy();
+    expect(runs['ember-c'].process_ended).toBe(true); // queued, and no queue drainer running
+    expect(out.boards[0]).toMatchObject({ base: 'disk', repo: h.project });
+  });
+
+  it('stops with Harvester\'s cancel as this user and restarts with its revive launcher', () => {
+    const h = fakeHarvester();
+    expect(runScript(h, ['stop', '', 'disk', 'b'])).toEqual({ ok: true, error: null });
+    expect(runScript(h, ['restart', '', 'disk', h.project, 'ember-a', 'revive'])).toEqual({ ok: true, error: null });
+    expect(runScript(h, ['stop', '', 'disk', 'nope']).ok).toBe(false);
+    expect(calls(h)).toEqual([{ cancel: 'b', actor: os.userInfo().username }, { launch: ['ember-a', '--project', h.project] }]);
   });
 });

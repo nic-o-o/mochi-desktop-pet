@@ -3,8 +3,8 @@
  * Harvester (codimango/harvester) revives draft tasks with an agent and serves
  * a local board. On a laptop the board is plain HTTP on 127.0.0.1, port 44101
  * by default (44100–44109 when several run); a devserver board is HTTPS behind
- * Secure Web Apps and not reachable from here, so Mochi only sees a Harvester
- * running on this Mac. Nothing here is a documented Harvester API — the board
+ * Secure Web Apps, so Mochi reaches it through agentcloudctl (see below).
+ * Nothing here is a documented Harvester API — the board
  * calls it "not part of the runtime contract" — so every field is read
  * defensively and an unreachable or unexpected board means "no status", never
  * an error on the row.
@@ -19,6 +19,14 @@
  * board's Unix user): POST /api/cancel-run {id, owner} stops a run and keeps
  * the scheduler off it; POST /api/taskflow-bulk {repo, tasks, owner, intent}
  * queues a revival, which publishes — pushes to the task and comments.
+ *
+ * On a devserver Mochi runs the same reads and writes there through
+ * agentcloudctl (REMOTE_SCRIPT). When no board is running — Harvester started
+ * by an agent with its revive skill — the script reads Harvester's run records
+ * (~/.cache/harvester-board/runs, which the skill's launcher shares with the
+ * board), uses Harvester's own runner to check each process is alive and to
+ * read its taskflow state, stops with runner.cancel and restarts with the
+ * skill's launch.py.
  */
 
 export const HARVESTER_PORTS = [44101, 44100, 44102, 44103, 44104, 44105, 44106, 44107, 44108, 44109];
@@ -51,11 +59,18 @@ export function runReason(run) {
   return line.length > REASON_MAX ? `${line.slice(0, REASON_MAX - 1)}…` : line;
 }
 
+/** A run whose record says it's active but whose process is gone (devserver restart, agent session closed). */
+function endedReason(last) {
+  const text = last ? `Harvester stopped before finishing. Last: ${last}` : 'Harvester stopped before finishing.';
+  return text.length > REASON_MAX ? `${text.slice(0, REASON_MAX - 1)}…` : text;
+}
+
 /**
  * One Harvester run → Mochi's agent status: working, stuck, done or stopped.
  * Mirrors Harvester's own Farmer rules: queued and waiting-on-Nest runs are
  * healthy; a run with no log output for 10 minutes is stalled (stuck); a
  * platform-blocked phase or an infra block past the automatic retries is stuck.
+ * A record read from disk whose process is gone (`process_ended`) is stopped.
  */
 export function mapRun(run) {
   const state = str(run?.state);
@@ -64,7 +79,8 @@ export function mapRun(run) {
   const outcome = str(detail.outcome);
   const restarts = Number.isFinite(Number(run?.restart_count)) ? Number(run.restart_count) : 0;
   let kind;
-  if (state === 'running') kind = run?.stalled_since ? 'stuck' : phase === 'platform_blocked' ? 'stuck' : 'working';
+  if (run?.process_ended) kind = 'stopped';
+  else if (state === 'running') kind = run?.stalled_since ? 'stuck' : phase === 'platform_blocked' ? 'stuck' : 'working';
   else if (state === 'queued' || state === 'remote_waiting' || state === 'update-held') kind = phase === 'platform_blocked' ? 'stuck' : 'working';
   else if (state === 'infrastructure_blocked') kind = restarts >= INFRA_RETRY_LIMIT ? 'stuck' : 'working';
   else if (state === 'done') kind = outcome === 'green' ? 'done' : 'stopped';
@@ -74,7 +90,7 @@ export function mapRun(run) {
   return {
     kind,
     state,
-    reason: runReason(run) || waiting || (kind === 'stuck' && run?.stalled_since ? 'No output for over 10 minutes' : ''),
+    reason: run?.process_ended ? endedReason(runReason(run)) : runReason(run) || waiting || (kind === 'stuck' && run?.stalled_since ? 'No output for over 10 minutes' : ''),
     runId: str(run?.id) || null,
     intent: str(run?.intent) === 'revision' ? 'revision' : 'revive',
     restartCount: restarts,
@@ -198,7 +214,7 @@ export function restartHarvesterTask({ base, repo, taskName, intent, owner, toke
  * the devserver's own user, which Harvester requires to match the board owner.
  */
 const REMOTE_SCRIPT = String.raw`
-import getpass, json, ssl, sys, urllib.error, urllib.parse, urllib.request
+import contextlib, getpass, glob, io, json, os, ssl, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 ctx = ssl._create_unverified_context()
 args = sys.argv[2:]
 mode, token = args[0], args[1]
@@ -222,11 +238,117 @@ def trim(run):
     f = run.get("failure") if isinstance(run.get("failure"), dict) else {}
     t = d.get("timing") if isinstance(d.get("timing"), dict) else {}
     keep = {k: run.get(k) for k in ("id", "task_name", "state", "stalled_since", "restart_count", "error",
-                                    "started_at", "ended_at", "intent", "last_progress_at")}
+                                    "started_at", "ended_at", "intent", "last_progress_at", "process_ended")}
     keep["detail"] = {"detail": d.get("detail"), "means": d.get("means"), "outcome": d.get("outcome"),
                       "timing": {"phase": t.get("phase")}}
     keep["failure"] = {"cause": f.get("cause"), "message": f.get("message")}
     return keep
+# No board: Harvester started by an agent (skills/revive/scripts/launch.py)
+# writes the same run records, so read them, ask Harvester's own runner
+# whether each process is alive, and act through runner.cancel / launch.py.
+RUNS = os.environ.get("CARD_BOARD_RUNS") or os.path.expanduser("~/.cache/harvester-board/runs")
+WAITING = ("queued", "remote_waiting", "infrastructure_blocked", "update-held")
+def records(days):
+    cut, recs = time.time() - days * 86400, []
+    for f in glob.glob(os.path.join(RUNS, "*.json")):
+        try:
+            if os.path.getmtime(f) < cut:
+                continue
+            with open(f, encoding="utf-8") as fh:
+                r = json.load(fh)
+        except Exception:
+            continue
+        if isinstance(r, dict) and r.get("kind") == "taskflow" and r.get("id") == os.path.basename(f)[:-5]:
+            recs.append(r)
+    recs.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)
+    return recs
+def engine_for(recs):
+    for e in [str((r or {}).get("engine_checkout") or "") for r in recs] + [os.path.expanduser("~/repos/harvester")]:
+        if e and os.path.isfile(os.path.join(e, "ui", "runner.py")):
+            return e
+    return None
+def load_runner(engine):
+    for sub in ("engine", ".", "ui"):
+        sys.path.insert(0, os.path.join(engine, sub))
+    with contextlib.redirect_stdout(io.StringIO()):
+        import runner
+    return runner
+def pid_alive(pid):
+    try:
+        pid = int(pid)
+        if pid < 1:
+            return False
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+def drainer_alive():
+    for c in glob.glob("/proc/[0-9]*/cmdline"):
+        try:
+            with open(c, "rb") as fh:
+                cmd = fh.read()
+        except OSError:
+            continue
+        if b"launch.py" in cmd and b"--promote-queue" in cmd:
+            return True
+    return False
+def disk_status():
+    recs = records(14)
+    engine = engine_for(recs)
+    try:
+        runner = load_runner(engine) if engine else None
+    except Exception:
+        runner = None
+    latest, groups, drain = {}, {}, None
+    for r in recs:
+        latest.setdefault(str(r.get("task_name") or ""), r)
+    for name, r in latest.items():
+        if not name:
+            continue
+        detail = {}
+        try:
+            d = runner.taskflow_detail(r) if runner else None
+            detail = d if isinstance(d, dict) else {}
+        except Exception:
+            pass
+        run, state = dict(r, detail=detail), str(r.get("state") or "")
+        if state == "running" or state in WAITING:
+            try:
+                alive = bool(runner._run_alive(r)) if runner else pid_alive(r.get("pid"))
+            except Exception:
+                alive = pid_alive(r.get("pid"))
+            if not alive and state in WAITING:
+                drain = drainer_alive() if drain is None else drain
+                alive = drain
+            if not alive:
+                run["process_ended"] = True
+        if not run.get("last_progress_at") and detail.get("at"):
+            run["last_progress_at"] = detail.get("at")
+        groups.setdefault(str(r.get("repo_root") or ""), []).append(trim(run))
+    return {"available": bool(recs), "boards": [{"base": "disk", "repo": k, "runs": v} for k, v in groups.items()]}
+def disk_action():
+    recs = records(60)
+    if mode == "stop":
+        rec = next((r for r in recs if r.get("id") == args[3]), None)
+        engine = engine_for([rec]) if rec else None
+        if not engine:
+            return {"ok": False, "error": "Harvester has no record of that run on the devserver."}
+        res, err = load_runner(engine).cancel(args[3], actor=getpass.getuser())
+        return {"ok": res is not None and not err, "error": str(err) if err else None}
+    repo_root, name = args[3], args[4]
+    rec = next((r for r in recs if r.get("task_name") == name), None)
+    engine = engine_for([rec] if rec else [])
+    launcher = os.path.join(engine or "", "skills", "revive", "scripts", "launch.py")
+    if not engine or not os.path.isfile(launcher):
+        return {"ok": False, "error": "Couldn't find Harvester's launcher on the devserver."}
+    argv0 = str(((rec or {}).get("argv") or [""])[0])
+    python = argv0 if os.path.basename(argv0).startswith("python") and os.path.isfile(argv0) else sys.executable
+    cmd = [python, launcher, name] + (["--project", repo_root] if repo_root and os.path.isdir(repo_root) else [])
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=45, stdin=subprocess.DEVNULL)
+    if p.returncode == 0:
+        return {"ok": True, "error": None}
+    lines = [l for l in (p.stderr or p.stdout or "").splitlines() if l.strip()]
+    return {"ok": False, "error": (lines[-1] if lines else "Harvester's launcher failed.")[:300]}
 out = {}
 if mode == "status":
     bases = ["https://localhost:%d" % p for p in range(44200, 44210)] + ["http://127.0.0.1:%d" % p for p in range(44100, 44110)]
@@ -249,7 +371,12 @@ if mode == "status":
                 continue
             if c == 200 and isinstance(st, dict):
                 boards.append({"base": base, "repo": name, "runs": [trim(r) for r in (st.get("runs") or []) if isinstance(r, dict)]})
-    out = {"available": found, "boards": boards}
+    out = {"available": found, "boards": boards} if found else disk_status()
+elif args[2] == "disk":
+    try:
+        out = disk_action()
+    except Exception as e:
+        out = {"ok": False, "error": "Harvester on the devserver: %s" % str(e)[:200]}
 else:
     base = args[2]
     if mode == "stop":
@@ -265,7 +392,8 @@ else:
 print("MOCHI_HARVESTER_JSON=" + json.dumps(out))
 `;
 const REMOTE_B64 = Buffer.from(REMOTE_SCRIPT).toString('base64');
-const REMOTE_BASE = /^(https:\/\/localhost:442\d\d|http:\/\/127\.0\.0\.1:441\d\d)$/;
+/** A devserver board's address, or "disk": no board, so the run records are read and acted on directly. */
+const REMOTE_BASE = /^(https:\/\/localhost:442\d\d|http:\/\/127\.0\.0\.1:441\d\d|disk)$/;
 const REMOTE_TIMEOUT_MS = 60_000;
 const shq = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
