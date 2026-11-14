@@ -23,8 +23,9 @@
  * "Delegate to agent" launches Green on the devserver instead
  * (electron/delegate.mjs).
  */
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,10 +57,14 @@ import {
 } from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
+import { ORIGIN, SCHEME, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
 const DEV_URL = process.env.MOCHI_DEV_URL ?? (app.isPackaged ? null : 'http://localhost:5173/');
+/* The packaged renderer lives at mochi://renderer/ (see rendererProtocol.mjs); the scheme must be registered before ready. */
+const DIST_DIR = path.join(here, '..', 'dist');
+registerRendererScheme(protocol);
 const SYNC_WARN_MS = 5000;
 const SIMULATE_ACCELERATOR = 'CommandOrControl+Shift+M';
 const RESOURCE_SAMPLE_MS = 60 * 60_000;
@@ -136,7 +141,19 @@ function createWindow() {
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(here, 'preload.cjs'),
+      // Electron's defaults, stated so they can't drift: the renderer gets no Node and runs sandboxed.
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
     },
+  });
+  // The window only ever shows Mochi: no navigating away, no new windows (links go to the browser).
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAppNavigation(url, DEV_URL)) event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedLink(url)) void shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   win.setAlwaysOnTop(true, 'floating');
@@ -150,7 +167,7 @@ function createWindow() {
   if (DEV_URL) {
     win.loadURL(`${DEV_URL}${DEV_URL.includes('?') ? '&' : '?'}mochi-shell=1`);
   } else {
-    win.loadFile(path.join(here, '..', 'dist', 'index.html'), { query: { 'mochi-shell': '1' } });
+    win.loadURL(`${ORIGIN}/index.html?mochi-shell=1`);
   }
 
   // Permanent observability: bridge/render proof in the terminal.
@@ -424,6 +441,7 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
+  protocol.handle(SCHEME, (request) => rendererResponse(DIST_DIR, request.url, fs.promises.readFile));
   // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai.
   // Packaged builds keep Customize hidden until the key-holding proxy exists (B3).
   const pets = pickGenerator({
