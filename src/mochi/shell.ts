@@ -58,7 +58,7 @@ export interface MochiShell {
   onSystemResumed?: (callback: () => void) => () => void;
   /** Dock menu "Report a Problem…" asks the renderer to start a report; returns unsubscribe. */
   onReportRequest?: (callback: () => void) => () => void;
-  /** Settings menu: Open at Login (null outside the packaged app) and Share Usage Data. */
+  /** Settings menu: Open at Login (null outside the packaged app). */
   appSettings?: () => Promise<AppSettings>;
   setAppSetting?: (key: keyof AppSettings, value: boolean) => Promise<AppSettings>;
   /** Customize Mochi (main process): saved looks and whether pets can be drawn. */
@@ -199,7 +199,6 @@ export function onSystemResumed(callback: () => void): () => void {
 export interface AppSettings {
   /** Null when it can't be set here (running from source). */
   openAtLogin: boolean | null;
-  sharing: boolean;
 }
 
 export function appSettings(): Promise<AppSettings | null> {
