@@ -30,6 +30,11 @@ describe('classifyFailure', () => {
 });
 
 describe('pickRow', () => {
+  it("keeps only the rollup's state, so the panel can tell running from waiting to start", () => {
+    expect(pickRow({ id: 1, validationRollupState: { state: 'pending', failingGates: 0, totalGates: 6 } }).validationRollupState).toEqual({ state: 'pending' });
+    expect(pickRow({ id: 1 }).validationRollupState).toBeNull();
+  });
+
   it('keeps only mapped fields and stringifies the id', () => {
     const row = pickRow({
       id: 42,

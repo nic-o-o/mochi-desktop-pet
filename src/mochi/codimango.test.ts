@@ -199,6 +199,24 @@ describe('toTaskItems', () => {
     expect(items[2]).toMatchObject({ priority: 'normal', subtitle: 'Validation running · sent back 3d ago' });
   });
 
+  it('says a pending validation is running only when Codimango reports it running', () => {
+    const reviewedAt = new Date(NOW - 3 * DAY).toISOString();
+    const sub = (rollup: { state: string } | null) =>
+      toTaskItems(snap([], [row({ status: 'needs_revision', reviewedAt, validationStatus: 'pending', validationRollupState: rollup })]), NOW)[0]
+        ?.subtitle;
+    expect(sub({ state: 'running' })).toBe('Validation running · sent back 3d ago');
+    expect(sub({ state: 'pending' })).toBe('Validation pending · sent back 3d ago');
+    expect(sub({ state: 'blocked' })).toBe('Validation pending · sent back 3d ago');
+    expect(sub(null)).toBe('Validation running · sent back 3d ago');
+  });
+
+  it('labels a pending draft the same way', () => {
+    const lead = (rollup: { state: string } | null) =>
+      toTaskItems(snap([], [row({ validationStatus: 'pending', validationRollupState: rollup })]), NOW)[0]?.subtitle;
+    expect(lead({ state: 'pending' })).toMatch(/^Validation pending/);
+    expect(lead({ state: 'running' })).toMatch(/^Validation running/);
+  });
+
   it('sorts pending/passing revisions oldest send-back first under sortTasks', () => {
     const items = toTaskItems(
       snap(
