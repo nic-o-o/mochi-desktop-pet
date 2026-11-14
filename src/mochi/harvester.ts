@@ -29,13 +29,25 @@ const PLAIN: [RegExp, string][] = [
   [/^needs a person; hardening is not the remedy/i, "Needs you: making it harder won't fix this"],
   [/^two rounds changed neither the suite nor the verdict/i, 'Two rounds made no progress'],
   [/^the platform's own trials errored/i, "Codimango's own trials errored; re-run validation, nothing to repair"],
+  [/^Revalidation was not started: the server could not resolve rerun policy/i, "Codimango couldn't start revalidation; Harvester will retry"],
+  [/qualitative validation request exceeds \d+ bytes/i, "Codimango's AI review can't run: the task is over its 4 MB size limit. Publishing anyway"],
 ];
+/** About one line on the row; the full text is in the tooltip. */
+export const REASON_SHORT = 110;
 const LAST = 'Harvester stopped before finishing. Last: ';
 
 /** Harvester's reason in plain words when it's a known one; the original stays in the row's tooltip. */
 export function plainReason(reason: string): string {
   if (reason.startsWith(LAST)) return LAST + plainReason(reason.slice(LAST.length));
   return PLAIN.find(([re]) => re.test(reason))?.[1] ?? reason;
+}
+
+/** A reason cut to about one line, at a word boundary, with an ellipsis. */
+export function shortReason(reason: string, max = REASON_SHORT): string {
+  if (reason.length <= max) return reason;
+  const cut = reason.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}…`;
 }
 
 export function harvesterLabel(status: Pick<HarvesterTaskStatus, 'kind' | 'intent'>): string {

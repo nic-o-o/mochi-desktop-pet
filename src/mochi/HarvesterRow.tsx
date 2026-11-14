@@ -8,7 +8,7 @@
  * reviewer's request).
  */
 import { useState } from 'react';
-import { harvesterLabel, plainReason, sinceLabel } from './harvester.ts';
+import { harvesterLabel, plainReason, shortReason, sinceLabel } from './harvester.ts';
 import { restartHarvesterTask, stopHarvesterRun } from './shell.ts';
 import type { HarvesterTaskStatus } from './shell.ts';
 import { logClick } from './usage.ts';
@@ -75,7 +75,7 @@ export function HarvesterRow({
       <div className="glance-meta-line">
         <span className={`agent-status ${tone}`} title={status.reason || undefined}>
           {harvesterLabel(status)}
-          {status.reason ? ` · ${plainReason(status.reason)}` : ''}
+          {status.reason ? ` · ${shortReason(plainReason(status.reason))}` : ''}
           {since ? <span className="muted"> · {since}</span> : null}
         </span>
         {showAction && canStop && (
