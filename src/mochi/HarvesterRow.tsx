@@ -8,7 +8,7 @@
  * reviewer's request).
  */
 import { useState } from 'react';
-import { harvesterLabel, sinceLabel } from './harvester.ts';
+import { harvesterLabel, plainReason, sinceLabel } from './harvester.ts';
 import { restartHarvesterTask, stopHarvesterRun } from './shell.ts';
 import type { HarvesterTaskStatus } from './shell.ts';
 import { logClick } from './usage.ts';
@@ -36,6 +36,9 @@ export function HarvesterRow({
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [note, setNote] = useState('');
+  /* The status an action answered; its confirmation goes once the status line moves on (it says the same thing). */
+  const statusKey = `${status.kind}|${status.state}|${status.runId ?? ''}`;
+  const [actedOn, setActedOn] = useState('');
   const fields = { task_id: taskId, status: status.kind };
   const tone = status.kind === 'stuck' || status.kind === 'stopped' ? 'agent-failed' : 'agent-done';
   const since = sinceLabel(status.sinceMs, nowMs);
@@ -45,6 +48,7 @@ export function HarvesterRow({
 
   async function act(kind: 'stop' | 'restart') {
     setPhase('working');
+    setActedOn(statusKey);
     setNote(kind === 'stop' ? 'Stopping…' : 'Starting…');
     logClick('glance_panel', kind === 'stop' ? 'harvester_stop' : 'harvester_restart', fields);
     const res = await (kind === 'stop' ? stop(status) : restart({ ...status, intent }));
@@ -71,7 +75,7 @@ export function HarvesterRow({
       <div className="glance-meta-line">
         <span className={`agent-status ${tone}`} title={status.reason || undefined}>
           {harvesterLabel(status)}
-          {status.reason ? ` · ${status.reason}` : ''}
+          {status.reason ? ` · ${plainReason(status.reason)}` : ''}
           {since ? <span className="muted"> · {since}</span> : null}
         </span>
         {showAction && canStop && (
@@ -132,7 +136,7 @@ export function HarvesterRow({
             </button>
           </div>
         </fieldset>
-      ) : phase === 'working' || phase === 'sent' || phase === 'error' ? (
+      ) : phase === 'working' || phase === 'error' || (phase === 'sent' && statusKey === actedOn) ? (
         <p className={`agent-note small ${phase === 'error' ? 'agent-failed' : 'muted'}`}>{note}</p>
       ) : null}
     </div>
