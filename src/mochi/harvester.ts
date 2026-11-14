@@ -11,6 +11,45 @@ import type { HarvesterTaskStatus } from './shell.ts';
 export const HARVESTER_POLL_MS = 30_000;
 
 /** The agent line's label, naming the job when there is one: Harvester fixes validation (revive) or addresses a reviewer's revisions. */
+/* Harvester's most common one-line reasons, in plain words. Anything else is shown as Harvester wrote it. */
+const PLAIN: [RegExp, string][] = [
+  [/^(the )?durable owner is repairing or (running local checks|checking the task)/i, 'Working on the fix and running tests'],
+  [/^calibration guard refused the candidate/i, 'Its own check rejected the last attempt (it changed files this fix may not touch); trying again'],
+  [/^(published [0-9a-f]+|the exact revision) is still being validated by Nest/i, 'Pushed a fix; waiting for Codimango to validate it'],
+  [/^pushed; waiting on the platform to re-validate/i, 'Pushed a fix; waiting for Codimango to validate it'],
+  [/^an exact-revision platform job or dispatch grace is active/i, "Waiting for Codimango's validation job"],
+  [/^exact-revision platform work is parked outside a repair slot/i, "Waiting for Codimango's validation"],
+  [/^the platform is stale and has no live exact-revision job/i, "Codimango isn't validating its latest push yet"],
+  [/^Nest has not created a validation commit or live job/i, "Codimango hasn't started validating its latest push"],
+  [/^paused outside the task; retry keeps its edits and budget/i, 'Paused by an infrastructure problem; it will retry'],
+  [/^hardening, round in progress/i, 'Making the task harder; round in progress'],
+  [/^every gate passes/i, 'Every check passes; ready to submit'],
+  [/^the full wall clock was spent pushing/i, 'Ran out of time; start it again to continue'],
+  [/^no lever left, and no pivot either/i, 'Out of ideas; needs you to decide'],
+  [/^needs a person; hardening is not the remedy/i, "Needs you: making it harder won't fix this"],
+  [/^two rounds changed neither the suite nor the verdict/i, 'Two rounds made no progress'],
+  [/^the platform's own trials errored/i, "Codimango's own trials errored; re-run validation, nothing to repair"],
+  [/^Revalidation was not started: the server could not resolve rerun policy/i, "Codimango couldn't start revalidation; Harvester will retry"],
+  [/qualitative validation request exceeds \d+ bytes/i, "Codimango's AI review can't run: the task is over its 4 MB size limit. Publishing anyway"],
+];
+/** About one line on the row; the full text is in the tooltip. */
+export const REASON_SHORT = 110;
+const LAST = 'Harvester stopped before finishing. Last: ';
+
+/** Harvester's reason in plain words when it's a known one; the original stays in the row's tooltip. */
+export function plainReason(reason: string): string {
+  if (reason.startsWith(LAST)) return LAST + plainReason(reason.slice(LAST.length));
+  return PLAIN.find(([re]) => re.test(reason))?.[1] ?? reason;
+}
+
+/** A reason cut to about one line, at a word boundary, with an ellipsis. */
+export function shortReason(reason: string, max = REASON_SHORT): string {
+  if (reason.length <= max) return reason;
+  const cut = reason.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}…`;
+}
+
 export function harvesterLabel(status: Pick<HarvesterTaskStatus, 'kind' | 'intent'>): string {
   const job = status.intent === 'revision' ? 'addressing revisions' : 'fixing validation';
   if (status.kind === 'working') return `Harvester ${job}`;

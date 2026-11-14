@@ -41,7 +41,7 @@ import {
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog } from './events.mjs';
-import { FLUSH_MS, flushSender, loadSharing, setSharing } from './sender.mjs';
+import { FLUSH_MS, flushSender } from './sender.mjs';
 import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 import { createSevWatch } from './sevs.mjs';
@@ -326,18 +326,17 @@ ipcMain.handle('mochi:review-skill-remove', (_event, id) => {
 
 // Customize Mochi: availability and saved looks, drawing candidates, keeping one.
 /* Panel Settings menu: Open at Login (packaged app only, since from source it
-   would register the Electron binary) and Share Usage Data, same as the dock menu. */
+   would register the Electron binary). Usage data has no switch in the UI; an
+   earlier opt-out (sharing: false in userData) is still honored by the sender. */
 function appSettings() {
   return {
     openAtLogin: app.isPackaged ? app.getLoginItemSettings().openAtLogin : null,
-    sharing: loadSharing(app.getPath('userData')).sharing,
   };
 }
 ipcMain.handle('mochi:app-settings', () => appSettings());
 ipcMain.handle('mochi:app-setting-set', (_event, key, value) => {
   const on = value === true;
   if (key === 'openAtLogin' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: on });
-  else if (key === 'sharing') setSharing(app.getPath('userData'), on);
   else return appSettings();
   if (app.isPackaged) setDockMenu();
   return appSettings();
@@ -388,7 +387,6 @@ ipcMain.on('mochi:sync-bounds', (event, rect) => {
 /** Dock icon right-click → "Open at Login" (packaged app only). */
 function setDockMenu() {
   const { openAtLogin } = app.getLoginItemSettings();
-  const sharing = loadSharing(app.getPath('userData')).sharing;
   app.dock?.setMenu(
     Menu.buildFromTemplate([
       {
@@ -398,16 +396,6 @@ function setDockMenu() {
         click: (item) => {
           app.setLoginItemSettings({ openAtLogin: item.checked });
           events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'open_at_login', enabled: item.checked });
-        },
-      },
-      {
-        label: 'Share Usage Data',
-        type: 'checkbox',
-        checked: sharing,
-        click: (item) => {
-          setSharing(app.getPath('userData'), item.checked);
-          events?.log({ event_name: 'mochi_click', surface: 'dock_menu', component: 'share_usage', enabled: item.checked });
-          setDockMenu();
         },
       },
       { type: 'separator' },

@@ -51,6 +51,8 @@ export interface CodimangoRow {
   validationFailedSince: string | null;
   staleArchiveWarnedAt: string | null;
   validationDetails: CodimangoValidationDetail[] | null;
+  /** Codimango's summary of a pending validation: `running`, or still `pending` / `blocked` to start. Absent in older rows. */
+  validationRollupState?: { state: string } | null;
   oraclePassCount: number | null;
   oracleTotalCount: number | null;
   /** Drafts with passing validation only: why `task submit-status` blocks the
@@ -250,7 +252,7 @@ function revisionItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | nul
   } else if (row.validationStatus === 'failed') {
     subtitle = checkSummary ? undefined : `Validation failed · sent back ${ago(sentBackMs, nowMs)}`;
   } else if (row.validationStatus === 'pending') {
-    subtitle = `Validation running · sent back ${ago(sentBackMs, nowMs)}`;
+    subtitle = `${pendingLabel(row)} · sent back ${ago(sentBackMs, nowMs)}`;
   } else {
     subtitle = `Reviewer feedback · sent back ${ago(sentBackMs, nowMs)}`;
   }
@@ -300,6 +302,12 @@ export function submitBlockers(row: CodimangoRow): string[] {
   return out;
 }
 
+/** "Validation running" only when Codimango says so; a validation that hasn't started is "pending". Older rows without the rollup read running. */
+function pendingLabel(row: CodimangoRow): string {
+  const state = row.validationRollupState?.state;
+  return !state || state === 'running' ? 'Validation running' : 'Validation pending';
+}
+
 function draftState(row: CodimangoRow): DraftState {
   if (row.validationStatus === 'passing') return submitBlockers(row).length ? 'blocked' : 'ready';
   if (row.validationStatus === 'failed') return 'failing';
@@ -329,7 +337,7 @@ function draftItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | null {
         : state === 'blocked'
           ? `Validation passing · blocked: ${checkSummary}`
           : state === 'running'
-            ? 'Validation running'
+            ? pendingLabel(row)
             : 'Not validated yet';
   return {
     id: row.id,
