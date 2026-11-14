@@ -1626,6 +1626,24 @@ html.mochi-shell .expanded-view {
   font-size: 11px;
 }
 
+/* An action in the flag's slot of a meta line (Harvester's Stop / Restart),
+   right-aligned with FAILING on the line above. */
+.glance-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0;
+}
+
+.harvester-row .agent-status {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: break-word;
+}
+
+.agent-note {
+  margin: 2px 0 0;
+}
+
 .agent-picker {
   margin: 8px 0 0;
   padding: 10px 12px;
@@ -1900,6 +1918,16 @@ html.mochi-shell .expanded-view {
   gap: 8px;
   padding: 4px 6px;
   font-size: 13px;
+}
+
+.settings-node-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
 }
 
 .settings-row-label {

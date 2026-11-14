@@ -29,7 +29,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewSkill } from './agentReview.mjs';
-import { checkDelegateStatus, checkTaskHandler, delegateToGreen, installDocker, stopGreenWorker } from './delegate.mjs';
+import {
+  checkDelegateStatus,
+  checkTaskHandler,
+  delegateToGreen,
+  installDocker,
+  normalizeDelegateNode,
+  runNodeExec,
+  stopGreenWorker,
+} from './delegate.mjs';
 import { fetchCodimango, fetchSubmitSha, isAllowedLink, submitDryRun, submitTask } from './codimango.mjs';
 import { allDisplayBounds } from './displays.mjs';
 import { createEventLog } from './events.mjs';
@@ -38,6 +46,14 @@ import { installFileLog } from './logfile.mjs';
 import { REPORT_URL, diagnostics, logTail } from './report.mjs';
 import { createSevWatch } from './sevs.mjs';
 import { createCustomizer } from './customize.mjs';
+import {
+  harvesterStatuses,
+  harvesterStatusesOnNode,
+  restartHarvesterTask,
+  restartHarvesterTaskOnNode,
+  stopHarvesterRun,
+  stopHarvesterRunOnNode,
+} from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
 
@@ -217,6 +233,38 @@ ipcMain.handle('mochi:agent-reviews-list', () => agentReviews?.list() ?? []);
 ipcMain.handle('mochi:green-delegate', (_event, taskSlug, node, agent) =>
   delegateToGreen({ taskSlug: String(taskSlug ?? ''), node: String(node ?? ''), agent: typeof agent === 'string' ? agent : undefined }),
 );
+/* Harvester's agent status for drafts (electron/harvester.mjs): from a board on
+   this Mac (loopback, Node's fetch) and, when the person named a devserver,
+   from the board there through agentcloudctl. A board started with --token
+   needs MOCHI_HARVESTER_TOKEN. Stop and Restart post as the board host's own
+   user, which Harvester requires to match the board's owner. */
+const harvesterToken = () => process.env.MOCHI_HARVESTER_TOKEN ?? '';
+ipcMain.handle('mochi:harvester-status', async (_event, req) => {
+  const node = normalizeDelegateNode(req?.node);
+  const [local, remote] = await Promise.all([
+    harvesterStatuses({ token: harvesterToken() }),
+    node ? harvesterStatusesOnNode({ node, token: harvesterToken() }, { run: runNodeExec }) : { available: false, statuses: {} },
+  ]);
+  /* Same task on both boards: the newer run wins. */
+  const statuses = { ...local.statuses };
+  for (const [name, s] of Object.entries(remote.statuses)) {
+    if (!statuses[name] || (s.startedMs ?? 0) >= (statuses[name].startedMs ?? 0)) statuses[name] = s;
+  }
+  return { available: local.available || remote.available, statuses };
+});
+ipcMain.handle('mochi:harvester-stop', (_event, req) => {
+  const node = normalizeDelegateNode(req?.node);
+  return node
+    ? stopHarvesterRunOnNode({ node, base: req?.base, runId: req?.runId, token: harvesterToken() }, { run: runNodeExec })
+    : stopHarvesterRun({ base: req?.base, runId: req?.runId, owner: os.userInfo().username, token: harvesterToken() });
+});
+ipcMain.handle('mochi:harvester-restart', (_event, req) => {
+  const node = normalizeDelegateNode(req?.node);
+  const args = { base: req?.base, repo: req?.repo, taskName: req?.taskName, intent: req?.intent, token: harvesterToken() };
+  return node
+    ? restartHarvesterTaskOnNode({ node, ...args }, { run: runNodeExec })
+    : restartHarvesterTask({ ...args, owner: os.userInfo().username });
+});
 ipcMain.handle('mochi:green-delegate-status', (_event, req) =>
   checkDelegateStatus({
     taskSlug: String(req?.taskSlug ?? ''),

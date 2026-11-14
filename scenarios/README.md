@@ -128,3 +128,8 @@ plan's validation list.
 Write the behaviour the way you'd explain it to a tester, run `npm run scenarios`,
 and keep it if it passes. If it fails, either the app or the scenario is wrong;
 decide which before changing either. `AGENTS.md` has the same loop for an agent.
+
+## Harvester (scenarios/harvester.yaml)
+
+- Given `harvester: { <task name>: { kind: working|stuck|done|stopped, reason?, state?, intent? } }` stands in for a Harvester board on this Mac.
+- Expect `harvester_calls: ["stop run-<task>", "restart <task> <intent>"]` lists the Stop / Restart calls Mochi sent, in order.

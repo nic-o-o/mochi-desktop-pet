@@ -17,6 +17,8 @@ import {
 import { AgentRow } from './AgentRow.tsx';
 import type { AgentReviewControls } from './AgentRow.tsx';
 import { DelegateRow, TaskHandlerStatus } from './DelegateRow.tsx';
+import { HarvesterRow } from './HarvesterRow.tsx';
+import type { HarvesterTaskStatus } from './shell.ts';
 import { delegateAvailable } from './shell.ts';
 import { isActive, jobsForTask } from './agentReviews.ts';
 import { SetupCard } from './SetupCard.tsx';
@@ -32,7 +34,7 @@ import { SectionDragHandle } from './SectionDragHandle.tsx';
 import { useSectionDrag } from './useSectionDrag.ts';
 import { appSettings, canSubmit, setAppSetting, submitDryRun, submitSha, submitTask } from './shell.ts';
 import type { AppSettings } from './shell.ts';
-import { forgetDelegateNode, loadDelegateNode } from './delegations.ts';
+import { forgetDelegateNode, loadDelegateNode, normalizeDelegateNode, saveDelegateNode } from './delegations.ts';
 
 const KIND_SECTION: Record<'revision' | 'pending' | 'draft', SectionKey> = {
   revision: 'revisions',
@@ -82,6 +84,8 @@ interface OverviewPanelProps {
   freshness?: { fetchedAtMs: number | null; state: FreshnessState; onRefresh: () => void };
   /** "Ask agents" on review rows (desktop shell only). */
   agentReview?: AgentReviewControls;
+  /** Agent line under drafts and revisions: what Harvester is doing with each task. */
+  harvester?: HarvesterControls;
   /** A direct submit landed: caller refreshes tasks (desktop shell only). */
   onSubmitted?: () => void;
   /** Open Codimango SEVs: one line each at the top, most severe first. */
@@ -218,6 +222,7 @@ function GlanceRow({
   onOpen,
   eventSection,
   agentReview,
+  harvester,
   onSubmitted,
   highlighted = false,
 }: {
@@ -231,6 +236,7 @@ function GlanceRow({
   /** Logging section override (ready-for-submission rows share the draft look). */
   eventSection?: SectionKey;
   agentReview?: AgentReviewControls;
+  harvester?: HarvesterControls;
   onSubmitted?: () => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
@@ -245,12 +251,14 @@ function GlanceRow({
         : pendingRowFlag(t.slaDueMs, nowMs);
   const section = SECTION_EVENT_NAME[eventSection ?? KIND_SECTION[kind]];
   const fields = { section, task_id: t.id, position, badge: flag.text };
+  const harvesterStatus = harvester?.statuses[t.title];
   useVpv(ref, `row:${t.id}`, () => logVpv('glance_panel', 'row', fields));
   /* Ready drafts get Submit in the flag slot (drafts + ready-for-submission sections). */
   const showSubmit = kind === 'draft' && t.draftState === 'ready' && canSubmit();
   /* Revision rows delegate to Green (desktop shell only); the status label
      sits on the meta line and the picker below it share this one guard. */
-  const showDelegate = kind === 'revision' && delegateAvailable();
+  /* Harvester already has this task: don't offer a second agent (Green) that would push over it. */
+  const showDelegate = kind === 'revision' && !harvesterStatus && delegateAvailable();
   /* An Ask-agent review on this row is named in the status line; it never blocks a Green repair. */
   const reviewJobRunning = agentReview ? jobsForTask(agentReview.jobs, t.id).some(isActive) : false;
   const [phase, setPhase] = useState<SubmitPhase>('idle');
@@ -346,6 +354,10 @@ function GlanceRow({
       {kind === 'pending' && agentReview && (
         <AgentRow taskId={t.id} jobs={jobsForTask(agentReview.jobs, t.id)} nowMs={nowMs} controls={agentReview} />
       )}
+      {/* Second status line: the agent working on this task (Harvester), under the validation line above. */}
+      {kind !== 'pending' && harvesterStatus && (
+        <HarvesterRow taskId={t.id} status={harvesterStatus} revision={kind === 'revision'} nowMs={nowMs} onChanged={harvester?.refresh} />
+      )}
       {showDelegate && <DelegateRow taskId={t.id} taskSlug={t.title} detail={t.checkSummary} />}
       {showSubmit && phase === 'confirming' && (
         <div className="agent-row">
@@ -397,6 +409,7 @@ function TaskSection({
   eventSection,
   emptyText,
   agentReview,
+  harvester,
   onSubmitted,
   highlightTaskId,
   dragHandle,
@@ -412,6 +425,7 @@ function TaskSection({
   eventSection?: SectionKey;
   emptyText?: string;
   agentReview?: AgentReviewControls;
+  harvester?: HarvesterControls;
   onSubmitted?: () => void;
   /** Grip at the head's left edge that reorders the section (main panel only). */
   dragHandle?: ReactNode;
@@ -466,6 +480,7 @@ function TaskSection({
                 onOpen={onOpen}
                 eventSection={eventSection}
                 agentReview={agentReview}
+                harvester={harvester}
                 onSubmitted={onSubmitted}
                 highlighted={t.id === highlightTaskId}
               />
@@ -586,8 +601,9 @@ export function SettingsMenu({
   }, [reportState]);
   /* Read fresh each time the menu opens: the dock menu can change these too. */
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  /* Bumped by Change so the saved devserver is read again. */
+  /* Bumped by Change and Save so the saved devserver is read again. */
   const [nodeVersion, setNodeVersion] = useState(0);
+  const [nodeInput, setNodeInput] = useState('');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- nodeVersion only forces a fresh read
   const node = useMemo(() => (open ? loadDelegateNode() : null), [open, nodeVersion]);
   useEffect(() => {
@@ -666,10 +682,11 @@ export function SettingsMenu({
               <span>Share usage data</span>
             </label>
           )}
-          {node && (
+          {/* The devserver Delegate runs Green on, and where Mochi looks for Harvester's board. */}
+          {node ? (
             <div className="settings-row">
-              <span className="settings-row-label" title={node}>
-                Delegation devserver: {node.split('.')[0]}
+              <span className="settings-row-label" title={`${node}: used by Delegate and for Harvester status`}>
+                Devserver: {node.split('.')[0]}
               </span>
               <button
                 type="button"
@@ -677,13 +694,38 @@ export function SettingsMenu({
                 onClick={() => {
                   logClick('glance_panel', 'delegate_node_forget');
                   forgetDelegateNode();
+                  setNodeInput(node);
                   setNodeVersion((v) => v + 1);
                 }}
-                title="Forget it; the next delegation asks again"
+                title="Change the devserver Mochi uses"
               >
                 Change
               </button>
             </div>
+          ) : (
+            <form
+              className="settings-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const next = normalizeDelegateNode(nodeInput);
+                if (!next) return;
+                logClick('glance_panel', 'delegate_node_set');
+                saveDelegateNode(next);
+                setNodeVersion((v) => v + 1);
+              }}
+            >
+              <input
+                className="settings-node-input"
+                aria-label="Devserver"
+                placeholder="Devserver, e.g. devvm1234.abc0.facebook.com"
+                value={nodeInput}
+                onChange={(e) => setNodeInput(e.target.value)}
+                autoComplete="off"
+              />
+              <button type="submit" className="btn-link" disabled={!normalizeDelegateNode(nodeInput)}>
+                Save
+              </button>
+            </form>
           )}
           {onReportProblem && <p className="section-menu-title settings-menu-group">Help</p>}
           {onReportProblem && (
@@ -785,6 +827,12 @@ export function NotifyMenu({
       )}
     </div>
   );
+}
+
+/** Harvester's agent status per task name, and a re-read after Stop or Restart. */
+export interface HarvesterControls {
+  statuses: Record<string, HarvesterTaskStatus>;
+  refresh: () => void;
 }
 
 /** "Your week at a glance" — compact floating overview next to the pet. */
@@ -954,6 +1002,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
                     eventSection={lists[key].eventSection}
                     emptyText={lists[key].emptyText}
                     agentReview={props.agentReview}
+                    harvester={props.harvester}
                     onSubmitted={props.onSubmitted}
                     highlightTaskId={props.highlightTaskId}
                     dragging={sectionDrag.draggingKey === key}
