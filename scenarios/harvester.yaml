@@ -1,5 +1,6 @@
 # The agent line under drafts and revisions: what Harvester (on this Mac) is
-# doing with each task, with its one-line reason, and Stop / Restart.
+# doing with each task, with its one-line reason, and Stop / Fix validation /
+# Address revisions.
 # Format: scenarios/README.md. `harvester:` stands in for the Harvester board.
 
 fixtures:
@@ -24,15 +25,15 @@ scenarios:
       sections: { revisions: true, reviews: true, drafts: true }
       harvester:
         ember-draft-failing: { kind: working, reason: "Repairing the AI assessment findings, round 2" }
-        ember-results-sync: { kind: stuck, reason: "No output for over 10 minutes" }
+        ember-results-sync: { kind: stuck, reason: "No output for over 10 minutes", intent: revision }
     steps:
       - start
       - click_pet
       - expect:
           see:
             - "Validation failed · Oracle 1/3"
-            - "Harvester stuck · No output for over 10 minutes"
-            - "Harvester working · Repairing the AI assessment findings, round 2"
+            - "Harvester stuck addressing revisions · No output for over 10 minutes"
+            - "Harvester fixing validation · Repairing the AI assessment findings, round 2"
 
   - id: harvester-stop-stuck
     title: A stuck Harvester run can be stopped from the row, after a confirmation
@@ -47,45 +48,46 @@ scenarios:
       - expect: { see: [Stop Harvester, Stops the stuck run so you can restart it.], harvester_calls: [] }
       - click: Stop
       - expect:
-          see: [Stopped. Restart when you are ready.]
+          see: [Stopped. Harvester leaves the task alone until you start it again.]
           harvester_calls: [stop run-ember-results-sync]
           events:
             - { event: mochi_click, surface: glance_panel, component: harvester_stop, task_id: v1, status: stuck }
 
   - id: harvester-restart-stopped
-    title: Restart on a Needs revision row asks Harvester to address the revisions, after saying it will push
+    title: A stopped run on a Needs revision row offers Address revisions, which asks Harvester for its revision workflow after saying it will push
     given:
       live: week
       harvester:
-        # The last run was a plain revive; a revision row still restarts as a revision.
+        # The last run was a plain revive; a revision row still starts a revision run.
         ember-results-sync: { kind: stopped, reason: "Exhausted the repair budget", intent: revive }
     steps:
       - start
       - click_pet
-      - expect: { see: ["Harvester stopped · Exhausted the repair budget"] }
-      - click: Restart
-      - expect: { see: [to address the requested revisions, It pushes its repairs to the task and posts a comment], harvester_calls: [] }
-      - click: Restart
+      - expect: { see: ["Harvester stopped · Exhausted the repair budget"], not_see: [Fix validation] }
+      - click: Address revisions
+      - expect: { see: [Harvester will address the requested revisions on, It pushes its repairs to the task and posts a comment], harvester_calls: [] }
+      - click: Address revisions
       - expect:
-          see: ["Restarted: Harvester queued it again."]
+          see: ["Queued: Harvester will address the revisions."]
           harvester_calls: [restart ember-results-sync revision]
           events:
             - { event: mochi_click, surface: glance_panel, component: harvester_restart, task_id: v1, status: stopped }
 
   - id: harvester-restart-draft
-    title: Restart on a draft keeps the run's own workflow
+    title: A stopped run on a draft offers Fix validation, Harvester's revive workflow
     given:
       live: week
       sections: { revisions: false, reviews: false, drafts: true }
       harvester:
-        ember-draft-failing: { kind: stopped, reason: "Harvester stopped before finishing.", intent: revive }
+        ember-draft-failing: { kind: stopped, reason: "Harvester stopped before finishing.", intent: revision }
     steps:
       - start
       - click_pet
-      - click: Restart
-      - expect: { see: [It pushes its repairs to the task], not_see: [to address the requested revisions] }
-      - click: Restart
-      - expect: { harvester_calls: [restart ember-draft-failing revive] }
+      - expect: { not_see: [Address revisions] }
+      - click: Fix validation
+      - expect: { see: [Harvester will fix validation on] }
+      - click: Fix validation
+      - expect: { see: ["Queued: Harvester will fix validation."], harvester_calls: [restart ember-draft-failing revive] }
 
   - id: harvester-absent
     title: Without Harvester on this Mac, rows have no agent line

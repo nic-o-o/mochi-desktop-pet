@@ -10,12 +10,13 @@ import type { HarvesterTaskStatus } from './shell.ts';
 
 export const HARVESTER_POLL_MS = 30_000;
 
-export const HARVESTER_LABELS: Record<HarvesterTaskStatus['kind'], string> = {
-  working: 'Harvester working',
-  stuck: 'Harvester stuck',
-  done: 'Harvester done',
-  stopped: 'Harvester stopped',
-};
+/** The agent line's label, naming the job when there is one: Harvester fixes validation (revive) or addresses a reviewer's revisions. */
+export function harvesterLabel(status: Pick<HarvesterTaskStatus, 'kind' | 'intent'>): string {
+  const job = status.intent === 'revision' ? 'addressing revisions' : 'fixing validation';
+  if (status.kind === 'working') return `Harvester ${job}`;
+  if (status.kind === 'stuck') return `Harvester stuck ${job}`;
+  return status.kind === 'done' ? 'Harvester done' : 'Harvester stopped';
+}
 
 export function useHarvesterStatuses(open: boolean): { statuses: Record<string, HarvesterTaskStatus>; refresh: () => void } {
   const [statuses, setStatuses] = useState<Record<string, HarvesterTaskStatus>>({});
