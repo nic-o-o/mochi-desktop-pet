@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CSP, ORIGIN, isAppNavigation, registerRendererScheme, rendererResponse, resolveRendererFile } from './rendererProtocol.mjs';
+import { CSP, ORIGIN, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse, resolveRendererFile } from './rendererProtocol.mjs';
 
 const DIST = path.resolve('/app/dist');
 
@@ -48,6 +48,13 @@ describe('rendererResponse', () => {
     expect(res.headers.get('Content-Security-Policy')).toBe(CSP);
     expect(await res.text()).toBe('console.log(1)');
     expect(await (await rendererResponse(dir, 'mochi://renderer/?mochi-shell=1', read)).text()).toContain('<title>Mochi</title>');
+  });
+
+  it('serves a blank page (not the app) for the storage migration', async () => {
+    const res = await rendererResponse(dir, STORAGE_PAGE, read);
+    expect(res.status).toBe(200);
+    expect(await res.text()).not.toContain('<title>Mochi</title><script');
+    expect(res.headers.get('Content-Security-Policy')).toBe(CSP);
   });
 
   it('is a 404, still with the policy, for missing or refused files', async () => {

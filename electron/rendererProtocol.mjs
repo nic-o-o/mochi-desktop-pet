@@ -79,8 +79,17 @@ export function resolveRendererFile(distDir, url) {
   return file.startsWith(root + path.sep) ? file : null;
 }
 
+/** A blank page on this origin, where the one-time storage migration writes (storageMigration.mjs). */
+export const STORAGE_PAGE = `${ORIGIN}/__storage`;
+
 /** The response for one renderer request; `readFile` is fs.promises.readFile. */
 export async function rendererResponse(distDir, url, readFile) {
+  if (url.split(/[?#]/)[0] === STORAGE_PAGE) {
+    return new Response('<!doctype html><title>Mochi</title>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': CSP },
+    });
+  }
   const file = resolveRendererFile(distDir, url);
   if (!file) return new Response('Not found', { status: 404, headers: { 'Content-Security-Policy': CSP } });
   let body;

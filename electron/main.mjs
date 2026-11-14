@@ -28,7 +28,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewSkill } from './agentReview.mjs';
 import {
   checkDelegateStatus,
@@ -57,7 +57,8 @@ import {
 } from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
-import { ORIGIN, SCHEME, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
+import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
+import { MARKER_FILE, migrateRendererStorage } from './storageMigration.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -123,6 +124,21 @@ function defaultBounds() {
 /* On every desktop (Space) and over full-screen apps. */
 function showOnAllDesktops(target) {
   target.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
+/* True while the storage migration's hidden pages are the only windows: closing them must not quit Mochi. */
+let migratingStorage = false;
+
+/** An invisible, sandboxed page with no preload, for the storage migration. */
+async function openHiddenPage(url) {
+  const page = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  try {
+    await page.loadURL(url);
+  } catch (err) {
+    page.destroy();
+    throw err;
+  }
+  return { run: (js) => page.webContents.executeJavaScript(js), close: () => page.destroy() };
 }
 
 function createWindow() {
@@ -496,7 +512,21 @@ app.whenReady().then(() => {
   setTimeout(flush, 60_000).unref();
   setInterval(flush, FLUSH_MS).unref();
   setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
-  createWindow();
+  /* Packaged builds moved from file:// to mochi://renderer: carry saved settings over once, before the pet appears. */
+  migratingStorage = !DEV_URL;
+  void (DEV_URL ? Promise.resolve() : migrateRendererStorage({
+    markerPath: path.join(app.getPath('userData'), MARKER_FILE),
+    legacyUrl: pathToFileURL(path.join(here, 'legacy-storage.html')).href,
+    targetUrl: STORAGE_PAGE,
+    openHidden: openHiddenPage,
+    fs: fs.promises,
+    log: (line) => console.log(line),
+  }))
+    .catch((err) => console.warn('[mochi] storage migration failed:', err))
+    .finally(() => {
+      createWindow();
+      migratingStorage = false;
+    });
   // `screen` is unusable before ready — this must live in here, not at module scope.
   for (const event of ['display-metrics-changed', 'display-added', 'display-removed']) {
     screen.on(event, () => win?.webContents.send('mochi:display-changed'));
@@ -531,6 +561,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  if (migratingStorage) return;
   // Quit everywhere (including macOS) — a pet with no windows is just
   // a dock icon, and the prototype has no tray menu yet.
   app.quit();
