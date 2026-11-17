@@ -54,6 +54,7 @@ describe('createClerkVerifier', () => {
     expect(await reason(c.sign(valid({ nbf: T + 60 })))).toBe('not_yet_valid');
     expect(await reason(c.sign(valid({ iss: 'https://evil.clerk.accounts.dev' })))).toBe('wrong_issuer');
     expect(await reason(c.sign(valid({ azp: 'https://ember.example' })))).toBe('wrong_party');
+    expect(await reason(c.sign(valid({ azp: undefined })))).toBe('wrong_party');
     expect(await reason(c.sign(valid({ sub: 'org_123' })))).toBe('malformed');
     expect(await reason(c.sign(valid(), { alg: 'HS256', kid: 'ins_1' }))).toBe('unsupported');
     expect(await reason(c.sign(valid(), { alg: 'none', kid: 'ins_1' }))).toBe('unsupported');

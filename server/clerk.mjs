@@ -94,7 +94,8 @@ export function createClerkVerifier({
     if (typeof p.exp !== 'number' || p.exp + skewSec < t) return { ok: false, reason: 'expired' };
     if (typeof p.nbf === 'number' && p.nbf - skewSec > t) return { ok: false, reason: 'not_yet_valid' };
     if (typeof p.sub !== 'string' || !p.sub.startsWith('user_')) return { ok: false, reason: 'malformed' };
-    if (allowedParties && p.azp !== undefined && !allowedParties.includes(p.azp)) return { ok: false, reason: 'wrong_party' };
+    // Mochi shares the lab's Clerk app, so azp (the origin the token was minted for) is what tells Mochi's tokens from Ember's.
+    if (allowedParties && !allowedParties.includes(p.azp)) return { ok: false, reason: 'wrong_party' };
     if (orgId && tokenOrgId(p) !== orgId) return { ok: false, reason: 'not_member' };
     return { ok: true, userId: p.sub };
   };

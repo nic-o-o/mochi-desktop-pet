@@ -121,6 +121,9 @@ describe('config and key', () => {
   it('reads the Clerk issuer from the publishable key and refuses to start without one', () => {
     const cfg = configFromEnv({ CLERK_PUBLISHABLE_KEY: 'pk_test_cGlja2VkLWJ1bGxkb2ctODg4OC5jbGVyay5hY2NvdW50cy5kZXYk', MOCHI_MODEL: 'muse' });
     expect(cfg).toMatchObject({ issuer: 'https://picked-bulldog-8888.clerk.accounts.dev', orgId: null, perUser: 10, total: 200, host: '127.0.0.1', port: 8787 });
+    // Tokens minted for Mochi only (azp); the dev server's origin only on a Development instance.
+    expect(cfg.allowedParties).toEqual(['mochi://renderer', 'http://localhost:5173']);
+    expect(configFromEnv({ CLERK_PUBLISHABLE_KEY: 'pk_live_Y2xlcmsuZW1iZXIuZXhhbXBsZSQ', MOCHI_MODEL: 'muse' }).allowedParties).toEqual(['mochi://renderer']);
     expect(cfg.model.model).toBe('muse-image-1.0-eval');
     expect(() => configFromEnv({})).toThrow(/CLERK_PUBLISHABLE_KEY/);
     expect(() => configFromEnv({ CLERK_PUBLISHABLE_KEY: 'pk_test_cGlja2VkLWJ1bGxkb2ctODg4OC5jbGVyay5hY2NvdW50cy5kZXYk', MOCHI_MODEL: 'gemini' })).toThrow(/MOCHI_MODEL/);
