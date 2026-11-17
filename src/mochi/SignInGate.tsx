@@ -8,7 +8,7 @@
  * CLI on this Mac, under the person's own login, which never leaves it.
  */
 import type { ReactNode } from 'react';
-import { ClerkProvider, SignIn, useAuth, useOrganizationList, useUser } from '@clerk/electron/react';
+import { ClerkFailed, ClerkLoading, ClerkProvider, SignIn, useAuth, useOrganizationList, useUser } from '@clerk/electron/react';
 import { CLERK_PUBLISHABLE_KEY, MOCHI_ORG_ID } from './clerkConfig.ts';
 
 
@@ -31,7 +31,21 @@ function Gate({ children, frame }: { children: Render; frame: Frame }) {
   const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
   const { user } = useUser();
   const orgs = useOrganizationList({ userMemberships: true });
-  if (!isLoaded) return frame(<p className="customize-signin muted small">Loading sign-in…</p>);
+  if (!isLoaded) {
+    // A failed load never becomes "loaded", so say so instead of loading forever.
+    return frame(
+      <>
+        <ClerkLoading>
+          <p className="customize-signin muted small">Loading sign-in…</p>
+        </ClerkLoading>
+        <ClerkFailed>
+          <p className="customize-error" role="alert">
+            Sign-in couldn't start. Close Customize and try again; if it keeps failing, report a problem.
+          </p>
+        </ClerkFailed>
+      </>,
+    );
+  }
   if (!isSignedIn) {
     return frame(
       <div className="customize-signin">

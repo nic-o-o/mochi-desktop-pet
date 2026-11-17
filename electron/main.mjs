@@ -190,8 +190,12 @@ function createWindow() {
   // Permanent observability: bridge/render proof in the terminal.
   win.webContents.on('console-message', (event) => {
     const message = event.message;
-    if (typeof message === 'string' && message.startsWith('[mochi]')) {
+    if (typeof message !== 'string') return;
+    if (message.startsWith('[mochi]')) {
       console.log('[renderer]', message);
+    } else if (DEV_URL && (event.level === 'error' || event.level === 'warning')) {
+      // From source, renderer errors (such as Clerk failing to load) land in the terminal too.
+      console.warn(`[renderer ${event.level}]`, message.slice(0, 2000));
     }
   });
 
