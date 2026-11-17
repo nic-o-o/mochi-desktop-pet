@@ -3,6 +3,7 @@ import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDailyLimits, createDrawHandler, safetyId } from './drawServer.mjs';
 import { configFromEnv, freshKey } from './main.mjs';
+import { petPrompt } from '../electron/petGenerator.mjs';
 
 const servers = [];
 afterEach(() => servers.splice(0).forEach((s) => s.close()));
@@ -44,7 +45,8 @@ describe('draw server', () => {
     const res = await s.post({ description: '  a sleepy orange cat with a scarf  ', unixname: 'debrax', fbid: '4782' });
     expect(res.status).toBe(200);
     expect(res.body.images).toEqual([Buffer.from('png1').toString('base64'), Buffer.from('png2').toString('base64')]);
-    expect(s.draws).toEqual([{ prompt: 'a sleepy orange cat with a scarf', user: safetyId('user_2abc') }]);
+    // Only what the person typed reaches the model, wrapped in Mochi's style instructions; none of the extra fields.
+    expect(s.draws).toEqual([{ prompt: petPrompt('a sleepy orange cat with a scarf'), user: safetyId('user_2abc') }]);
     expect(s.logs.join('\n')).not.toMatch(/sleepy|user_2abc/);
   });
 
@@ -59,7 +61,7 @@ describe('draw server', () => {
   it('rejects empty, oversized or malformed requests before drawing', async () => {
     const s = await serve();
     expect((await s.post({ description: '   ' })).status).toBe(400);
-    expect((await s.post({ description: 'x'.repeat(401) })).status).toBe(400);
+    expect((await s.post({ description: 'x'.repeat(201) })).status).toBe(400);
     expect((await s.post('{not json')).status).toBe(400);
     expect((await fetch(`${s.base}/v1/draw`)).status).toBe(405);
     expect((await fetch(`${s.base}/healthz`)).status).toBe(200);

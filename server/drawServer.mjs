@@ -13,8 +13,10 @@
  * Logs carry the user hash, never the description or the user ID.
  */
 import crypto from 'node:crypto';
+import { PROMPT_MAX, cleanPrompt, petPrompt } from '../electron/petGenerator.mjs';
 
-export const MAX_DESCRIPTION = 400;
+/* The app's own limit on what a person can type. */
+export const MAX_DESCRIPTION = PROMPT_MAX;
 
 /** Model API's per-user safety ID for a Clerk user. */
 export function safetyId(clerkUserId) {
@@ -101,8 +103,9 @@ export function createDrawHandler({ verify, limits, draw, log = () => {}, maxDes
     } catch {
       return send(res, 400, { error: 'bad_request' });
     }
-    const description = typeof body?.description === 'string' ? body.description.trim() : '';
-    if (!description || description.length > maxDescription) return send(res, 400, { error: 'bad_description', max: maxDescription });
+    const raw = typeof body?.description === 'string' ? body.description : '';
+    const description = cleanPrompt(raw);
+    if (!description || raw.trim().length > maxDescription) return send(res, 400, { error: 'bad_description', max: maxDescription });
 
     const slot = limits.take(user);
     if (!slot.ok) {
@@ -110,7 +113,8 @@ export function createDrawHandler({ verify, limits, draw, log = () => {}, maxDes
       return send(res, 429, { error: slot.scope === 'user' ? 'daily_limit' : 'service_limit' });
     }
     const started = Date.now();
-    const result = await draw({ prompt: description, user });
+    // Mochi's style instructions are added here, so the app sends only what the person typed.
+    const result = await draw({ prompt: petPrompt(description), user });
     if (!result.ok) {
       const kind = result.error?.kind ?? 'error';
       if (kind !== 'refused') limits.refund(user); // a refusal still counts; our failures don't

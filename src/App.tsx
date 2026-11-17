@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   DRAG_THRESHOLD_PX,
@@ -28,6 +28,8 @@ import { AGENT_LABELS, jobsForTask, useAgentReviews } from './mochi/agentReviews
 import type { AgentId, AgentJob } from './mochi/agentReviews.ts';
 import { AgentReportView } from './mochi/AgentReportView.tsx';
 import { CustomizeView } from './mochi/CustomizeView.tsx';
+/* Clerk's SDK is only needed when drawings go through the draw server. */
+const SignInGate = lazy(() => import('./mochi/SignInGate.tsx').then((m) => ({ default: m.SignInGate })));
 import { currentImage, useLooks } from './mochi/looks.ts';
 import { reviewUrl } from './mochi/codimango.ts';
 import {
@@ -1065,15 +1067,35 @@ export default function App() {
       {expandedOpen && (
         <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
         {customizeOpen ? (
-          <CustomizeView
-            anchor={shell ? expandedPos : undefined}
-            looks={looks.state}
-            reviewFrac={reviewFrac}
-            subFrac={subFrac}
-            onLooksChange={looks.apply}
-            onDrawingChange={setDrawing}
-            onClose={closeExpanded}
-          />
+          looks.state.signIn ? (
+            // Drawing through the draw server: sign in first (Clerk). Loaded only then.
+            <Suspense fallback={null}>
+              <SignInGate>
+                {(getToken) => (
+                  <CustomizeView
+                    anchor={shell ? expandedPos : undefined}
+                    looks={looks.state}
+                    reviewFrac={reviewFrac}
+                    subFrac={subFrac}
+                    onLooksChange={looks.apply}
+                    onDrawingChange={setDrawing}
+                    onClose={closeExpanded}
+                    getToken={getToken}
+                  />
+                )}
+              </SignInGate>
+            </Suspense>
+          ) : (
+            <CustomizeView
+              anchor={shell ? expandedPos : undefined}
+              looks={looks.state}
+              reviewFrac={reviewFrac}
+              subFrac={subFrac}
+              onLooksChange={looks.apply}
+              onDrawingChange={setDrawing}
+              onClose={closeExpanded}
+            />
+          )
         ) : reportTaskId ? (
           <AgentReportView
             key={reportTaskId}

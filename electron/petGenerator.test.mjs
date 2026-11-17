@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createModelApiGenerator, errorKind, keychainKey, MODELS, pickGenerator } from './petGenerator.mjs';
+import { MODELS, createModelApiGenerator, createProxyGenerator, errorKind, keychainKey, pickGenerator } from './petGenerator.mjs';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const reply = (status, body) => async () => ({ ok: status < 400, status, json: async () => body });
@@ -114,3 +114,34 @@ describe('keychainKey', () => {
     expect(calls).toBe(2);
   });
 });
+
+describe('createProxyGenerator (the draw server)', () => {
+  const ok = (body, status = 200) => new Response(JSON.stringify(body), { status });
+  it('sends only the description and the Clerk token, and returns the drawings', async () => {
+    const calls = [];
+    const gen = createProxyGenerator({ url: 'http://127.0.0.1:8787/', fetchImpl: async (u, init) => (calls.push({ u, init }), ok({ images: [Buffer.from('png').toString('base64')] })) });
+    const r = await gen.generate({ prompt: 'A small cute desktop pet character: cat…', description: 'cat', token: 'tok' });
+    expect(r).toEqual({ ok: true, images: [Buffer.from('png')] });
+    expect(calls[0].u).toBe('http://127.0.0.1:8787/v1/draw');
+    expect(calls[0].init.headers.Authorization).toBe('Bearer tok');
+    expect(JSON.parse(calls[0].init.body)).toEqual({ description: 'cat' });
+    expect(gen.needsSignIn).toBe(true);
+  });
+
+  it('asks for sign-in without a token, and maps the server answers to error kinds', async () => {
+    const gen = (status, body = {}) => createProxyGenerator({ url: 'http://x', fetchImpl: async () => ok(body, status) });
+    expect((await createProxyGenerator({ url: 'http://x', fetchImpl: async () => ok({}) }).generate({ description: 'cat' })).error.kind).toBe('signin');
+    expect((await gen(401).generate({ description: 'cat', token: 't' })).error.kind).toBe('signin');
+    expect((await gen(403).generate({ description: 'cat', token: 't' })).error.kind).toBe('not_member');
+    expect((await gen(429, { error: 'daily_limit' }).generate({ description: 'cat', token: 't' })).error.kind).toBe('limit');
+    expect((await gen(429, { error: 'service_limit' }).generate({ description: 'cat', token: 't' })).error.kind).toBe('busy');
+    expect((await gen(422).generate({ description: 'cat', token: 't' })).error.kind).toBe('refused');
+    expect((await createProxyGenerator({ url: 'http://x', fetchImpl: async () => { throw new Error('down'); } }).generate({ description: 'cat', token: 't' })).error.kind).toBe('offline');
+  });
+
+  it('is what MOCHI_PET_GENERATOR=proxy picks from source, not in packaged builds yet', () => {
+    expect(pickGenerator({ packaged: false, env: { MOCHI_PET_GENERATOR: 'proxy' }, fixturesDir: '/x' }).generator.kind).toBe('proxy');
+    expect(pickGenerator({ packaged: true, env: { MOCHI_PET_GENERATOR: 'proxy' }, fixturesDir: '/x' }).generator).toBeNull();
+  });
+});
+

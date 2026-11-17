@@ -22,6 +22,8 @@ export interface LooksState {
   available: boolean;
   /** Drawings are fixed practice images (the fake generator), not drawn from the description. */
   practice?: boolean;
+  /** Drawing goes through Mochi's draw server, so the person signs in (Clerk) first. */
+  signIn?: boolean;
   looks: PetLook[];
   currentId: string | null;
 }
@@ -33,7 +35,7 @@ export interface PetCandidate {
   framed: boolean;
 }
 
-export type GenerateErrorKind = 'empty' | 'cancelled' | 'refused' | 'busy' | 'limit' | 'offline' | 'error';
+export type GenerateErrorKind = 'empty' | 'cancelled' | 'refused' | 'busy' | 'limit' | 'offline' | 'signin' | 'not_member' | 'error';
 export type GenerateResult = { ok: true; candidates: PetCandidate[] } | { ok: false; error: { kind: GenerateErrorKind } };
 
 /** What each failure says. Cancelled says nothing: the person asked for it. */
@@ -44,6 +46,8 @@ export const GENERATE_ERROR_TEXT: Record<GenerateErrorKind, string> = {
   busy: 'Mochi is busy drawing for someone else. Try again in a minute.',
   limit: "You've hit today's drawing limit. Try again tomorrow.",
   offline: "Can't reach the drawing service (VPN or network?).",
+  signin: 'Sign in again to draw.',
+  not_member: "You're not on Mochi's tester list yet.",
   error: 'Something went wrong while drawing. Try again.',
 };
 

@@ -17,6 +17,7 @@
     "scenarios": "vitest run src/test/scenarios.test.tsx"
   },
   "dependencies": {
+    "@clerk/electron": "0.1.12",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

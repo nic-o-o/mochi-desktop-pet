@@ -64,7 +64,8 @@ export interface MochiShell {
   /** Customize Mochi (main process): saved looks and whether pets can be drawn. */
   looksState?: () => Promise<LooksState>;
   /** Draw candidates for a description. */
-  generatePet?: (text: string) => Promise<GenerateResult>;
+  /** `token`: the Clerk session token, when drawing goes through the draw server. */
+  generatePet?: (text: string, token?: string) => Promise<GenerateResult>;
   cancelPetGenerate?: () => Promise<void>;
   /** Save a candidate as a look and make it the pet. */
   keepLook?: (candidateId: string) => Promise<LooksStoreState | null>;
@@ -219,10 +220,10 @@ export function looksState(): Promise<LooksState | null> {
   return b.looksState().catch(() => null);
 }
 
-export function generatePet(text: string): Promise<GenerateResult> {
+export function generatePet(text: string, token?: string | null): Promise<GenerateResult> {
   const b = bridge();
   if (!b?.generatePet) return Promise.resolve({ ok: false, error: { kind: 'error' } });
-  return b.generatePet(text).catch(() => ({ ok: false, error: { kind: 'error' } }));
+  return b.generatePet(text, token ?? undefined).catch(() => ({ ok: false, error: { kind: 'error' } }));
 }
 
 export function cancelPetGenerate(): void {

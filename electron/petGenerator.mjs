@@ -129,6 +129,53 @@ export function createModelApiGenerator({ kind, endpoint, model, extra = {}, api
   };
 }
 
+const SERVER_ERRORS = { 401: 'signin', 403: 'not_member', 422: 'refused', 503: 'busy' };
+
+/**
+ * Drawing through Mochi's draw server (server/), the only route allowed for
+ * other people: it holds the Model API key and checks a Clerk sign-in. Sends
+ * only what the person typed (the server adds Mochi's style instructions) and
+ * their Clerk session token; resolves like the generators above, plus the
+ * kinds signin (no or rejected sign-in) and not_member (not a Mochi tester).
+ */
+export function createProxyGenerator({ url, fetchImpl = fetch, timeoutMs = 150_000 }) {
+  const endpoint = `${String(url).replace(/\/+$/, '')}/v1/draw`;
+  return {
+    kind: 'proxy',
+    needsSignIn: true,
+    async generate({ description, token, signal } = {}) {
+      if (!token) return { ok: false, error: { kind: 'signin' } };
+      const timeout = AbortSignal.timeout(timeoutMs);
+      const both = signal ? AbortSignal.any([signal, timeout]) : timeout;
+      let res;
+      try {
+        res = await fetchImpl(endpoint, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description }),
+          signal: both,
+        });
+      } catch {
+        if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+        return { ok: false, error: { kind: timeout.aborted ? 'error' : 'offline' } };
+      }
+      let body = null;
+      try {
+        body = await res.json();
+      } catch {
+        /* not JSON: handled below */
+      }
+      if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+      if (!res.ok) {
+        const kind = res.status === 429 ? (body?.error === 'daily_limit' ? 'limit' : 'busy') : (SERVER_ERRORS[res.status] ?? 'error');
+        return { ok: false, error: { kind } };
+      }
+      const images = (Array.isArray(body?.images) ? body.images : []).filter((b) => typeof b === 'string').map((b) => Buffer.from(b, 'base64'));
+      return images.length ? { ok: true, images } : { ok: false, error: { kind: 'error' } };
+    },
+  };
+}
+
 export const KEYCHAIN_SERVICE = 'mochi-model-api';
 
 /** The Model API key from this Mac's login Keychain (developers only; never shipped, never logged). */
@@ -159,6 +206,10 @@ export function pickGenerator({ packaged, env, fixturesDir, apiKey = keychainKey
   const want = env.MOCHI_PET_GENERATOR ?? (packaged ? '' : 'fake');
   const fake = () => createFakeGenerator({ dir: fixturesDir });
   if (want === 'fake') return { generator: fake() };
+  // Through the draw server, with Clerk sign-in (from source for now; packaged once it's deployed).
+  if (want === 'proxy' && !packaged) {
+    return { generator: createProxyGenerator({ url: env.MOCHI_DRAW_URL || 'http://127.0.0.1:8787', ...(fetchImpl ? { fetchImpl } : {}) }) };
+  }
   if (packaged || !MODELS[want]) return { generator: null };
   const user = String(env.MOCHI_PET_USER ?? '').trim();
   if (!/^\d{5,20}$/.test(user)) {

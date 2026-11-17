@@ -43,4 +43,36 @@ describe('CustomizeView', () => {
     setup(false);
     expect(screen.queryByText(/Practice drawings/)).toBeNull();
   });
+
+  it('sends the Clerk token with each drawing when signed in through the draw server', async () => {
+    const calls: [string, string | undefined][] = [];
+    (window as unknown as { mochiShell: unknown }).mochiShell = {
+      generatePet: async (text: string, token?: string) => (calls.push([text, token]), { ok: true, candidates: [{ id: 'c0', image: img(0), framed: false }] }),
+    };
+    render(
+      <CustomizeView looks={{ available: true, signIn: true, looks: [], currentId: null }} reviewFrac={0} subFrac={0} onLooksChange={() => {}} onDrawingChange={() => {}} onClose={() => {}} getToken={async () => 'tok'} />,
+    );
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'a cat' } });
+    await act(async () => fireEvent.click(screen.getByText('Draw Mochi')));
+    expect(calls).toEqual([['a cat', 'tok']]);
+  });
+
+  it('asks to sign in again instead of drawing when there is no token, and words a non-tester', async () => {
+    let result: unknown = { ok: false, error: { kind: 'not_member' } };
+    const calls: unknown[] = [];
+    (window as unknown as { mochiShell: unknown }).mochiShell = { generatePet: async (...a: unknown[]) => (calls.push(a), result) };
+    let token: string | null = null;
+    render(
+      <CustomizeView looks={{ available: true, signIn: true, looks: [], currentId: null }} reviewFrac={0} subFrac={0} onLooksChange={() => {}} onDrawingChange={() => {}} onClose={() => {}} getToken={async () => token} />,
+    );
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'a cat' } });
+    await act(async () => fireEvent.click(screen.getByText('Draw Mochi')));
+    expect(screen.getByText('Sign in again to draw.')).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    token = 'tok';
+    result = { ok: false, error: { kind: 'not_member' } };
+    await act(async () => fireEvent.click(screen.getByText('Draw Mochi')));
+    expect(screen.getByText("You're not on Mochi's tester list yet.")).toBeTruthy();
+  });
 });
+

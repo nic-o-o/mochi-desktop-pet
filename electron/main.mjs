@@ -23,7 +23,7 @@
  * "Delegate to agent" launches Green on the devserver instead
  * (electron/delegate.mjs).
  */
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, safeStorage, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -59,6 +59,7 @@ import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
 import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
 import { MARKER_FILE, migrateRendererStorage } from './storageMigration.mjs';
+import { createTokenStore, registerClerkBridge } from './clerkTokens.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -374,8 +375,18 @@ ipcMain.handle('mochi:app-setting-set', (_event, key, value) => {
   if (app.isPackaged) setDockMenu();
   return appSettings();
 });
-ipcMain.handle('mochi:looks-state', () => ({ available: customizer?.available() ?? false, practice: customizer?.practice() ?? false, ...(customizer?.state() ?? { looks: [], currentId: null }) }));
-ipcMain.handle('mochi:pet-generate', (_event, text) => customizer?.generate(String(text ?? '')) ?? { ok: false, error: { kind: 'error' } });
+ipcMain.handle('mochi:looks-state', () => ({
+  available: customizer?.available() ?? false,
+  practice: customizer?.practice() ?? false,
+  signIn: customizer?.signIn() ?? false,
+  ...(customizer?.state() ?? { looks: [], currentId: null }),
+}));
+/* The Clerk session token rides along per request (draw server only); the main process never stores it. */
+ipcMain.handle(
+  'mochi:pet-generate',
+  (_event, text, token) =>
+    customizer?.generate(String(text ?? ''), { token: typeof token === 'string' && token.length < 8192 ? token : null }) ?? { ok: false, error: { kind: 'error' } },
+);
 ipcMain.handle('mochi:pet-generate-cancel', () => customizer?.cancel());
 ipcMain.handle('mochi:look-keep', (_event, candidateId) => customizer?.keep(String(candidateId ?? '')) ?? null);
 ipcMain.handle('mochi:look-set-current', (_event, id) => customizer?.setCurrent(typeof id === 'string' ? id : null) ?? null);
@@ -458,6 +469,8 @@ function setDockMenu() {
 app.whenReady().then(() => {
   if (!isPrimary) return;
   protocol.handle(SCHEME, (request) => rendererResponse(DIST_DIR, request.url, fs.promises.readFile));
+  // Customize Mochi's Clerk sign-in keeps its session here (Keychain-encrypted).
+  registerClerkBridge(ipcMain, createTokenStore({ file: path.join(app.getPath('userData'), 'clerk-tokens.json'), safeStorage, fs }));
   // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai.
   // Packaged builds keep Customize hidden until the key-holding proxy exists (B3).
   const pets = pickGenerator({

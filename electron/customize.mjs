@@ -22,6 +22,8 @@ export function createCustomizer({ store, generator, codec, log = () => {}, now 
     available: () => Boolean(generator),
     /** The fake generator: the same practice drawings whatever the description. */
     practice: () => generator?.kind === 'fake',
+    /** Drawing goes through the draw server, so the person must sign in (Clerk) first. */
+    signIn: () => Boolean(generator?.needsSignIn),
 
     state: () => (generator ? store.state() : { looks: [], currentId: null }),
 
@@ -29,7 +31,7 @@ export function createCustomizer({ store, generator, codec, log = () => {}, now 
      * Draw candidates for a description. Resolves { ok: true, candidates: [{ id, image, framed }] }
      * or { ok: false, error: { kind } } with kind empty | cancelled | refused | busy | limit | offline | error.
      */
-    async generate(text) {
+    async generate(text, { token } = {}) {
       const prompt = cleanPrompt(text);
       if (!generator) return { ok: false, error: { kind: 'error' } };
       if (!prompt) return { ok: false, error: { kind: 'empty' } };
@@ -39,7 +41,7 @@ export function createCustomizer({ store, generator, codec, log = () => {}, now 
       const started = now();
       let result;
       try {
-        result = await generator.generate({ prompt: petPrompt(prompt), n: CANDIDATES, signal: ac.signal });
+        result = await generator.generate({ prompt: petPrompt(prompt), description: prompt, token, n: CANDIDATES, signal: ac.signal });
       } catch {
         result = { ok: false, error: { kind: 'error' } };
       }

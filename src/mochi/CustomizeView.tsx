@@ -22,6 +22,8 @@ interface CustomizeViewProps {
   /** Drawing started or stopped: the pet looks Focused while Mochi draws. */
   onDrawingChange: (drawing: boolean) => void;
   onClose: () => void;
+  /** Signed in to draw through the draw server (SignInGate): the current Clerk session token. */
+  getToken?: () => Promise<string | null>;
 }
 
 /**
@@ -58,7 +60,8 @@ export function CustomizeView(props: CustomizeViewProps) {
     setError('');
     setPhase('drawing');
     logClick('customize', 'generate');
-    const r = await generatePet(text);
+    const token = props.getToken ? await props.getToken().catch(() => null) : undefined;
+    const r = props.getToken && !token ? ({ ok: false, error: { kind: 'signin' } } as const) : await generatePet(text, token);
     if (r.ok) {
       setCandidates(r.candidates);
       setPickedId(r.candidates[0]?.id ?? null);
