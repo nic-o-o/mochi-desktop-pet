@@ -13,22 +13,27 @@ import { CLERK_PUBLISHABLE_KEY, MOCHI_ORG_ID } from './clerkConfig.ts';
 
 
 type Render = (getToken: () => Promise<string | null>) => ReactNode;
+/** Wraps the gate's own screens (loading, sign-in, not a tester) in the Customize Mochi panel. */
+type Frame = (body: ReactNode) => ReactNode;
 
-export function SignInGate({ children }: { children: Render }) {
+/* Clerk's card, flattened to fit the panel. */
+const APPEARANCE = { elements: { rootBox: { width: '100%' }, cardBox: { width: '100%', boxShadow: 'none' } } };
+
+export function SignInGate({ children, frame }: { children: Render; frame: Frame }) {
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
-      <Gate>{children}</Gate>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} appearance={APPEARANCE}>
+      <Gate frame={frame}>{children}</Gate>
     </ClerkProvider>
   );
 }
 
-function Gate({ children }: { children: Render }) {
+function Gate({ children, frame }: { children: Render; frame: Frame }) {
   const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
   const { user } = useUser();
   const orgs = useOrganizationList({ userMemberships: true });
-  if (!isLoaded) return <p className="customize-signin muted small">Loading sign-in…</p>;
+  if (!isLoaded) return frame(<p className="customize-signin muted small">Loading sign-in…</p>);
   if (!isSignedIn) {
-    return (
+    return frame(
       <div className="customize-signin">
         <p className="small">Sign in with your @meta.com email to draw pets. Mochi emails you a code; nothing else changes.</p>
         <SignIn routing="hash" />
@@ -37,7 +42,7 @@ function Gate({ children }: { children: Render }) {
   }
   const memberships = orgs.isLoaded ? orgs.userMemberships.data : undefined;
   if (memberships && !memberships.some((m) => m.organization.id === MOCHI_ORG_ID)) {
-    return (
+    return frame(
       <div className="customize-signin">
         <p className="small">
           You're signed in as {user?.primaryEmailAddress?.emailAddress ?? 'this account'}, but you're not on Mochi's tester list yet. Ask the

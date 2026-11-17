@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { PetState, XY } from './logic.ts';
 import { GENERATE_ERROR_TEXT, PROMPT_EXAMPLES, PROMPT_MAX } from './looks.ts';
 import type { LooksState, PetCandidate, PetLook } from './looks.ts';
@@ -104,6 +105,139 @@ export function CustomizeView(props: CustomizeViewProps) {
   }
 
   return (
+    <CustomizeFrame anchor={props.anchor} onClose={props.onClose}>
+      <label className="customize-describe">
+        <span className="customize-label">Describe your Mochi</span>
+        <textarea
+          value={text}
+          maxLength={PROMPT_MAX}
+          rows={2}
+          placeholder="a sleepy orange cat with a scarf"
+          onChange={(e) => setText(e.target.value)}
+          disabled={phase === 'drawing'}
+        />
+        <span className="muted small customize-count">
+          {text.length}/{PROMPT_MAX}
+        </span>
+      </label>
+      <div className="customize-examples" aria-label="Examples">
+        {PROMPT_EXAMPLES.map((ex) => (
+          <button key={ex} type="button" className="customize-chip" onClick={() => setText(ex)} disabled={phase === 'drawing'}>
+            {ex}
+          </button>
+        ))}
+      </div>
+
+      {looks.practice && (
+        <p className="muted small customize-practice">
+          Practice drawings: this build shows the same three sample pets whatever you describe. Real drawing comes in a later version.
+        </p>
+      )}
+      <div className="customize-actions">
+        {phase === 'drawing' ? (
+          <>
+            <span className="muted small" role="status">
+              {looks.practice ? 'Mochi is drawing…' : 'Mochi is drawing… this takes about half a minute.'}
+            </span>
+            <button type="button" className="btn-secondary" onClick={cancel}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button type="button" className="btn-primary" onClick={() => void draw()} disabled={!text.trim()}>
+            {candidates.length ? 'Draw again' : 'Draw Mochi'}
+          </button>
+        )}
+      </div>
+      {error && (
+        <p className="customize-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {candidates.length > 0 && (
+        <>
+          <h3 className="customize-heading">Pick one</h3>
+          <div className="customize-candidates">
+            {candidates.map((c, i) => (
+              <button
+                key={c.id}
+                type="button"
+                className={c.id === pickedId ? 'customize-candidate is-picked' : 'customize-candidate'}
+                aria-pressed={c.id === pickedId}
+                aria-label={`Option ${i + 1}`}
+                onClick={() => {
+                  logClick('customize', 'candidate', { position: i });
+                  setPickedId(c.id);
+                  setMoodAt(0);
+                }}
+              >
+                <img src={c.image} alt="" draggable={false} />
+              </button>
+            ))}
+          </div>
+          {picked && (
+            <div className="customize-preview">
+              <div className="customize-preview-pet" aria-label={`Preview, ${PREVIEW_MOODS[moodAt]}`}>
+                <MochiPet key={picked.id} state={PREVIEW_MOODS[moodAt]} reviewFrac={props.reviewFrac} subFrac={props.subFrac} look={picked.image} />
+              </div>
+              <div>
+                <p className="small">This is how your Mochi moves through its moods.</p>
+                {picked.framed && (
+                  <p className="muted small">The background couldn&apos;t be cut out cleanly, so it sits in a circle. Draw again for another try.</p>
+                )}
+                <button type="button" className="btn-primary" onClick={() => void keep()}>
+                  Keep this Mochi
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      <h3 className="customize-heading">My Mochis</h3>
+      <div className="customize-looks">
+        <div className={looks.currentId === null ? 'customize-look is-current' : 'customize-look'}>
+          <button
+            type="button"
+            className="customize-look-pick"
+            aria-pressed={looks.currentId === null}
+            aria-label="Classic Mochi"
+            onClick={() => void switchTo(null)}
+            title="Classic Mochi"
+          >
+            <span className="customize-look-pet">
+              <MochiPet state="chilling" reviewFrac={0} subFrac={0} bare />
+            </span>
+          </button>
+          <span className="small customize-look-name">Classic</span>
+        </div>
+        {looks.looks.map((look) => (
+          <div key={look.id} className={look.id === looks.currentId ? 'customize-look is-current' : 'customize-look'}>
+            <button type="button" className="customize-look-pick" aria-pressed={look.id === looks.currentId} onClick={() => void switchTo(look.id)} title={look.prompt}>
+              <img src={look.image} alt={look.prompt} draggable={false} />
+            </button>
+            <span className="small customize-look-name" title={look.prompt}>
+              {look.prompt}
+            </span>
+            <button type="button" className="customize-look-delete" onClick={() => void remove(look)} aria-label={`Delete ${look.prompt}`} title="Delete">
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+      {looks.currentId !== null && (
+        <button type="button" className="btn-link" onClick={() => void switchTo(null)}>
+          Reset to classic Mochi
+        </button>
+      )}
+    </CustomizeFrame>
+  );
+}
+
+/** The Customize Mochi panel; SignInGate shows sign-in inside it too. */
+export function CustomizeFrame(props: { anchor?: XY | null; onClose: () => void; children: ReactNode }) {
+  return (
     <div className="mochi-scrim" onClick={props.onClose}>
       <section
         className="float-panel expanded-view customize-view"
@@ -118,134 +252,7 @@ export function CustomizeView(props: CustomizeViewProps) {
             ×
           </button>
         </header>
-
-        <div className="expanded-body">
-          <label className="customize-describe">
-            <span className="customize-label">Describe your Mochi</span>
-            <textarea
-              value={text}
-              maxLength={PROMPT_MAX}
-              rows={2}
-              placeholder="a sleepy orange cat with a scarf"
-              onChange={(e) => setText(e.target.value)}
-              disabled={phase === 'drawing'}
-            />
-            <span className="muted small customize-count">
-              {text.length}/{PROMPT_MAX}
-            </span>
-          </label>
-          <div className="customize-examples" aria-label="Examples">
-            {PROMPT_EXAMPLES.map((ex) => (
-              <button key={ex} type="button" className="customize-chip" onClick={() => setText(ex)} disabled={phase === 'drawing'}>
-                {ex}
-              </button>
-            ))}
-          </div>
-
-          {looks.practice && (
-            <p className="muted small customize-practice">
-              Practice drawings: this build shows the same three sample pets whatever you describe. Real drawing comes in a later version.
-            </p>
-          )}
-          <div className="customize-actions">
-            {phase === 'drawing' ? (
-              <>
-                <span className="muted small" role="status">
-                  {looks.practice ? 'Mochi is drawing…' : 'Mochi is drawing… this takes about half a minute.'}
-                </span>
-                <button type="button" className="btn-secondary" onClick={cancel}>
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button type="button" className="btn-primary" onClick={() => void draw()} disabled={!text.trim()}>
-                {candidates.length ? 'Draw again' : 'Draw Mochi'}
-              </button>
-            )}
-          </div>
-          {error && (
-            <p className="customize-error" role="alert">
-              {error}
-            </p>
-          )}
-
-          {candidates.length > 0 && (
-            <>
-              <h3 className="customize-heading">Pick one</h3>
-              <div className="customize-candidates">
-                {candidates.map((c, i) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className={c.id === pickedId ? 'customize-candidate is-picked' : 'customize-candidate'}
-                    aria-pressed={c.id === pickedId}
-                    aria-label={`Option ${i + 1}`}
-                    onClick={() => {
-                      logClick('customize', 'candidate', { position: i });
-                      setPickedId(c.id);
-                      setMoodAt(0);
-                    }}
-                  >
-                    <img src={c.image} alt="" draggable={false} />
-                  </button>
-                ))}
-              </div>
-              {picked && (
-                <div className="customize-preview">
-                  <div className="customize-preview-pet" aria-label={`Preview, ${PREVIEW_MOODS[moodAt]}`}>
-                    <MochiPet key={picked.id} state={PREVIEW_MOODS[moodAt]} reviewFrac={props.reviewFrac} subFrac={props.subFrac} look={picked.image} />
-                  </div>
-                  <div>
-                    <p className="small">This is how your Mochi moves through its moods.</p>
-                    {picked.framed && (
-                      <p className="muted small">The background couldn&apos;t be cut out cleanly, so it sits in a circle. Draw again for another try.</p>
-                    )}
-                    <button type="button" className="btn-primary" onClick={() => void keep()}>
-                      Keep this Mochi
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          <h3 className="customize-heading">My Mochis</h3>
-          <div className="customize-looks">
-            <div className={looks.currentId === null ? 'customize-look is-current' : 'customize-look'}>
-              <button
-                type="button"
-                className="customize-look-pick"
-                aria-pressed={looks.currentId === null}
-                aria-label="Classic Mochi"
-                onClick={() => void switchTo(null)}
-                title="Classic Mochi"
-              >
-                <span className="customize-look-pet">
-                  <MochiPet state="chilling" reviewFrac={0} subFrac={0} bare />
-                </span>
-              </button>
-              <span className="small customize-look-name">Classic</span>
-            </div>
-            {looks.looks.map((look) => (
-              <div key={look.id} className={look.id === looks.currentId ? 'customize-look is-current' : 'customize-look'}>
-                <button type="button" className="customize-look-pick" aria-pressed={look.id === looks.currentId} onClick={() => void switchTo(look.id)} title={look.prompt}>
-                  <img src={look.image} alt={look.prompt} draggable={false} />
-                </button>
-                <span className="small customize-look-name" title={look.prompt}>
-                  {look.prompt}
-                </span>
-                <button type="button" className="customize-look-delete" onClick={() => void remove(look)} aria-label={`Delete ${look.prompt}`} title="Delete">
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-          {looks.currentId !== null && (
-            <button type="button" className="btn-link" onClick={() => void switchTo(null)}>
-              Reset to classic Mochi
-            </button>
-          )}
-        </div>
+        <div className="expanded-body">{props.children}</div>
       </section>
     </div>
   );

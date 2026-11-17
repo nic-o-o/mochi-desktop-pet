@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { ReactNode, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   DRAG_THRESHOLD_PX,
   clampPetPosition,
@@ -27,7 +27,8 @@ import { MochiPet } from './mochi/MochiPet.tsx';
 import { AGENT_LABELS, jobsForTask, useAgentReviews } from './mochi/agentReviews.ts';
 import type { AgentId, AgentJob } from './mochi/agentReviews.ts';
 import { AgentReportView } from './mochi/AgentReportView.tsx';
-import { CustomizeView } from './mochi/CustomizeView.tsx';
+import { CustomizeFrame, CustomizeView } from './mochi/CustomizeView.tsx';
+import { SignInBoundary } from './mochi/SignInBoundary.tsx';
 /* Clerk's SDK is only needed when drawings go through the draw server. */
 const SignInGate = lazy(() => import('./mochi/SignInGate.tsx').then((m) => ({ default: m.SignInGate })));
 import { currentImage, useLooks } from './mochi/looks.ts';
@@ -494,6 +495,13 @@ export default function App() {
     setReportTaskId(null);
     setCustomizeOpen(false);
   }
+
+  /* The Customize Mochi panel around sign-in screens (SignInGate). */
+  const customizeFrame = (body: ReactNode) => (
+    <CustomizeFrame anchor={shell ? expandedPos : undefined} onClose={closeExpanded}>
+      {body}
+    </CustomizeFrame>
+  );
 
   const togglePanel = useCallback((via: 'pet_click' | 'keyboard') => {
     touch();
@@ -1069,8 +1077,9 @@ export default function App() {
         {customizeOpen ? (
           looks.state.signIn ? (
             // Drawing through the draw server: sign in first (Clerk). Loaded only then.
-            <Suspense fallback={null}>
-              <SignInGate>
+            <SignInBoundary fallback={(message) => customizeFrame(<p className="customize-error" role="alert">Sign-in couldn't start: {message}</p>)}>
+            <Suspense fallback={customizeFrame(<p className="customize-signin muted small">Loading sign-in…</p>)}>
+              <SignInGate frame={customizeFrame}>
                 {(getToken) => (
                   <CustomizeView
                     anchor={shell ? expandedPos : undefined}
@@ -1085,6 +1094,7 @@ export default function App() {
                 )}
               </SignInGate>
             </Suspense>
+            </SignInBoundary>
           ) : (
             <CustomizeView
               anchor={shell ? expandedPos : undefined}
