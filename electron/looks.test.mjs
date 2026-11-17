@@ -71,3 +71,19 @@ describe('look store', () => {
     expect(pngFromDataUrl('data:text/html;base64,PGI+')).toBeNull();
   });
 });
+
+describe('mood pictures', () => {
+  it('keeps a picture per mood with its look, and only for known moods and looks', () => {
+    const { store } = make();
+    const id = store.save({ prompt: 'a cat', png: PNG });
+    expect(store.list()[0].moods).toEqual({});
+    expect(store.saveMood(id, 'happy', PNG)).toBe(true);
+    expect(store.saveMood(id, 'angry', PNG)).toBe(false);
+    expect(store.saveMood(id, 'sleepy', Buffer.from('not a png'))).toBe(false);
+    expect(store.saveMood('look-00000000-0000-4000-8000-999999999999', 'happy', PNG)).toBe(false);
+    expect(store.list()[0].moods).toEqual({ happy: `data:image/png;base64,${PNG.toString('base64')}` });
+    store.remove(id);
+    expect(store.list()).toEqual([]);
+  });
+});
+

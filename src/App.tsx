@@ -31,7 +31,7 @@ import { CustomizeFrame, CustomizeView } from './mochi/CustomizeView.tsx';
 import { SignInBoundary } from './mochi/SignInBoundary.tsx';
 /* Clerk's SDK is only needed when drawings go through the draw server. */
 const SignInGate = lazy(() => import('./mochi/SignInGate.tsx').then((m) => ({ default: m.SignInGate })));
-import { currentImage, useLooks } from './mochi/looks.ts';
+import { lookImage, useLooks } from './mochi/looks.ts';
 import { reviewUrl } from './mochi/codimango.ts';
 import {
   cancelAgentReview,
@@ -475,7 +475,6 @@ export default function App() {
     setExpandedOpen(true);
   }, [touch]);
   const looks = useLooks(openCustomize);
-  const petLook = currentImage(looks.state);
 
   function openReport(taskId: string) {
     touch();
@@ -908,7 +907,7 @@ export default function App() {
             onPointerLeave={() => setHovering(false)}
             onKeyDown={handlePetKeyDown}
           >
-            <MochiPet state={drawing ? 'focused' : petState} reviewFrac={reviewFrac} subFrac={subFrac} look={petLook} />
+            <MochiPet state={drawing ? 'focused' : petState} reviewFrac={reviewFrac} subFrac={subFrac} look={lookImage(looks.state, drawing ? 'focused' : petState)} />
           </div>
           <button
             type="button"

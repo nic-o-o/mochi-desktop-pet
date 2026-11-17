@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MODELS, createModelApiGenerator, createProxyGenerator, errorKind, keychainKey, pickGenerator } from './petGenerator.mjs';
+import { MODELS, MOODS, createModelApiGenerator, createProxyGenerator, drawMoodsWith, errorKind, keychainKey, moodPrompt, pickGenerator } from './petGenerator.mjs';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const reply = (status, body) => async () => ({ ok: status < 400, status, json: async () => body });
@@ -152,6 +152,46 @@ describe('createProxyGenerator (the draw server)', () => {
     expect(insecure.generator).toBeNull();
     expect(insecure.note).toMatch(/https/);
     expect(pick(false, { MOCHI_PET_GENERATOR: 'proxy', MOCHI_DRAW_URL: 'http://mochi.example.com' })).toBeNull();
+  });
+});
+
+describe('mood pictures', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+
+  it('asks Model API to edit the kept picture once per mood, with only Mochi\'s fixed instructions', async () => {
+    const sent = [];
+    const fetchImpl = async (url, init) => (sent.push({ url, body: JSON.parse(init.body) }), new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }] })));
+    const gen = createModelApiGenerator({ kind: 'muse', ...MODELS.muse, apiKey: async () => 'k', user: 'u'.repeat(64), fetchImpl });
+    const r = await gen.drawMoods({ image: PNG });
+    expect(Object.keys(r.moods).sort()).toEqual([...MOODS].sort());
+    expect(sent).toHaveLength(MOODS.length);
+    for (const { url, body } of sent) {
+      expect(url).toBe('https://api.meta.ai/v1/images/edits');
+      expect(body).toMatchObject({ model: 'muse-image-1.0-eval', n: 1, user: 'u'.repeat(64), images: [{ image_url: `data:image/png;base64,${PNG.toString('base64')}` }] });
+      expect(MOODS.map(moodPrompt)).toContain(body.prompt);
+    }
+    expect(moodPrompt('nervous')).toContain('same colors, same art style');
+  });
+
+  it('keeps the moods that came back, and reports a refusal when none did', async () => {
+    let i = 0;
+    const partial = await drawMoodsWith(async () => (i++ % 2 ? { ok: false, error: { kind: 'busy' } } : { ok: true, images: [PNG] }), PNG);
+    expect(Object.keys(partial.moods)).toEqual(['happy', 'nervous']);
+    expect(await drawMoodsWith(async () => ({ ok: false, error: { kind: 'refused' } }), PNG)).toEqual({ ok: false, error: { kind: 'refused' } });
+    expect(await drawMoodsWith(async () => { throw new Error('x'); }, PNG)).toEqual({ ok: false, error: { kind: 'error' } });
+  });
+
+  it('through the draw server: sends the picture and the token, and maps its answer', async () => {
+    const sent = [];
+    const fetchImpl = async (url, init) => (
+      sent.push({ url, auth: init.headers.Authorization, body: JSON.parse(init.body) }),
+      new Response(JSON.stringify({ moods: { happy: 'AAAA', sleepy: 'BBBB', bogus: 'CCCC' } }))
+    );
+    const gen = createProxyGenerator({ url: 'https://draw.example/', fetchImpl });
+    const r = await gen.drawMoods({ image: PNG, token: 'tok' });
+    expect(sent).toEqual([{ url: 'https://draw.example/v1/moods', auth: 'Bearer tok', body: { image: PNG.toString('base64') } }]);
+    expect(Object.keys(r.moods)).toEqual(['happy', 'sleepy']);
+    expect(await gen.drawMoods({ image: PNG, token: null })).toEqual({ ok: false, error: { kind: 'signin' } });
   });
 });
 

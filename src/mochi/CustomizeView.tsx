@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PetState, XY } from './logic.ts';
-import { GENERATE_ERROR_TEXT, PROMPT_EXAMPLES, PROMPT_MAX } from './looks.ts';
-import type { LooksState, PetCandidate, PetLook } from './looks.ts';
+import { GENERATE_ERROR_TEXT, LOOK_MOODS, PROMPT_EXAMPLES, PROMPT_MAX } from './looks.ts';
+import type { LooksState, LooksStoreState, PetCandidate, PetLook } from './looks.ts';
 import { MochiPet } from './MochiPet.tsx';
-import { cancelPetGenerate, deleteLook, generatePet, keepLook, setCurrentLook } from './shell.ts';
+import { cancelPetGenerate, deleteLook, drawLookMoods, generatePet, keepLook, setCurrentLook } from './shell.ts';
 import { logClick, logVpv } from './usage.ts';
 
 /* The preview walks through every mood so the person sees the pet bob, bounce and tremble. */
@@ -19,7 +19,7 @@ interface CustomizeViewProps {
   reviewFrac: number;
   subFrac: number;
   /** A store call returned new looks / current look. */
-  onLooksChange: (next: { looks: PetLook[]; currentId: string | null } | null) => void;
+  onLooksChange: (next: LooksStoreState | null) => void;
   /** Drawing started or stopped: the pet looks Focused while Mochi draws. */
   onDrawingChange: (drawing: boolean) => void;
   onClose: () => void;
@@ -34,6 +34,7 @@ interface CustomizeViewProps {
  */
 export function CustomizeView(props: CustomizeViewProps) {
   const { looks, onDrawingChange } = props;
+  const current = looks.looks.find((l) => l.id === looks.currentId) ?? null;
   const [text, setText] = useState('');
   const [phase, setPhase] = useState<Phase>('describe');
   const [candidates, setCandidates] = useState<PetCandidate[]>([]);
@@ -82,7 +83,8 @@ export function CustomizeView(props: CustomizeViewProps) {
   async function keep() {
     if (!picked) return;
     logClick('customize', 'keep', { result: picked.framed ? 'framed' : 'cutout' });
-    const next = await keepLook(picked.id);
+    // Keeping also draws its moods through the draw server, which needs the sign-in.
+    const next = await keepLook(picked.id, await token());
     if (!next) {
       setError(GENERATE_ERROR_TEXT.error);
       return;
@@ -92,6 +94,16 @@ export function CustomizeView(props: CustomizeViewProps) {
     setPickedId(null);
     setText('');
     setPhase('describe');
+  }
+
+  /* The Clerk session token when drawing goes through the draw server. */
+  async function token() {
+    return props.getToken ? await props.getToken().catch(() => null) : undefined;
+  }
+
+  async function drawMoods(look: PetLook) {
+    logClick('customize', 'draw_moods');
+    props.onLooksChange(await drawLookMoods(look.id, await token()));
   }
 
   async function switchTo(id: string | null) {
@@ -226,6 +238,23 @@ export function CustomizeView(props: CustomizeViewProps) {
           </div>
         ))}
       </div>
+      {current && looks.moods && (
+        looks.drawingMoods?.includes(current.id) ? (
+          <p className="muted small" role="status">
+            Drawing its moods (happy, sleepy, nervous, focused)… this takes about half a minute.
+          </p>
+        ) : (
+          LOOK_MOODS.some((m) => !current.moods?.[m]) && (
+            <p className="muted small">
+              This Mochi shows its moods by moving.{' '}
+              <button type="button" className="btn-link" onClick={() => void drawMoods(current)}>
+                Draw its moods
+              </button>{' '}
+              to give it a face for each.
+            </p>
+          )
+        )
+      )}
       {looks.currentId !== null && (
         <button type="button" className="btn-link" onClick={() => void switchTo(null)}>
           Reset to classic Mochi

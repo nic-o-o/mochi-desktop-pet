@@ -32,6 +32,40 @@ export function petPrompt(text) {
   );
 }
 
+/* The moods a kept pet gets its own picture for; chilling is the kept picture itself. */
+export const MOODS = ['happy', 'sleepy', 'nervous', 'focused'];
+const MOOD_LOOKS = {
+  happy: 'happy: a big smile and sparkling eyes',
+  sleepy: 'sleepy: eyes closed, drowsy, slightly slumped',
+  nervous: 'nervous: wide open worried eyes, a sweat drop, a wobbly worried mouth',
+  focused: 'focused: determined eyes, slightly furrowed brows, concentrating',
+};
+
+/** What the model is asked for to redraw a kept pet in a mood (an edit of its picture). */
+export function moodPrompt(mood) {
+  return (
+    'The same character as in the image, same colors, same art style, same size and framing, full body, centered, ' +
+    `facing the viewer. Change only its expression and pose to look ${MOOD_LOOKS[mood]}. ` +
+    'Plain solid white background, no text, no shadow, no scenery.'
+  );
+}
+
+/**
+ * Draw every mood of a kept pet with `edit({ prompt, image, signal })`, at once.
+ * Resolves { ok: true, moods: { [mood]: png } } with the moods that came back,
+ * or { ok: false, error } when none did (refused if any edit was refused).
+ */
+export async function drawMoodsWith(edit, image, signal) {
+  const results = await Promise.all(MOODS.map((mood) => edit({ prompt: moodPrompt(mood), image, signal }).catch(() => ({ ok: false, error: { kind: 'error' } }))));
+  const moods = {};
+  results.forEach((r, i) => {
+    if (r.ok && r.images[0]) moods[MOODS[i]] = r.images[0];
+  });
+  if (Object.keys(moods).length) return { ok: true, moods };
+  if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+  return { ok: false, error: { kind: results.some((r) => r.error?.kind === 'refused') ? 'refused' : (results[0]?.error?.kind ?? 'error') } };
+}
+
 /**
  * Fixture images instead of a model. `delayMs` mimics model latency; a prompt
  * containing "#refused", "#busy", "#limit", "#offline" or "#error" fails with
@@ -63,9 +97,10 @@ export function createFakeGenerator({ dir, delayMs = 1500, fsImpl = fs } = {}) {
 
 /* Image models Mochi can call through Meta Model API (same request shape). */
 export const MODELS = {
-  muse: { endpoint: 'https://api.meta.ai/v1/images/generations', model: 'muse-image-1.0-eval' },
+  muse: { endpoint: 'https://api.meta.ai/v1/images/generations', editEndpoint: 'https://api.meta.ai/v1/images/edits', model: 'muse-image-1.0-eval' },
   openai: {
     endpoint: 'https://api.meta.ai/v1/passthrough/openai/v1/images/generations',
+    editEndpoint: 'https://api.meta.ai/v1/passthrough/openai/v1/images/edits',
     model: 'gpt-image-2',
     /* OpenAI can draw on a transparent background, which skips the cutout. */
     extra: { background: 'transparent' },
@@ -86,47 +121,56 @@ export function errorKind(status, body) {
 
 /**
  * The real thing: POST {model, prompt, n, user} to a Model API images endpoint.
- * `apiKey()` resolves the key (from the developer's Keychain until the proxy
- * exists); `user` is the end user's FBID, which Model API requires for safety.
+ * `apiKey()` resolves the key (the draw server's, or a developer's Keychain);
+ * `user` is Model API's per-user safety ID. `edit` redraws a picture
+ * (`editEndpoint`, one image), which is how a kept pet gets its moods.
  */
-export function createModelApiGenerator({ kind, endpoint, model, extra = {}, apiKey, user, fetchImpl = fetch, timeoutMs = 120_000 }) {
+export function createModelApiGenerator({ kind, endpoint, editEndpoint, model, extra = {}, apiKey, user, fetchImpl = fetch, timeoutMs = 120_000 }) {
+  async function post(url, fields, signal) {
+    let key;
+    try {
+      key = await apiKey();
+    } catch {
+      return { ok: false, error: { kind: 'error' } };
+    }
+    if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const both = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    let res;
+    try {
+      res = await fetchImpl(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, size: '1024x1024', output_format: 'png', user, ...extra, ...fields }),
+        signal: both,
+      });
+    } catch {
+      if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+      return { ok: false, error: { kind: timeout.aborted ? 'error' : 'offline' } };
+    }
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON: handled below */
+    }
+    if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+    if (!res.ok) return { ok: false, error: { kind: errorKind(res.status, body) } };
+    const images = (Array.isArray(body?.data) ? body.data : [])
+      .map((d) => (typeof d?.b64_json === 'string' ? Buffer.from(d.b64_json, 'base64') : null))
+      .filter(Boolean);
+    return images.length ? { ok: true, images } : { ok: false, error: { kind: 'error' } };
+  }
+  const edit = ({ prompt, image, signal } = {}) =>
+    editEndpoint
+      ? post(editEndpoint, { prompt, n: 1, images: [{ image_url: `data:image/png;base64,${image.toString('base64')}` }] }, signal)
+      : Promise.resolve({ ok: false, error: { kind: 'error' } });
   return {
     kind,
-    async generate({ prompt, n = CANDIDATES, signal } = {}) {
-      let key;
-      try {
-        key = await apiKey();
-      } catch {
-        return { ok: false, error: { kind: 'error' } };
-      }
-      if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
-      const timeout = AbortSignal.timeout(timeoutMs);
-      const both = signal ? AbortSignal.any([signal, timeout]) : timeout;
-      let res;
-      try {
-        res = await fetchImpl(endpoint, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, prompt, n, size: '1024x1024', output_format: 'png', user, ...extra }),
-          signal: both,
-        });
-      } catch {
-        if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
-        return { ok: false, error: { kind: timeout.aborted ? 'error' : 'offline' } };
-      }
-      let body = null;
-      try {
-        body = await res.json();
-      } catch {
-        /* not JSON: handled below */
-      }
-      if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
-      if (!res.ok) return { ok: false, error: { kind: errorKind(res.status, body) } };
-      const images = (Array.isArray(body?.data) ? body.data : [])
-        .map((d) => (typeof d?.b64_json === 'string' ? Buffer.from(d.b64_json, 'base64') : null))
-        .filter(Boolean);
-      return images.length ? { ok: true, images } : { ok: false, error: { kind: 'error' } };
-    },
+    generate: ({ prompt, n = CANDIDATES, signal } = {}) => post(endpoint, { prompt, n }, signal),
+    edit,
+    /** A kept pet's mood pictures (see drawMoodsWith). */
+    drawMoods: ({ image, signal } = {}) => drawMoodsWith(edit, image, signal),
   };
 }
 
@@ -135,44 +179,62 @@ const SERVER_ERRORS = { 401: 'signin', 403: 'not_member', 422: 'refused', 503: '
 /**
  * Drawing through Mochi's draw server (server/), the only route allowed for
  * other people: it holds the Model API key and checks a Clerk sign-in. Sends
- * only what the person typed (the server adds Mochi's style instructions) and
- * their Clerk session token; resolves like the generators above, plus the
- * kinds signin (no or rejected sign-in) and not_member (not a Mochi tester).
+ * only what the person typed (the server adds Mochi's style instructions), or
+ * the kept pet's picture for its moods, plus their Clerk session token;
+ * resolves like the generators above, plus the kinds signin (no or rejected
+ * sign-in) and not_member (not a Mochi tester).
  */
 export function createProxyGenerator({ url, fetchImpl = fetch, timeoutMs = 150_000 }) {
-  const endpoint = `${String(url).replace(/\/+$/, '')}/v1/draw`;
+  const base = String(url).replace(/\/+$/, '');
+  async function post(route, payload, token, signal) {
+    if (!token) return { ok: false, error: { kind: 'signin' } };
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const both = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    let res;
+    try {
+      res = await fetchImpl(`${base}${route}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: both,
+      });
+    } catch {
+      if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+      return { ok: false, error: { kind: timeout.aborted ? 'error' : 'offline' } };
+    }
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON: handled below */
+    }
+    if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
+    if (!res.ok) {
+      const kind = res.status === 429 ? (body?.error === 'daily_limit' ? 'limit' : 'busy') : (SERVER_ERRORS[res.status] ?? 'error');
+      return { ok: false, error: { kind } };
+    }
+    return { ok: true, body };
+  }
+  const png = (b) => (typeof b === 'string' ? Buffer.from(b, 'base64') : null);
   return {
     kind: 'proxy',
     needsSignIn: true,
     async generate({ description, token, signal } = {}) {
-      if (!token) return { ok: false, error: { kind: 'signin' } };
-      const timeout = AbortSignal.timeout(timeoutMs);
-      const both = signal ? AbortSignal.any([signal, timeout]) : timeout;
-      let res;
-      try {
-        res = await fetchImpl(endpoint, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description }),
-          signal: both,
-        });
-      } catch {
-        if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
-        return { ok: false, error: { kind: timeout.aborted ? 'error' : 'offline' } };
-      }
-      let body = null;
-      try {
-        body = await res.json();
-      } catch {
-        /* not JSON: handled below */
-      }
-      if (signal?.aborted) return { ok: false, error: { kind: 'cancelled' } };
-      if (!res.ok) {
-        const kind = res.status === 429 ? (body?.error === 'daily_limit' ? 'limit' : 'busy') : (SERVER_ERRORS[res.status] ?? 'error');
-        return { ok: false, error: { kind } };
-      }
-      const images = (Array.isArray(body?.images) ? body.images : []).filter((b) => typeof b === 'string').map((b) => Buffer.from(b, 'base64'));
+      const r = await post('/v1/draw', { description }, token, signal);
+      if (!r.ok) return r;
+      const images = (Array.isArray(r.body?.images) ? r.body.images : []).map(png).filter(Boolean);
       return images.length ? { ok: true, images } : { ok: false, error: { kind: 'error' } };
+    },
+    /** The kept pet's mood pictures: { ok, moods: { [mood]: png } } with the moods the server drew. */
+    async drawMoods({ image, token, signal } = {}) {
+      const r = await post('/v1/moods', { image: image.toString('base64') }, token, signal);
+      if (!r.ok) return r;
+      const moods = {};
+      for (const mood of MOODS) {
+        const p = png(r.body?.moods?.[mood]);
+        if (p) moods[mood] = p;
+      }
+      return Object.keys(moods).length ? { ok: true, moods } : { ok: false, error: { kind: 'error' } };
     },
   };
 }

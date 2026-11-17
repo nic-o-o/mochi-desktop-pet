@@ -9,21 +9,22 @@ const servers = [];
 afterEach(() => servers.splice(0).forEach((s) => s.close()));
 
 /* A real HTTP server around the handler, with a fake verifier and image model. */
-async function serve({ verify, draw, perUser = 2, total = 100 } = {}) {
+async function serve({ verify, draw, drawMoods, perUser = 2, total = 100 } = {}) {
   const draws = [];
   const logs = [];
   const handle = createDrawHandler({
     verify: verify ?? (async (token) => (token === 'good' ? { ok: true, userId: 'user_2abc' } : token === 'outsider' ? { ok: false, reason: 'not_member' } : { ok: false, reason: 'bad_signature' })),
     limits: createDailyLimits({ perUser, total }),
     draw: async (req) => (draws.push(req), draw ? draw(req) : { ok: true, images: [Buffer.from('png1'), Buffer.from('png2')] }),
+    drawMoods: async (req) => (draws.push(req), drawMoods ? drawMoods(req) : { ok: true, moods: { happy: Buffer.from('h'), sleepy: Buffer.from('s') } }),
     log: (l) => logs.push(l),
   });
   const server = http.createServer((req, res) => void handle(req, res));
   servers.push(server);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const post = (body, token = 'good') =>
-    fetch(`${base}/v1/draw`, {
+  const post = (body, token = 'good', route = '/v1/draw') =>
+    fetch(`${base}${route}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -87,6 +88,32 @@ describe('draw server', () => {
     expect(limits.take('c')).toEqual({ ok: false, scope: 'total' });
     t = Date.parse('2026-11-17T00:01:00Z');
     expect(limits.take('c').ok).toBe(true);
+  });
+});
+
+describe('moods', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const moods = (s, body, token = 'good') => s.post(body, token, '/v1/moods');
+
+  it('redraws a kept pet in each mood for a member, counting the set as one drawing', async () => {
+    const s = await serve({ perUser: 2 });
+    const res = await moods(s, { image: PNG.toString('base64') });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ moods: { happy: Buffer.from('h').toString('base64'), sleepy: Buffer.from('s').toString('base64') }, left: 1 });
+    expect(s.draws).toEqual([{ image: PNG, user: safetyId('user_2abc') }]);
+    expect(s.logs.at(-1)).toMatch(/^moods ok user=[0-9a-f]{12} images=2 /);
+  });
+
+  it('refuses outsiders and anything that isn\'t a PNG, and refunds our failures', async () => {
+    let next = { ok: false, error: { kind: 'busy' } };
+    const s = await serve({ perUser: 1, drawMoods: async () => next });
+    expect((await moods(s, { image: PNG.toString('base64') }, 'outsider')).status).toBe(403);
+    expect((await moods(s, { image: Buffer.from('<svg>').toString('base64') })).status).toBe(400);
+    expect((await moods(s, {})).status).toBe(400);
+    expect((await moods(s, { image: PNG.toString('base64') })).status).toBe(503); // busy: refunded
+    next = { ok: true, moods: { happy: PNG } };
+    expect((await moods(s, { image: PNG.toString('base64') })).status).toBe(200);
+    expect(await moods(s, { image: PNG.toString('base64') })).toEqual({ status: 429, body: { error: 'daily_limit' } });
   });
 });
 

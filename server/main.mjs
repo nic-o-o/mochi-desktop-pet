@@ -7,7 +7,7 @@
  *   MOCHI_ORG_ID           Mochi's Clerk organization; unset = any signed-in user (local testing only)
  *   MOCHI_MODEL            muse (development) or openai (gpt-image-2 via the AAI Labs team set); default openai
  *   MODEL_API_KEY          the key; unset = this Mac's Keychain (service mochi-model-api), developers only
- *   DAILY_PER_USER         drawings per person per day (default 10)
+ *   DAILY_PER_USER         drawings per person per day (default 10; a kept pet's set of moods counts as one)
  *   DAILY_TOTAL            drawings per day for everyone (default 200)
  *   HOST, PORT             default 127.0.0.1:8787
  *
@@ -56,6 +56,7 @@ export function createServer(cfg, { env = process.env, fetchImpl = fetch, log = 
     verify,
     limits: createDailyLimits({ perUser: cfg.perUser, total: cfg.total }),
     draw: ({ prompt, user }) => createModelApiGenerator({ kind: 'proxy', ...cfg.model, apiKey, user, fetchImpl }).generate({ prompt }),
+    drawMoods: ({ image, user }) => createModelApiGenerator({ kind: 'proxy', ...cfg.model, apiKey, user, fetchImpl }).drawMoods({ image }),
     log,
   });
   return http.createServer((req, res) => {

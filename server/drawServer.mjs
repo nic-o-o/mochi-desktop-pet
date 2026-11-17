@@ -2,17 +2,21 @@
  *
  * POST /v1/draw  Authorization: Bearer <Clerk session token>  {"description": "..."}
  *   → 200 {"images": ["<base64 png>", ...]}
+ * POST /v1/moods  Authorization: Bearer <Clerk session token>  {"image": "<base64 png>"}
+ *   → 200 {"moods": {"happy": "<base64 png>", ...}}: the kept pet redrawn in each mood
  *
  * It holds the Model API key so the app never ships one, checks who is asking
  * (a verified Clerk token, a member of Mochi's organization), applies a
  * per-person and an overall daily limit, and sends the image model only the
- * pet description plus an opaque per-user ID: the SHA-256 of the Clerk user ID
+ * pet description (or, for moods, the kept pet's picture with Mochi's fixed
+ * mood instructions) plus an opaque per-user ID: the SHA-256 of the Clerk user ID
  * (64 hex characters, Model API's limit; the same hash of a Clerk user ID finds
  * the person if Model API ever flags one). No FBIDs, unixnames or Codimango data.
  *
  * Logs carry the user hash, never the description or the user ID.
  */
 import crypto from 'node:crypto';
+import { isPng } from '../electron/looks.mjs';
 import { PROMPT_MAX, cleanPrompt, petPrompt } from '../electron/petGenerator.mjs';
 
 /* The app's own limit on what a person can type. */
@@ -80,48 +84,75 @@ async function readJson(req, maxBytes) {
 /**
  * The request handler. `verify(token)` is createClerkVerifier's; `draw({prompt,
  * user})` resolves like petGenerator's generate() ({ok, images} or {ok:false,
- * error:{kind}}); `log(line)` records one line per request.
+ * error:{kind}}); `drawMoods({image, user})` like its drawMoods() ({ok, moods});
+ * `log(line)` records one line per request. A set of moods counts as one drawing.
  */
-export function createDrawHandler({ verify, limits, draw, log = () => {}, maxDescription = MAX_DESCRIPTION }) {
+export function createDrawHandler({ verify, limits, draw, drawMoods, log = () => {}, maxDescription = MAX_DESCRIPTION }) {
+  /* Reserve a drawing, run it, and give it back when it failed on our side. */
+  async function limited(res, user, what, run, reply) {
+    const slot = limits.take(user);
+    if (!slot.ok) {
+      log(`${what} limited user=${user.slice(0, 12)} scope=${slot.scope}`);
+      return send(res, 429, { error: slot.scope === 'user' ? 'daily_limit' : 'service_limit' });
+    }
+    const started = Date.now();
+    const result = await run();
+    if (!result.ok) {
+      const kind = result.error?.kind ?? 'error';
+      if (kind !== 'refused') limits.refund(user); // a refusal still counts; our failures don't
+      log(`${what} failed user=${user.slice(0, 12)} kind=${kind} ms=${Date.now() - started}`);
+      return send(res, ERROR_STATUS[kind] ?? 502, { error: kind });
+    }
+    const body = reply(result);
+    log(`${what} ok user=${user.slice(0, 12)} images=${Object.keys(body.images ?? body.moods).length} ms=${Date.now() - started} left=${slot.left}`);
+    return send(res, 200, { ...body, left: slot.left });
+  }
+
   return async function handle(req, res) {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/healthz') return send(res, 200, { ok: true });
-    if (url.pathname !== '/v1/draw') return send(res, 404, { error: 'not_found' });
+    const route = url.pathname === '/v1/draw' ? 'draw' : url.pathname === '/v1/moods' && drawMoods ? 'moods' : null;
+    if (!route) return send(res, 404, { error: 'not_found' });
     if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' });
 
     const auth = /^Bearer (.+)$/.exec(String(req.headers.authorization ?? ''));
     const who = auth ? await verify(auth[1].trim()) : { ok: false, reason: 'missing_token' };
     if (!who.ok) {
-      log(`draw denied reason=${who.reason}`);
+      log(`${route} denied reason=${who.reason}`);
       return send(res, who.reason === 'not_member' ? 403 : who.reason === 'jwks_unavailable' ? 503 : 401, { error: who.reason });
     }
     const user = safetyId(who.userId);
 
     let body;
     try {
-      body = await readJson(req, 16 * 1024);
+      // A kept pet's picture is at most 2 MB, about 2.7 MB as base64.
+      body = await readJson(req, route === 'moods' ? 3 * 1024 * 1024 : 16 * 1024);
     } catch {
       return send(res, 400, { error: 'bad_request' });
     }
+
+    if (route === 'moods') {
+      const image = typeof body?.image === 'string' ? Buffer.from(body.image, 'base64') : null;
+      if (!isPng(image)) return send(res, 400, { error: 'bad_image' });
+      return limited(
+        res,
+        user,
+        'moods',
+        () => drawMoods({ image, user }),
+        (r) => ({ moods: Object.fromEntries(Object.entries(r.moods).map(([mood, png]) => [mood, png.toString('base64')])) }),
+      );
+    }
+
     const raw = typeof body?.description === 'string' ? body.description : '';
     const description = cleanPrompt(raw);
     if (!description || raw.trim().length > maxDescription) return send(res, 400, { error: 'bad_description', max: maxDescription });
-
-    const slot = limits.take(user);
-    if (!slot.ok) {
-      log(`draw limited user=${user.slice(0, 12)} scope=${slot.scope}`);
-      return send(res, 429, { error: slot.scope === 'user' ? 'daily_limit' : 'service_limit' });
-    }
-    const started = Date.now();
     // Mochi's style instructions are added here, so the app sends only what the person typed.
-    const result = await draw({ prompt: petPrompt(description), user });
-    if (!result.ok) {
-      const kind = result.error?.kind ?? 'error';
-      if (kind !== 'refused') limits.refund(user); // a refusal still counts; our failures don't
-      log(`draw failed user=${user.slice(0, 12)} kind=${kind} ms=${Date.now() - started}`);
-      return send(res, ERROR_STATUS[kind] ?? 502, { error: kind });
-    }
-    log(`draw ok user=${user.slice(0, 12)} images=${result.images.length} ms=${Date.now() - started} left=${slot.left}`);
-    return send(res, 200, { images: result.images.map((png) => png.toString('base64')), left: slot.left });
+    return limited(
+      res,
+      user,
+      'draw',
+      () => draw({ prompt: petPrompt(description), user }),
+      (r) => ({ images: r.images.map((png) => png.toString('base64')) }),
+    );
   };
 }

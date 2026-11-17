@@ -385,16 +385,19 @@ ipcMain.handle('mochi:looks-state', () => ({
   available: customizer?.available() ?? false,
   practice: customizer?.practice() ?? false,
   signIn: customizer?.signIn() ?? false,
+  moods: customizer?.moods() ?? false,
   ...(customizer?.state() ?? { looks: [], currentId: null }),
 }));
 /* The Clerk session token rides along per request (draw server only); the main process never stores it. */
+const clerkToken = (token) => (typeof token === 'string' && token.length < 8192 ? token : null);
 ipcMain.handle(
   'mochi:pet-generate',
-  (_event, text, token) =>
-    customizer?.generate(String(text ?? ''), { token: typeof token === 'string' && token.length < 8192 ? token : null }) ?? { ok: false, error: { kind: 'error' } },
+  (_event, text, token) => customizer?.generate(String(text ?? ''), { token: clerkToken(token) }) ?? { ok: false, error: { kind: 'error' } },
 );
 ipcMain.handle('mochi:pet-generate-cancel', () => customizer?.cancel());
-ipcMain.handle('mochi:look-keep', (_event, candidateId) => customizer?.keep(String(candidateId ?? '')) ?? null);
+/* Keeping a look draws its moods in the background; they arrive as mochi:looks. */
+ipcMain.handle('mochi:look-keep', (_event, candidateId, token) => customizer?.keep(String(candidateId ?? ''), { token: clerkToken(token) }) ?? null);
+ipcMain.handle('mochi:look-draw-moods', (_event, id, token) => customizer?.drawMoods(String(id ?? ''), { token: clerkToken(token) }) ?? null);
 ipcMain.handle('mochi:look-set-current', (_event, id) => customizer?.setCurrent(typeof id === 'string' ? id : null) ?? null);
 ipcMain.handle('mochi:look-delete', (_event, id) => customizer?.remove(String(id ?? '')) ?? null);
 
@@ -495,6 +498,8 @@ app.whenReady().then(() => {
     generator: pets.generator,
     codec: imageCodec,
     log: (fields) => events?.log({ event_name: 'mochi_pet_generate', source: pets.generator?.kind, ...fields }),
+    logMoods: (fields) => events?.log({ event_name: 'mochi_pet_generate', kind: 'moods', source: pets.generator?.kind, ...fields }),
+    onChange: (state) => win?.webContents.send('mochi:looks', state),
   });
   if (app.isPackaged) {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);

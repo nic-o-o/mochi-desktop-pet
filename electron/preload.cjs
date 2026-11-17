@@ -48,7 +48,13 @@ contextBridge.exposeInMainWorld('mochiShell', {
   looksState: () => ipcRenderer.invoke('mochi:looks-state'),
   generatePet: (text, token) => ipcRenderer.invoke('mochi:pet-generate', text, token),
   cancelPetGenerate: () => ipcRenderer.invoke('mochi:pet-generate-cancel'),
-  keepLook: (candidateId) => ipcRenderer.invoke('mochi:look-keep', candidateId),
+  keepLook: (candidateId, token) => ipcRenderer.invoke('mochi:look-keep', candidateId, token),
+  drawLookMoods: (id, token) => ipcRenderer.invoke('mochi:look-draw-moods', id, token),
+  onLooksChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('mochi:looks', listener);
+    return () => ipcRenderer.removeListener('mochi:looks', listener);
+  },
   setCurrentLook: (id) => ipcRenderer.invoke('mochi:look-set-current', id),
   deleteLook: (id) => ipcRenderer.invoke('mochi:look-delete', id),
   onOpenCustomize: (callback) => {
