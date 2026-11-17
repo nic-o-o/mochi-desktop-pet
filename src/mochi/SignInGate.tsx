@@ -50,7 +50,8 @@ function Gate({ children, frame }: { children: Render; frame: Frame }) {
     return frame(
       <div className="customize-signin">
         <p className="small">Sign in with your @meta.com email to draw pets. Mochi emails you a code; nothing else changes.</p>
-        <SignIn routing="hash" />
+        {/* Sign in, or create the account on first use (the allowlist decides who may). */}
+        <SignIn routing="hash" withSignUp />
       </div>
     );
   }
