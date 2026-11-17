@@ -165,8 +165,9 @@ function createWindow() {
     },
   });
   // The window only ever shows Mochi: no navigating away, no new windows (links go to the browser).
+  // Within the app, only loads that keep `?mochi-shell=1`: without it the page is the browser preview.
   win.webContents.on('will-navigate', (event, url) => {
-    if (!isAppNavigation(url, DEV_URL)) event.preventDefault();
+    if (!isAppNavigation(url, DEV_URL) || new URL(url).searchParams.get('mochi-shell') !== '1') event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedLink(url)) void shell.openExternal(url);

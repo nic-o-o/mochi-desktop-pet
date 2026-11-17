@@ -19,9 +19,21 @@ type Frame = (body: ReactNode) => ReactNode;
 /* Clerk's card, flattened to fit the panel. */
 const APPEARANCE = { elements: { rootBox: { width: '100%' }, cardBox: { width: '100%', boxShadow: 'none' } } };
 
+/*
+ * Mochi's window never leaves its page. Clerk's sign-in steps move between
+ * hashes on it; anything else (such as going to "/" after signing in) would
+ * reload the window without its desktop-pet flag, so it is ignored: the gate
+ * follows the sign-in state instead.
+ */
+function stayOnPage(to: string) {
+  const next = new URL(to, window.location.href);
+  const here = window.location;
+  if (next.origin === here.origin && next.pathname === here.pathname && next.search === here.search) here.hash = next.hash;
+}
+
 export function SignInGate({ children, frame }: { children: Render; frame: Frame }) {
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} appearance={APPEARANCE}>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} appearance={APPEARANCE} routerPush={stayOnPage} routerReplace={stayOnPage}>
       <Gate frame={frame}>{children}</Gate>
     </ClerkProvider>
   );
