@@ -676,12 +676,6 @@ export function SettingsMenu({
               <span>Open at login</span>
             </label>
           )}
-          {settings && (
-            <label className="section-option">
-              <input type="checkbox" checked={settings.sharing} onChange={(e) => toggle('sharing', e.target.checked, 'share_usage')} />
-              <span>Share usage data</span>
-            </label>
-          )}
           {/* The devserver Delegate runs Green on, and where Mochi looks for Harvester's board. */}
           {node ? (
             <div className="settings-row">

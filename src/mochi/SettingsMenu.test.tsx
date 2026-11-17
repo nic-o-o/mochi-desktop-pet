@@ -29,22 +29,28 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('Devserver: devvm7438')).toBeTruthy();
   });
 
-  it('hides Open at login when it cannot be set here, and toggles Share usage data', async () => {
-    const calls: [string, boolean][] = [];
-    (window as unknown as { mochiShell: unknown }).mochiShell = {
-      appSettings: async () => ({ openAtLogin: null, sharing: true }),
-      setAppSetting: async (key: string, value: boolean) => (calls.push([key, value]), { openAtLogin: null, sharing: value }),
-    };
+  it('hides Open at login when it cannot be set here, and offers no usage-data switch', async () => {
+    (window as unknown as { mochiShell: unknown }).mochiShell = { appSettings: async () => ({ openAtLogin: null }) };
     await act(async () => {
       render(<SettingsMenu open onOpenChange={() => {}} />);
     });
     expect(screen.queryByText('Open at login')).toBeNull();
-    const box = screen.getByLabelText('Share usage data') as HTMLInputElement;
-    expect(box.checked).toBe(true);
+    expect(screen.queryByText(/usage data/i)).toBeNull();
+  });
+
+  it('toggles Open at login when the packaged app can set it', async () => {
+    const calls: [string, boolean][] = [];
+    (window as unknown as { mochiShell: unknown }).mochiShell = {
+      appSettings: async () => ({ openAtLogin: false }),
+      setAppSetting: async (key: string, value: boolean) => (calls.push([key, value]), { openAtLogin: value }),
+    };
     await act(async () => {
-      fireEvent.click(box);
+      render(<SettingsMenu open onOpenChange={() => {}} />);
     });
-    expect(calls).toEqual([['sharing', false]]);
-    expect((screen.getByLabelText('Share usage data') as HTMLInputElement).checked).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Open at login'));
+    });
+    expect(calls).toEqual([['openAtLogin', true]]);
+    expect((screen.getByLabelText('Open at login') as HTMLInputElement).checked).toBe(true);
   });
 });

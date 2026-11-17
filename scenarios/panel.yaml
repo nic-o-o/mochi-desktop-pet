@@ -113,17 +113,14 @@ scenarios:
       - open_menu
       - expect:
           see: [Show in panel]
-          not_see: [Report a problem…, Share usage data]
+          not_see: [Report a problem…]
       - open_settings
       - expect:
-          see: [Settings, Customize Mochi…, Open at login, Share usage data, Help, Report a problem…]
-          not_see: [Show in panel, Copy my review stats]
+          see: [Settings, Customize Mochi…, Open at login, Help, Report a problem…]
+          # Usage data has no switch in the UI (an earlier opt-out is still honored by the sender).
+          not_see: [Show in panel, Copy my review stats, Share usage data]
           events:
             - { event: mochi_click, surface: glance_panel, component: settings }
-      - toggle_section: Share usage data
-      - expect:
-          events:
-            - { event: mochi_click, surface: glance_panel, component: share_usage, enabled: false }
 
   - id: panel-last-section-locked
     title: The last section left on cannot be turned off

@@ -48,7 +48,9 @@ scenarios:
       - expect: { see: [Stop Harvester, Stops the stuck run so you can restart it.], harvester_calls: [] }
       - click: Stop
       - expect:
-          see: [Stopped. Harvester leaves the task alone until you start it again.]
+          # Harvester now reports the run stopped, so the row offers the next step and drops its own note.
+          see: [Harvester stopped, Address revisions]
+          not_see: [Stopped. Harvester leaves the task alone until you start it again.]
           harvester_calls: [stop run-ember-results-sync]
           events:
             - { event: mochi_click, surface: glance_panel, component: harvester_stop, task_id: v1, status: stuck }
@@ -68,7 +70,9 @@ scenarios:
       - expect: { see: [Harvester will address the requested revisions on, It pushes its repairs to the task and posts a comment], harvester_calls: [] }
       - click: Address revisions
       - expect:
-          see: ["Queued: Harvester will address the revisions."]
+          # The status line says it now; the confirmation note would only repeat it.
+          see: ["Harvester addressing revisions · Queued"]
+          not_see: ["Queued: Harvester will address the revisions."]
           harvester_calls: [restart ember-results-sync revision]
           events:
             - { event: mochi_click, surface: glance_panel, component: harvester_restart, task_id: v1, status: stopped }
@@ -87,7 +91,7 @@ scenarios:
       - click: Fix validation
       - expect: { see: [Harvester will fix validation on] }
       - click: Fix validation
-      - expect: { see: ["Queued: Harvester will fix validation."], harvester_calls: [restart ember-draft-failing revive] }
+      - expect: { see: ["Harvester fixing validation · Queued"], not_see: ["Queued: Harvester will fix validation."], harvester_calls: [restart ember-draft-failing revive] }
 
   - id: harvester-absent
     title: Without Harvester on this Mac, rows have no agent line
@@ -96,3 +100,21 @@ scenarios:
       - start
       - click_pet
       - expect: { see: ["Validation failed · Oracle 1/3"], not_see: [Harvester] }
+
+  - id: harvester-plain-reasons
+    title: Harvester's common internal reasons read in plain words; the original stays in the tooltip
+    given:
+      live: week
+      sections: { revisions: true, reviews: false, drafts: true }
+      harvester:
+        ember-draft-failing: { kind: working, reason: "durable owner is repairing or running local checks" }
+        ember-results-sync: { kind: working, reason: "published 609cf09e87ed is still being validated by Nest", intent: revision }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see:
+            - "Harvester fixing validation · Working on the fix and running tests"
+            - "Harvester addressing revisions · Pushed a fix; waiting for Codimango to validate it"
+          not_see: [durable owner, validated by Nest]
+

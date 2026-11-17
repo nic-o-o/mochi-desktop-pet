@@ -87,4 +87,4 @@ scenarios:
       - start
       - click_pet
       - open_settings
-      - expect: { see: [Settings, Share usage data], not_see: [Customize Mochi…] }
+      - expect: { see: [Settings, Open at login], not_see: [Customize Mochi…] }

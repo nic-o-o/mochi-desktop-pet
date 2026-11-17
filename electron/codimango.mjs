@@ -64,6 +64,9 @@ export function pickRow(task) {
       }))
     : null;
   row.canaryScan = pickCanaryScan(task);
+  // Whether a pending validation is actually running, or still waiting to start.
+  const rollup = task.validationRollupState;
+  row.validationRollupState = rollup && typeof rollup.state === 'string' ? { state: rollup.state } : null;
   return row;
 }
 

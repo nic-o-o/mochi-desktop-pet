@@ -308,7 +308,7 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       looks: givenLooks,
       currentId: given?.current !== undefined ? (givenLooks[given.current]?.id ?? null) : null,
     },
-    appSettings: { openAtLogin: false, sharing: true },
+    appSettings: { openAtLogin: false },
     harvester: Object.fromEntries(
       Object.entries(sc.given?.harvester ?? {}).map(([taskName, g]) => [
         taskName,
@@ -380,12 +380,17 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
       return Promise.resolve(h.agentJobs);
     },
     harvesterStatus: () => Promise.resolve({ available: Object.keys(h.harvester).length > 0, statuses: h.harvester }),
+    /* Like Harvester: a stopped run reads stopped, a restarted task reads queued, on the next refresh. */
     stopHarvesterRun: (req) => {
       h.harvesterCalls.push(`stop ${req.runId}`);
+      const name = Object.keys(h.harvester).find((n) => h.harvester[n].runId === req.runId);
+      if (name) h.harvester = { ...h.harvester, [name]: { ...h.harvester[name], kind: 'stopped', state: 'cancelled', reason: '' } };
       return Promise.resolve({ ok: true });
     },
     restartHarvesterTask: (req) => {
       h.harvesterCalls.push(`restart ${req.taskName} ${req.intent}`);
+      const prev = h.harvester[req.taskName];
+      if (prev) h.harvester = { ...h.harvester, [req.taskName]: { ...prev, kind: 'working', state: 'queued', reason: 'Queued', intent: req.intent } };
       return Promise.resolve({ ok: true });
     },
     appSettings: () => Promise.resolve(h.appSettings),
