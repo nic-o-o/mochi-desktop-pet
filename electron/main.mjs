@@ -57,7 +57,8 @@ import {
 } from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
-import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
+import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererCsp, rendererResponse } from './rendererProtocol.mjs';
+import { CLERK_PUBLISHABLE_KEY, frontendApiHost } from './clerkConfig.mjs';
 import { MARKER_FILE, migrateRendererStorage } from './storageMigration.mjs';
 import { createTokenStore, registerClerkBridge } from './clerkTokens.mjs';
 
@@ -473,11 +474,14 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
-  protocol.handle(SCHEME, (request) => rendererResponse(DIST_DIR, request.url, fs.promises.readFile));
+  // Clerk's sources join the renderer's CSP only while Customize signs in (drawing through the draw server).
+  protocol.handle(SCHEME, (request) =>
+    rendererResponse(DIST_DIR, request.url, fs.promises.readFile, rendererCsp(customizer?.signIn() ? frontendApiHost(CLERK_PUBLISHABLE_KEY) : null)),
+  );
   // Customize Mochi's Clerk sign-in keeps its session here (Keychain-encrypted).
   registerClerkBridge(ipcMain, createTokenStore({ file: path.join(app.getPath('userData'), 'clerk-tokens.json'), safeStorage, fs }));
-  // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai.
-  // Packaged builds keep Customize hidden until the key-holding proxy exists (B3).
+  // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai|proxy.
+  // Packaged builds draw through the draw server once it's deployed (DRAW_URL), else hide Customize.
   const pets = pickGenerator({
     packaged: app.isPackaged,
     env: process.env,

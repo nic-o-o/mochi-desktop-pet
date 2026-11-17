@@ -139,9 +139,19 @@ describe('createProxyGenerator (the draw server)', () => {
     expect((await createProxyGenerator({ url: 'http://x', fetchImpl: async () => { throw new Error('down'); } }).generate({ description: 'cat', token: 't' })).error.kind).toBe('offline');
   });
 
-  it('is what MOCHI_PET_GENERATOR=proxy picks from source, not in packaged builds yet', () => {
-    expect(pickGenerator({ packaged: false, env: { MOCHI_PET_GENERATOR: 'proxy' }, fixturesDir: '/x' }).generator.kind).toBe('proxy');
-    expect(pickGenerator({ packaged: true, env: { MOCHI_PET_GENERATOR: 'proxy' }, fixturesDir: '/x' }).generator).toBeNull();
+  it('is what MOCHI_PET_GENERATOR=proxy picks from source, and what packaged builds use once a draw server is set', () => {
+    const pick = (packaged, env, drawUrl = null) => pickGenerator({ packaged, env, fixturesDir: '/x', drawUrl }).generator;
+    expect(pick(false, { MOCHI_PET_GENERATOR: 'proxy' }).kind).toBe('proxy');
+    // Packaged: hidden until the draw server is deployed, then on by default.
+    expect(pick(true, {})).toBeNull();
+    expect(pick(true, { MOCHI_PET_GENERATOR: 'proxy' })).toBeNull();
+    expect(pick(true, {}, 'https://mochi.example.com').kind).toBe('proxy');
+    expect(pick(true, { MOCHI_DRAW_URL: 'http://127.0.0.1:8787' }).kind).toBe('proxy');
+    // Sign-in tokens never go to a plain-http server elsewhere.
+    const insecure = pickGenerator({ packaged: true, env: {}, fixturesDir: '/x', drawUrl: 'http://mochi.example.com' });
+    expect(insecure.generator).toBeNull();
+    expect(insecure.note).toMatch(/https/);
+    expect(pick(false, { MOCHI_PET_GENERATOR: 'proxy', MOCHI_DRAW_URL: 'http://mochi.example.com' })).toBeNull();
   });
 });
 

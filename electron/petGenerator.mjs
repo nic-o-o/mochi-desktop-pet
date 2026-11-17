@@ -12,6 +12,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DRAW_URL, isDrawUrl } from './clerkConfig.mjs';
 
 export const PROMPT_MAX = 200;
 export const CANDIDATES = 3;
@@ -197,18 +198,23 @@ export function keychainKey({ service = KEYCHAIN_SERVICE, account = os.userInfo(
 
 /**
  * Which generator this build uses, from MOCHI_PET_GENERATOR:
- *   packaged builds: none (Customize stays hidden until the proxy exists), or `fake`;
- *   from source: `fake` (default), or `muse` / `openai` with MOCHI_PET_USER (your FBID)
- *   and the key in the Keychain under `mochi-model-api`.
+ *   packaged builds: `proxy` when a draw server is set (DRAW_URL in clerkConfig.mjs, or
+ *   MOCHI_DRAW_URL), otherwise none (Customize stays hidden); or `fake`;
+ *   from source: `fake` (default), `proxy` (MOCHI_DRAW_URL, default a server on this Mac),
+ *   or `muse` / `openai` with MOCHI_PET_USER (your FBID) and the key in the Keychain under
+ *   `mochi-model-api`.
  * Resolves { generator, note } where note explains a fallback.
  */
-export function pickGenerator({ packaged, env, fixturesDir, apiKey = keychainKey(), fetchImpl }) {
-  const want = env.MOCHI_PET_GENERATOR ?? (packaged ? '' : 'fake');
+export function pickGenerator({ packaged, env, fixturesDir, apiKey = keychainKey(), fetchImpl, drawUrl = DRAW_URL }) {
+  const draw = env.MOCHI_DRAW_URL || (packaged ? drawUrl : null);
+  const want = env.MOCHI_PET_GENERATOR ?? (packaged ? (draw ? 'proxy' : '') : 'fake');
   const fake = () => createFakeGenerator({ dir: fixturesDir });
   if (want === 'fake') return { generator: fake() };
-  // Through the draw server, with Clerk sign-in (from source for now; packaged once it's deployed).
-  if (want === 'proxy' && !packaged) {
-    return { generator: createProxyGenerator({ url: env.MOCHI_DRAW_URL || 'http://127.0.0.1:8787', ...(fetchImpl ? { fetchImpl } : {}) }) };
+  // Through the draw server, with Clerk sign-in. Sign-in tokens only go to https, or to this Mac.
+  if (want === 'proxy') {
+    const url = draw || (packaged ? null : 'http://127.0.0.1:8787');
+    if (!url || !isDrawUrl(url)) return { generator: null, note: url ? `draw server ${url} must be https (or on this Mac); Customize is off` : undefined };
+    return { generator: createProxyGenerator({ url, ...(fetchImpl ? { fetchImpl } : {}) }) };
   }
   if (packaged || !MODELS[want]) return { generator: null };
   const user = String(env.MOCHI_PET_USER ?? '').trim();

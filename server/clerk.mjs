@@ -10,13 +10,7 @@
  */
 import crypto from 'node:crypto';
 
-/** The Frontend API host a publishable key encodes, e.g. pk_test_… → picked-bulldog-8888.clerk.accounts.dev. */
-export function frontendApiHost(publishableKey) {
-  const m = /^pk_(test|live)_(.+)$/.exec(String(publishableKey ?? '').trim());
-  if (!m) return null;
-  const host = Buffer.from(m[2], 'base64').toString('utf8').replace(/\$$/, '');
-  return /^[a-z0-9.-]+$/i.test(host) ? host : null;
-}
+export { frontendApiHost } from '../electron/clerkConfig.mjs';
 
 const b64url = (s) => Buffer.from(s, 'base64url');
 
