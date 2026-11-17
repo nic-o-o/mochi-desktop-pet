@@ -119,7 +119,10 @@ and the server only draws for members of its **Codimango Companion**
 organization, with per-person and overall daily limits. The image model gets
 only the description and a SHA-256 of the Clerk user ID. Clerk sign-in is only
 for drawing: Codimango data still comes from the `codimango` CLI under your own
-login, which never leaves the Mac.
+login, which never leaves the Mac. Keeping a pet also redraws it happy,
+sleepy, nervous and focused (an edit of the kept picture, about 30 seconds in
+the background), so it changes its face with its mood; that set counts as one
+drawing.
 
 **From source** (the server runs on your Mac with the Model API key from your
 Keychain under `mochi-model-api`):
