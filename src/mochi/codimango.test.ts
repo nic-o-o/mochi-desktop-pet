@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   failedCheckSummary,
+  latestPushVerdict,
   parseCachedSnapshot,
   reviewPriority,
   revisionPriority,
@@ -418,5 +419,41 @@ describe('failedCheckSummary with errored checks', () => {
     expect(
       failedCheckSummary(revision('1', { validationDetails: [{ label: 'Metacode or Opus pass/fail balance', status: 'error' }] })),
     ).toBe('Solvability & difficulty errored');
+  });
+});
+
+describe('latestPushVerdict', () => {
+  const A = 'a7c6803fb6a3'.padEnd(40, '0');
+  const D = 'd7f72e2c3b00'.padEnd(40, '0');
+
+  it("reads Codimango's verdict on the latest push from the head and validated commits", () => {
+    expect(latestPushVerdict(row({ validationStatus: 'failed', headCommitSha: D, validationCommitSha: D, commitSha: D }))).toBe('failed');
+    expect(latestPushVerdict(row({ validationStatus: 'passing', headCommitSha: D, commitSha: D }))).toBe('passing');
+    // A newer push than the validated commit (partition-word-chain on 11-18): its verdict is for the older one.
+    expect(latestPushVerdict(row({ validationStatus: 'failed', headCommitSha: A, validationCommitSha: D, commitSha: D }))).toBe('unvalidated');
+    expect(latestPushVerdict(row({ validationStatus: 'pending', headCommitSha: A, commitSha: A, validationRollupState: { state: 'running' } }))).toBe('validating');
+    expect(latestPushVerdict(row({ validationStatus: 'pending', headCommitSha: A, commitSha: A, validationRollupState: { state: 'blocked' } }))).toBe('queued');
+    expect(latestPushVerdict(row({ validationStatus: 'failed', commitSha: D }))).toBeNull();
+  });
+
+  it('rides along on drafts and revisions, with when the task last changed', () => {
+    const updatedAt = iso(NOW - 2 * HOUR);
+    const items = toTaskItems(
+      {
+        fetchedAtMs: NOW,
+        reviewing: [],
+        mine: [
+          row({ id: 'd', status: 'draft', validationStatus: 'failed', headCommitSha: D, commitSha: D, updatedAt }),
+          row({ id: 'v', status: 'needs_revision', validationStatus: 'failed', headCommitSha: A, commitSha: D, reviewedAt: updatedAt, updatedAt }),
+          row({ id: 'n', status: 'draft', validationStatus: 'failed', updatedAt }),
+        ],
+      },
+      NOW,
+    );
+    expect(Object.fromEntries(items.map((t) => [t.id, t.latestPush]))).toEqual({
+      d: { verdict: 'failed', atMs: NOW - 2 * HOUR },
+      v: { verdict: 'unvalidated', atMs: NOW - 2 * HOUR },
+      n: undefined,
+    });
   });
 });

@@ -16,6 +16,10 @@ fixtures:
         oracle: 1/3
         failing_since_d: 2
       - { id: d3, name: ember-draft-failing, status: draft, validation: failed, failed_checks: [AI assessment], updated_ago_h: 2 }
+  pushed:
+    mine:
+      - { id: v1, name: ember-results-sync, status: needs_revision, validation: failed, failed_checks: [Oracle validation], oracle: 1/3, commit: unvalidated, reviewed_ago_h: 96 }
+      - { id: d3, name: ember-draft-failing, status: draft, validation: failed, failed_checks: [AI assessment], commit: validated, updated_ago_h: 2 }
 
 scenarios:
   - id: harvester-status-lines
@@ -118,3 +122,38 @@ scenarios:
             - "Harvester addressing revisions · Pushed a fix; waiting for Codimango to validate it"
           not_see: [durable owner, validated by Nest]
 
+
+  - id: harvester-behind-codimango
+    title: A run still waiting for a verdict Codimango has already given says so, instead of repeating Harvester's wait
+    given:
+      live: pushed
+      sections: { revisions: true, reviews: false, drafts: true }
+      harvester:
+        # Pushed 5h ago; Codimango finished validating that push 2h ago.
+        ember-draft-failing: { kind: working, state: remote_waiting, reason: "published 869775b28e1f is still being validated by Nest", reason_ago_h: 5 }
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see:
+            - "Validation failed · AI assessment"
+            - "Harvester fixing validation · Codimango already finished validating the latest push (failed); Harvester hasn't picked that up yet"
+          not_see: [waiting for Codimango to validate it]
+
+  - id: harvester-stopped-after-push
+    title: A stopped run says it stopped after pushing a fix and where Codimango stands on that push, not its last progress line
+    given:
+      live: pushed
+      sections: { revisions: true, reviews: false, drafts: false }
+      harvester:
+        ember-results-sync:
+          kind: stopped
+          state: remote_waiting
+          intent: revision
+          reason: "Harvester stopped before finishing. Last: published a7c6803fb6a3 is awaiting its exact-revision verdict"
+    steps:
+      - start
+      - click_pet
+      - expect:
+          see: ["Harvester stopped after pushing a fix · Codimango hasn't validated the latest push", Address revisions]
+          not_see: [waiting for Codimango, exact-revision verdict]

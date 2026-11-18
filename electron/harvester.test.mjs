@@ -60,13 +60,14 @@ describe('a restarted task (Harvester re-queues the same record)', () => {
       moved_at: '2026-11-13T23:50:16Z',
       detail: { outcome: 'infrastructure_blocked', detail: 'Nest has not created a validation commit', at: Date.parse('2026-11-01T20:28:00Z') / 1000, timing: { phase: 'platform_blocked' } },
     };
-    expect(mapRun(run)).toMatchObject({ kind: 'working', reason: 'Queued', sinceMs: Date.parse('2026-11-13T23:50:16Z') });
+    expect(mapRun(run)).toMatchObject({ kind: 'working', reason: 'Queued', sinceMs: Date.parse('2026-11-13T23:50:16Z'), reasonMs: null });
   });
 
   it('keeps taskflow state written during the current cycle', () => {
     const at = Date.parse('2026-11-13T23:55:00Z') / 1000;
     const run = { state: 'running', lifecycle_started_at: '2026-11-13T23:50:16Z', detail: { detail: 'Repairing, round 1', at, timing: { phase: 'platform_blocked' } } };
-    expect(mapRun(run)).toMatchObject({ kind: 'stuck', reason: 'Repairing, round 1', sinceMs: at * 1000 });
+    // reasonMs: when Harvester wrote it, so the panel can tell it from an older Codimango verdict.
+    expect(mapRun(run)).toMatchObject({ kind: 'stuck', reason: 'Repairing, round 1', sinceMs: at * 1000, reasonMs: at * 1000 });
   });
 });
 

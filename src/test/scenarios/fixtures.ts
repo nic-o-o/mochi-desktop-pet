@@ -31,6 +31,8 @@ export interface ShorthandRow {
   warned_ago_d?: number;
   failing_since_d?: number;
   escalation?: number;
+  /** Which commits Codimango reports: the latest push is the validated one, or newer than it. Left out, neither is known. */
+  commit?: 'validated' | 'unvalidated';
 }
 
 export interface ShorthandSnapshot {
@@ -73,6 +75,9 @@ export function toRow(s: ShorthandRow, now: number, feed: 'reviewing' | 'mine'):
         : null,
     oraclePassCount: oPass,
     oracleTotalCount: oTotal,
+    ...(s.commit
+      ? { headCommitSha: (s.commit === 'validated' ? 'd' : 'a').repeat(40), commitSha: 'd'.repeat(40), validationCommitSha: 'd'.repeat(40) }
+      : {}),
   };
 }
 

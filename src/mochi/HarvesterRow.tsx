@@ -1,6 +1,6 @@
 /* The agent line under a draft row: what Harvester is doing with this task —
- * working, stuck, done or stopped — with Harvester's own one-line reason, and
- * the matching action. Active runs offer Stop (Harvester won't restart a task
+ * working, stuck, done or stopped — with Harvester's one-line reason checked
+ * against Codimango's verdict on the latest push, and the matching action. Active runs offer Stop (Harvester won't restart a task
  * while its run is active); stopped runs offer to start again, which publishes: it
  * pushes to the task and posts a comment. Both ask first. The row names the
  * job: on drafts it's "Fix validation" (Harvester's revive workflow), on Needs
@@ -8,9 +8,10 @@
  * reviewer's request).
  */
 import { useState } from 'react';
-import { harvesterLabel, plainReason, shortReason, sinceLabel } from './harvester.ts';
+import { harvesterLine, shortReason, sinceLabel } from './harvester.ts';
 import { restartHarvesterTask, stopHarvesterRun } from './shell.ts';
 import type { HarvesterTaskStatus } from './shell.ts';
+import type { LatestPush } from './logic.ts';
 import { logClick } from './usage.ts';
 
 type Phase = 'idle' | 'confirm-stop' | 'confirm-restart' | 'working' | 'error' | 'sent';
@@ -18,6 +19,7 @@ type Phase = 'idle' | 'confirm-stop' | 'confirm-restart' | 'working' | 'error' |
 export function HarvesterRow({
   taskId,
   status,
+  latestPush,
   revision = false,
   nowMs,
   onChanged,
@@ -26,6 +28,8 @@ export function HarvesterRow({
 }: {
   taskId: string;
   status: HarvesterTaskStatus;
+  /** Codimango's verdict on the task's latest push, which Harvester's own status can lag. */
+  latestPush?: LatestPush;
   /** A Needs revision row: starting again asks Harvester to address the reviewer's request, not just fix validation. */
   revision?: boolean;
   nowMs: number;
@@ -40,8 +44,9 @@ export function HarvesterRow({
   const statusKey = `${status.kind}|${status.state}|${status.runId ?? ''}`;
   const [actedOn, setActedOn] = useState('');
   const fields = { task_id: taskId, status: status.kind };
-  const tone = status.kind === 'stuck' || status.kind === 'stopped' ? 'agent-failed' : 'agent-done';
-  const since = sinceLabel(status.sinceMs, nowMs);
+  const line = harvesterLine(status, latestPush, nowMs);
+  const tone = line.attention ? 'agent-failed' : 'agent-done';
+  const since = sinceLabel(line.sinceMs, nowMs);
   /* The job is the row's: a draft has no reviewer request (Harvester refuses a revision run on one). */
   const intent = revision ? 'revision' : 'revive';
   const startLabel = revision ? 'Address revisions' : 'Fix validation';
@@ -74,8 +79,8 @@ export function HarvesterRow({
       {/* Same shape as the validation line above: text on the left, the action in the flag's slot on the right. */}
       <div className="glance-meta-line">
         <span className={`agent-status ${tone}`} title={status.reason || undefined}>
-          {harvesterLabel(status)}
-          {status.reason ? ` · ${shortReason(plainReason(status.reason))}` : ''}
+          {line.label}
+          {line.reason ? ` · ${shortReason(line.reason)}` : ''}
           {since ? <span className="muted"> · {since}</span> : null}
         </span>
         {showAction && canStop && (

@@ -14,7 +14,7 @@
  *     `task submit-status` not blocked) first, then failing or blocked, running,
  *     not yet validated; most recently updated first.
  */
-import type { DraftState, TaskItem, TaskPriority } from './logic.ts';
+import type { DraftState, LatestPush, PushVerdict, TaskItem, TaskPriority } from './logic.ts';
 
 export const CODIMANGO_WEB = 'https://codimango.internalmeta.com';
 
@@ -60,6 +60,10 @@ export interface CodimangoRow {
   submitBlockers?: string[] | null;
   /** Commit the task is at; the canary scan result only counts for this commit. */
   commitSha?: string | null;
+  /** The latest push to the task, which can be newer than the commit Codimango validated. */
+  headCommitSha?: string | null;
+  /** The commit validationStatus is about. */
+  validationCommitSha?: string | null;
   /** Stored benchmark canary scan result (qualitativeResult.benchmarkCanaryScanResult). */
   canaryScan?: CodimangoCanaryScan | null;
 }
@@ -274,6 +278,7 @@ function revisionItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | nul
     checkSummary,
     subtitle,
     url: submissionUrl(row.id),
+    latestPush: latestPush(row),
   };
 }
 
@@ -306,6 +311,25 @@ export function submitBlockers(row: CodimangoRow): string[] {
 function pendingLabel(row: CodimangoRow): string {
   const state = row.validationRollupState?.state;
   return !state || state === 'running' ? 'Validation running' : 'Validation pending';
+}
+
+/**
+ * Where Codimango stands on the task's latest push: it failed or passes
+ * validation, is being validated or waiting to be, or was never validated (the
+ * verdict is for an older commit). Null when the row doesn't say which commits.
+ */
+export function latestPushVerdict(row: CodimangoRow): PushVerdict | null {
+  const head = row.headCommitSha;
+  const validated = row.validationCommitSha ?? row.commitSha;
+  if (!head || !validated) return null;
+  if (row.validationStatus === 'pending') return pendingLabel(row) === 'Validation running' ? 'validating' : 'queued';
+  if (head !== validated) return 'unvalidated';
+  return row.validationStatus === 'failed' ? 'failed' : row.validationStatus === 'passing' ? 'passing' : 'unvalidated';
+}
+
+function latestPush(row: CodimangoRow): LatestPush | undefined {
+  const verdict = latestPushVerdict(row);
+  return verdict ? { verdict, atMs: ms(row.updatedAt) } : undefined;
 }
 
 function draftState(row: CodimangoRow): DraftState {
@@ -354,6 +378,7 @@ function draftItem(row: CodimangoRow, nowMs: number): CodimangoTaskItem | null {
     subtitle: updatedMs ? `${lead} · updated ${ago(updatedMs, nowMs)}` : lead,
     url: submissionUrl(row.id),
     draftState: state,
+    latestPush: latestPush(row),
   };
 }
 

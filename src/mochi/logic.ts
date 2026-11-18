@@ -38,6 +38,15 @@ export type TaskStatus = 'pending_review' | 'revision_required' | 'draft';
  * BLOCKED = passing, but Codimango won't accept the submit yet). */
 export type DraftState = 'ready' | 'failing' | 'blocked' | 'running' | 'new';
 
+/** Codimango on the task's latest push: failed or passes validation, being validated, waiting to be, or never validated. */
+export type PushVerdict = 'failed' | 'passing' | 'validating' | 'queued' | 'unvalidated';
+
+export interface LatestPush {
+  verdict: PushVerdict;
+  /** The task's last change; once the verdict is in, about when validation finished. */
+  atMs: number | null;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -60,6 +69,8 @@ export interface TaskItem {
   draftState?: DraftState;
   /** Codimango rows: last change to the task (push, validation, edit); agent reports older than this are stale. */
   updatedAtMs?: number;
+  /** Your drafts and revisions: Codimango's verdict on the latest push, when the row says which commits. */
+  latestPush?: LatestPush;
 }
 
 export const PRIORITY_RANK: Record<TaskPriority, number> = {

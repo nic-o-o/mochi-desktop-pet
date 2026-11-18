@@ -7,15 +7,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadDelegateNode } from './delegations.ts';
 import { harvesterStatus } from './shell.ts';
 import type { HarvesterTaskStatus } from './shell.ts';
+import type { LatestPush, PushVerdict } from './logic.ts';
 
 export const HARVESTER_POLL_MS = 30_000;
 
 /** The agent line's label, naming the job when there is one: Harvester fixes validation (revive) or addresses a reviewer's revisions. */
 /* Harvester's most common one-line reasons, in plain words. Anything else is shown as Harvester wrote it. */
-const PLAIN: [RegExp, string][] = [
+const PLAIN: [RegExp, string | ((m: RegExpExecArray) => string)][] = [
   [/^(the )?durable owner is repairing or (running local checks|checking the task)/i, 'Working on the fix and running tests'],
   [/^calibration guard refused the candidate/i, 'Its own check rejected the last attempt (it changed files this fix may not touch); trying again'],
   [/^(published [0-9a-f]+|the exact revision) is still being validated by Nest/i, 'Pushed a fix; waiting for Codimango to validate it'],
+  [/^published [0-9a-f]+ is awaiting its exact-revision verdict/i, 'Pushed a fix; waiting for Codimango to validate it'],
+  [
+    /was requested recently; exact-head platform failures: (.+)$/i,
+    (m) => `Codimango's own checks errored (${m[1]}); asked Codimango to re-run them`,
+  ],
+  [/was requested recently/i, 'Asked Codimango to re-run its checks; waiting'],
   [/^pushed; waiting on the platform to re-validate/i, 'Pushed a fix; waiting for Codimango to validate it'],
   [/^an exact-revision platform job or dispatch grace is active/i, "Waiting for Codimango's validation job"],
   [/^exact-revision platform work is parked outside a repair slot/i, "Waiting for Codimango's validation"],
@@ -34,12 +41,103 @@ const PLAIN: [RegExp, string][] = [
 ];
 /** About one line on the row; the full text is in the tooltip. */
 export const REASON_SHORT = 110;
-const LAST = 'Harvester stopped before finishing. Last: ';
+const ENDED = 'Harvester stopped before finishing.';
+const LAST = `${ENDED} Last: `;
 
 /** Harvester's reason in plain words when it's a known one; the original stays in the row's tooltip. */
 export function plainReason(reason: string): string {
   if (reason.startsWith(LAST)) return LAST + plainReason(reason.slice(LAST.length));
-  return PLAIN.find(([re]) => re.test(reason))?.[1] ?? reason;
+  for (const [re, plain] of PLAIN) {
+    const m = re.exec(reason);
+    if (m) return typeof plain === 'string' ? plain : plain(m);
+  }
+  return reason;
+}
+
+/* Harvester's reasons for waiting on Codimango: it pushed, or asked for a re-run, and is waiting for the verdict. */
+const WAITING_ON_CODIMANGO = [
+  /is still being validated by Nest/i,
+  /is awaiting its exact-revision verdict/i,
+  /^pushed; waiting on the platform to re-validate/i,
+  /^an exact-revision platform job or dispatch grace is active/i,
+  /^exact-revision platform work is parked outside a repair slot/i,
+  /^the platform is stale and has no live exact-revision job/i,
+  /^Nest has not created a validation commit or live job/i,
+  /was requested recently/i,
+];
+
+/* Of those, the ones that follow a push of Harvester's (the rest wait on a re-run or on Codimango starting). */
+const AFTER_PUSH = /^(published [0-9a-f]+ is|the exact revision is|pushed; waiting)/i;
+
+/** Harvester last said it was waiting for Codimango's verdict. */
+export function waitingOnCodimango(status: Pick<HarvesterTaskStatus, 'state' | 'reason'>): boolean {
+  const reason = status.reason.startsWith(LAST) ? status.reason.slice(LAST.length) : status.reason;
+  if (!reason) return status.state === 'remote_waiting';
+  return WAITING_ON_CODIMANGO.some((re) => re.test(reason));
+}
+
+const STOPPED_AFTER_PUSH: Record<PushVerdict, string> = {
+  failed: 'Codimango: the latest push failed validation',
+  passing: 'Codimango: the latest push passes validation',
+  validating: 'Codimango is validating the latest push',
+  queued: "Codimango hasn't started validating the latest push",
+  unvalidated: "Codimango hasn't validated the latest push",
+};
+
+export interface HarvesterLine {
+  label: string;
+  /** In plain words; empty when there's nothing to add. */
+  reason: string;
+  sinceMs: number | null;
+  /** Needs the person: stuck, stopped, or Harvester is behind Codimango. */
+  attention: boolean;
+}
+
+/* How long a fresh push may take to show up on Codimango's row. */
+export const PUSH_GRACE_MS = 60 * 60_000;
+
+/**
+ * The agent line for a row, checked against Codimango: Harvester's status is
+ * its own last word, which can lag. A run still waiting while Codimango has a
+ * verdict on the latest push and nothing running says so; a stopped run says
+ * how it ended and where Codimango stands on the latest push, not its last
+ * progress line.
+ */
+export function harvesterLine(status: HarvesterTaskStatus, push: LatestPush | undefined, nowMs: number): HarvesterLine {
+  const attention = status.kind === 'stuck' || status.kind === 'stopped';
+  const waiting = waitingOnCodimango(status);
+  if ((status.kind === 'working' || status.kind === 'stuck') && waiting && (push?.verdict === 'failed' || push?.verdict === 'passing')) {
+    const verdict = push.verdict === 'failed' ? 'failed' : 'passes';
+    if (push.atMs != null && status.reasonMs != null && push.atMs > status.reasonMs) {
+      return {
+        label: harvesterLabel(status),
+        reason: `Codimango already finished validating the latest push (${verdict}); Harvester hasn't picked that up yet`,
+        sinceMs: push.atMs,
+        attention: true,
+      };
+    }
+    // The verdict predates the wait: past the grace, the push Harvester waits on never reached Codimango (or it ignored the verdict).
+    if (status.reasonMs == null || nowMs - status.reasonMs > PUSH_GRACE_MS) {
+      return {
+        label: harvesterLabel(status),
+        reason: `Harvester is waiting, but Codimango has nothing new to validate (latest push: ${verdict})`,
+        sinceMs: status.sinceMs,
+        attention: true,
+      };
+    }
+  }
+  if (status.kind === 'stopped') {
+    const ended = status.reason.startsWith(LAST) || status.reason === ENDED;
+    const last = ended ? status.reason.slice(LAST.length) : status.reason;
+    if (waiting && status.reason) {
+      const label = AFTER_PUSH.test(last) ? 'Harvester stopped after pushing a fix' : 'Harvester stopped while waiting for Codimango';
+      return { label, reason: push ? STOPPED_AFTER_PUSH[push.verdict] : '', sinceMs: status.sinceMs, attention };
+    }
+    if (ended) {
+      return { label: 'Harvester stopped before finishing', reason: last ? `Last: ${plainReason(last)}` : '', sinceMs: status.sinceMs, attention };
+    }
+  }
+  return { label: harvesterLabel(status), reason: status.reason ? plainReason(status.reason) : '', sinceMs: status.sinceMs, attention };
 }
 
 /** A reason cut to about one line, at a word boundary, with an ellipsis. */

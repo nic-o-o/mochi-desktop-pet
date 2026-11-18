@@ -50,6 +50,8 @@ const ROW_FIELDS = [
   'oraclePassCount',
   'oracleTotalCount',
   'commitSha',
+  'headCommitSha',
+  'validationCommitSha',
 ];
 
 /** Keep only what the panel mapping reads (CodimangoRow in src/mochi/codimango.ts). */
