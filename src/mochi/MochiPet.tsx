@@ -6,7 +6,7 @@ interface MochiPetProps {
   reviewFrac: number;
   /** 0..1 fill for the orange (submissions) ring — already capped by the caller. */
   subFrac: number;
-  /** A custom look (sprite data URL) drawn in place of the classic Mochi; moods still move it. */
+  /** A custom look (sprite data URL) drawn in place of the classic Mochi; each mood poses and moves it. */
   look?: string | null;
   /** Leave out the progress ring (small tiles such as My Mochis). */
   bare?: boolean;
@@ -18,6 +18,11 @@ const CY = 70;
 const BODY_SCALE = 0.85;
 /* A custom look's square, in body coordinates, centred in the ring with even room on every side. */
 const LOOK_SIZE = 82;
+/* A four-point star centred on (x, y): the happy look's sparkles. */
+const sparkle = (x: number, y: number, r: number) => {
+  const k = r / 4;
+  return `M${x} ${y - r} L${x + k} ${y - k} L${x + r} ${y} L${x + k} ${y + k} L${x} ${y + r} L${x - k} ${y + k} L${x - r} ${y} L${x - k} ${y - k} Z`;
+};
 /* Single split ring: green fills the upper half, orange the lower half.
    Arc ends stop short of the 3/9 o'clock joints so the round caps meet
    with a small gap instead of overlapping. */
@@ -41,7 +46,7 @@ export function MochiPet({ state, reviewFrac, subFrac, look, bare = false }: Moc
   const sub = Math.min(1, Math.max(0, subFrac));
   return (
     <svg
-      className={`mochi-svg mochi-${state}`}
+      className={`mochi-svg mochi-${state}${look ? ' mochi-look' : ''}`}
       /* bare tiles zoom in on the pet, since there is no ring around it */
       viewBox={bare ? '26 16 104 104' : '0 0 148 148'}
       role="img"
@@ -86,15 +91,38 @@ export function MochiPet({ state, reviewFrac, subFrac, look, bare = false }: Moc
       >
         {look ? (
           <>
-            {/* custom look: the sprite fills the body area; the zz and sweat drop still show */}
-            <image href={look} x={CX - LOOK_SIZE / 2} y={CY - LOOK_SIZE / 2} width={LOOK_SIZE} height={LOOK_SIZE} preserveAspectRatio="xMidYMid meet" />
+            {/* custom look: one picture, so each mood is a pose (outer), a motion (inner) and a small effect */}
+            <g className="look-pose">
+              <g className="look-motion">
+                <image href={look} x={CX - LOOK_SIZE / 2} y={CY - LOOK_SIZE / 2} width={LOOK_SIZE} height={LOOK_SIZE} preserveAspectRatio="xMidYMid meet" />
+              </g>
+            </g>
+            {state === 'happy' && (
+              <g className="look-effect look-sparkles" fill="#f5c542">
+                <path d={sparkle(30, 38, 6)} />
+                <path d={sparkle(118, 48, 5)} />
+                <path d={sparkle(110, 26, 3.5)} />
+              </g>
+            )}
             {state === 'sleepy' && (
-              <g>
+              <g className="look-effect look-zz">
                 <text x={100} y={40} fontSize={16} fill="#8a7f72" fontWeight="bold">z</text>
                 <text x={110} y={28} fontSize={21} fill="#8a7f72" fontWeight="bold">z</text>
               </g>
             )}
-            {state === 'nervous' && <path d="M106 52 Q110 60 105 64 Q100 60 106 52 Z" fill="#bfe3f5" stroke="#7fb8d9" strokeWidth={1.5} />}
+            {state === 'nervous' && (
+              <g className="look-effect look-sweat" fill="#bfe3f5" stroke="#7fb8d9" strokeWidth={1.5}>
+                <path d="M106 52 Q110 60 105 64 Q100 60 106 52 Z" />
+                <path d="M40 58 Q43 64 39.5 67 Q36 64 40 58 Z" />
+              </g>
+            )}
+            {state === 'focused' && (
+              <g className="look-effect look-focus" stroke="#8a7f72" strokeWidth={2.5} strokeLinecap="round">
+                <line x1={104} y1={30} x2={110} y2={22} />
+                <line x1={112} y1={40} x2={121} y2={36} />
+                <line x1={114} y1={52} x2={123} y2={52} />
+              </g>
+            )}
           </>
         ) : (
           <>

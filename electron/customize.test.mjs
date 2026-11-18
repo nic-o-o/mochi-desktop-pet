@@ -71,3 +71,64 @@ describe('customizer', () => {
     expect(await c.generate('a cat')).toEqual({ ok: false, error: { kind: 'error' } });
   });
 });
+
+describe('mood pictures', () => {
+  /* A generator that draws candidates like the fake one and moods on request. */
+  function moodGenerator(result) {
+    const calls = [];
+    const fake = createFakeGenerator({ dir: fixtures, delayMs: 0 });
+    let release;
+    const gate = new Promise((r) => (release = r));
+    return {
+      calls,
+      release: () => release(),
+      generator: {
+        kind: 'proxy',
+        generate: fake.generate,
+        drawMoods: async (args) => (calls.push(args), await gate, result),
+      },
+    };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('keeping a look draws its moods in the background with the sign-in token, then saves them', async () => {
+    const g = moodGenerator({ ok: true, moods: { happy: PNG, sleepy: PNG, nervous: PNG, focused: PNG } });
+    const logs = [];
+    const changes = [];
+    const store = createLookStore(fs.mkdtempSync(path.join(os.tmpdir(), 'looks-')));
+    const c = createCustomizer({ store, generator: g.generator, codec, logMoods: (f) => logs.push(f), onChange: (s) => changes.push(s) });
+    expect(c.moods()).toBe(true);
+    const r = await c.generate('a tiny blue dragon', { token: 'tok' });
+    const kept = c.keep(r.candidates[0].id, { token: 'tok' });
+    expect(kept.drawingMoods).toEqual([kept.currentId]);
+    expect(g.calls).toHaveLength(1);
+    expect(g.calls[0].token).toBe('tok');
+    expect(Buffer.isBuffer(g.calls[0].image)).toBe(true);
+    g.release();
+    await settle();
+    const look = store.current();
+    expect(Object.keys(look.moods).sort()).toEqual(['focused', 'happy', 'nervous', 'sleepy']);
+    expect(changes.at(-1).drawingMoods).toEqual([]);
+    expect(logs).toEqual([{ result: 'ok', duration_ms: expect.any(Number) }]);
+  });
+
+  it('can draw the moods of a look kept earlier, and logs a failure without saving anything', async () => {
+    const g = moodGenerator({ ok: false, error: { kind: 'refused' } });
+    const logs = [];
+    const store = createLookStore(fs.mkdtempSync(path.join(os.tmpdir(), 'looks-')));
+    const id = store.save({ prompt: 'a cat', png: PNG });
+    const c = createCustomizer({ store, generator: g.generator, codec, logMoods: (f) => logs.push(f) });
+    expect(c.drawMoods(id, { token: 't' }).drawingMoods).toEqual([id]);
+    c.drawMoods(id, { token: 't' }); // already drawing: not again
+    g.release();
+    await settle();
+    expect(g.calls).toHaveLength(1);
+    expect(store.list()[0].moods).toEqual({});
+    expect(logs).toEqual([{ result: 'refused', duration_ms: expect.any(Number) }]);
+  });
+
+  it('practice drawings get no moods', () => {
+    expect(make().c.moods()).toBe(false);
+  });
+});
+

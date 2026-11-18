@@ -46,9 +46,15 @@ contextBridge.exposeInMainWorld('mochiShell', {
   appSettings: () => ipcRenderer.invoke('mochi:app-settings'),
   setAppSetting: (key, value) => ipcRenderer.invoke('mochi:app-setting-set', key, value === true),
   looksState: () => ipcRenderer.invoke('mochi:looks-state'),
-  generatePet: (text) => ipcRenderer.invoke('mochi:pet-generate', text),
+  generatePet: (text, token) => ipcRenderer.invoke('mochi:pet-generate', text, token),
   cancelPetGenerate: () => ipcRenderer.invoke('mochi:pet-generate-cancel'),
-  keepLook: (candidateId) => ipcRenderer.invoke('mochi:look-keep', candidateId),
+  keepLook: (candidateId, token) => ipcRenderer.invoke('mochi:look-keep', candidateId, token),
+  drawLookMoods: (id, token) => ipcRenderer.invoke('mochi:look-draw-moods', id, token),
+  onLooksChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('mochi:looks', listener);
+    return () => ipcRenderer.removeListener('mochi:looks', listener);
+  },
   setCurrentLook: (id) => ipcRenderer.invoke('mochi:look-set-current', id),
   deleteLook: (id) => ipcRenderer.invoke('mochi:look-delete', id),
   onOpenCustomize: (callback) => {
@@ -66,6 +72,22 @@ contextBridge.exposeInMainWorld('mochiShell', {
     const listener = (_event, locked) => callback(locked);
     ipcRenderer.on('mochi:screen-lock', listener);
     return () => ipcRenderer.removeListener('mochi:screen-lock', listener);
+  },
+});
+
+// Clerk's renderer SDK (Customize Mochi sign-in) keeps its session through this
+// bridge; electron/clerkTokens.mjs answers it, encrypting tokens with the Keychain.
+// Same shape and channels as @clerk/electron/preload (0.1.12, pinned), written
+// out here because a sandboxed preload can't load npm packages.
+contextBridge.exposeInMainWorld('__clerk_internal_electron', {
+  tokenCache: {
+    getToken: (key) => ipcRenderer.invoke('clerk:token-cache:get', key),
+    saveToken: (key, value) => ipcRenderer.invoke('clerk:token-cache:save', key, value),
+    clearToken: (key) => ipcRenderer.invoke('clerk:token-cache:clear', key),
+  },
+  oauthTransport: {
+    getRedirectUrl: () => ipcRenderer.invoke('clerk:oauth-transport:get-redirect-url'),
+    open: (url) => ipcRenderer.invoke('clerk:oauth-transport:open', url),
   },
 });
 

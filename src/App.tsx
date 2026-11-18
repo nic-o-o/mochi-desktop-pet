@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   DRAG_THRESHOLD_PX,
   clampPetPosition,
@@ -27,8 +27,11 @@ import { MochiPet } from './mochi/MochiPet.tsx';
 import { AGENT_LABELS, jobsForTask, useAgentReviews } from './mochi/agentReviews.ts';
 import type { AgentId, AgentJob } from './mochi/agentReviews.ts';
 import { AgentReportView } from './mochi/AgentReportView.tsx';
-import { CustomizeView } from './mochi/CustomizeView.tsx';
-import { currentImage, useLooks } from './mochi/looks.ts';
+import { CustomizeFrame, CustomizeView } from './mochi/CustomizeView.tsx';
+import { SignInBoundary } from './mochi/SignInBoundary.tsx';
+/* Clerk's SDK is only needed when drawings go through the draw server. */
+const SignInGate = lazy(() => import('./mochi/SignInGate.tsx').then((m) => ({ default: m.SignInGate })));
+import { lookImage, useLooks } from './mochi/looks.ts';
 import { reviewUrl } from './mochi/codimango.ts';
 import {
   cancelAgentReview,
@@ -472,7 +475,6 @@ export default function App() {
     setExpandedOpen(true);
   }, [touch]);
   const looks = useLooks(openCustomize);
-  const petLook = currentImage(looks.state);
 
   function openReport(taskId: string) {
     touch();
@@ -492,6 +494,13 @@ export default function App() {
     setReportTaskId(null);
     setCustomizeOpen(false);
   }
+
+  /* The Customize Mochi panel around sign-in screens (SignInGate). */
+  const customizeFrame = (body: ReactNode) => (
+    <CustomizeFrame anchor={shell ? expandedPos : undefined} onClose={closeExpanded}>
+      {body}
+    </CustomizeFrame>
+  );
 
   const togglePanel = useCallback((via: 'pet_click' | 'keyboard') => {
     touch();
@@ -898,7 +907,7 @@ export default function App() {
             onPointerLeave={() => setHovering(false)}
             onKeyDown={handlePetKeyDown}
           >
-            <MochiPet state={drawing ? 'focused' : petState} reviewFrac={reviewFrac} subFrac={subFrac} look={petLook} />
+            <MochiPet state={drawing ? 'focused' : petState} reviewFrac={reviewFrac} subFrac={subFrac} look={lookImage(looks.state, drawing ? 'focused' : petState)} />
           </div>
           <button
             type="button"
@@ -1065,15 +1074,37 @@ export default function App() {
       {expandedOpen && (
         <div onPointerDownCapture={touch} onKeyDownCapture={touch} onWheelCapture={touch}>
         {customizeOpen ? (
-          <CustomizeView
-            anchor={shell ? expandedPos : undefined}
-            looks={looks.state}
-            reviewFrac={reviewFrac}
-            subFrac={subFrac}
-            onLooksChange={looks.apply}
-            onDrawingChange={setDrawing}
-            onClose={closeExpanded}
-          />
+          looks.state.signIn ? (
+            // Drawing through the draw server: sign in first (Clerk). Loaded only then.
+            <SignInBoundary fallback={(message) => customizeFrame(<p className="customize-error" role="alert">Sign-in couldn't start: {message}</p>)}>
+            <Suspense fallback={customizeFrame(<p className="customize-signin muted small">Loading sign-in…</p>)}>
+              <SignInGate frame={customizeFrame}>
+                {(getToken) => (
+                  <CustomizeView
+                    anchor={shell ? expandedPos : undefined}
+                    looks={looks.state}
+                    reviewFrac={reviewFrac}
+                    subFrac={subFrac}
+                    onLooksChange={looks.apply}
+                    onDrawingChange={setDrawing}
+                    onClose={closeExpanded}
+                    getToken={getToken}
+                  />
+                )}
+              </SignInGate>
+            </Suspense>
+            </SignInBoundary>
+          ) : (
+            <CustomizeView
+              anchor={shell ? expandedPos : undefined}
+              looks={looks.state}
+              reviewFrac={reviewFrac}
+              subFrac={subFrac}
+              onLooksChange={looks.apply}
+              onDrawingChange={setDrawing}
+              onClose={closeExpanded}
+            />
+          )
         ) : reportTaskId ? (
           <AgentReportView
             key={reportTaskId}

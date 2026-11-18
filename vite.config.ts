@@ -18,6 +18,9 @@ export default defineConfig({
   plugins: [react()],
   // Relative asset URLs so the packaged app can load dist/ over file://.
   base: './',
+  // Customize Mochi loads Clerk lazily. Prepare it at startup, or the dev server
+  // reloads the page the first time someone opens Customize.
+  optimizeDeps: { include: ['@clerk/electron/react'] },
   define: {
     __MOCHI_BUILD__: JSON.stringify(buildLabel()),
   },

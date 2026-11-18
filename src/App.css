@@ -232,6 +232,118 @@ body {
   75% { transform: translateX(1.6px); }
 }
 
+/* A drawn pet is one picture, so its moods show as a pose (kept with reduced
+   motion), a motion and a small effect, all larger than the classic Mochi's,
+   whose face changes instead. The ring stays still. */
+.mochi-svg.mochi-look {
+  animation: none;
+  transform: none;
+}
+
+.look-pose,
+.look-motion,
+.look-effect {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.mochi-look.mochi-chilling .look-motion {
+  animation: look-sway 3.2s ease-in-out infinite;
+}
+
+.mochi-look.mochi-happy .look-motion {
+  animation: look-hop 0.8s ease-in-out infinite;
+}
+
+.mochi-look.mochi-sleepy .look-pose {
+  transform: translateY(3px) rotate(-7deg);
+  filter: saturate(0.6) brightness(0.92);
+}
+
+.mochi-look.mochi-sleepy .look-motion {
+  animation: look-breathe 4s ease-in-out infinite;
+}
+
+.mochi-look.mochi-nervous .look-motion {
+  animation: look-shake 0.32s linear infinite;
+}
+
+.mochi-look.mochi-focused .look-pose {
+  transform: scale(1.06);
+}
+
+.mochi-look.mochi-focused .look-motion {
+  animation: look-lean 2.4s ease-in-out infinite;
+}
+
+.look-sparkles {
+  transform-origin: 50% 50%;
+  animation: look-twinkle 0.8s ease-in-out infinite;
+}
+
+.look-zz {
+  animation: look-float 2.6s ease-in-out infinite;
+}
+
+.look-sweat {
+  animation: look-drip 1.2s ease-in infinite;
+}
+
+.look-focus {
+  animation: look-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes look-sway {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(-2.5deg); }
+  50% { transform: translateY(-4px) rotate(0deg); }
+  75% { transform: translateY(-2px) rotate(2.5deg); }
+}
+
+@keyframes look-hop {
+  0%, 100% { transform: translateY(0) scale(1.05, 0.93); }
+  20% { transform: translateY(-6px) scale(0.97, 1.04); }
+  45% { transform: translateY(-12px) scale(1, 1); }
+  70% { transform: translateY(-4px) scale(0.98, 1.02); }
+}
+
+@keyframes look-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.02, 1.04); }
+}
+
+@keyframes look-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-2.5px) rotate(-2deg); }
+  75% { transform: translateX(2.5px) rotate(2deg); }
+}
+
+@keyframes look-lean {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: translateY(-1px) rotate(3deg); }
+}
+
+@keyframes look-twinkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+@keyframes look-float {
+  0% { opacity: 0; transform: translateY(4px); }
+  30%, 70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes look-drip {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(7px); }
+}
+
+@keyframes look-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
 .hide-btn {
   position: absolute;
   right: 24px;

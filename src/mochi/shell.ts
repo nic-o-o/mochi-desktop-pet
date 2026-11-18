@@ -16,9 +16,7 @@ import type {
 } from './delegations.ts';
 import type { CodimangoFetchResult } from './codimango.ts';
 import type { Sev } from './sevs.ts';
-import type { GenerateResult, LooksState, PetLook } from './looks.ts';
-
-type LooksStoreState = { looks: PetLook[]; currentId: string | null };
+import type { GenerateResult, LooksState, LooksStoreState } from './looks.ts';
 
 export interface DisplayBounds {
   x: number;
@@ -64,10 +62,15 @@ export interface MochiShell {
   /** Customize Mochi (main process): saved looks and whether pets can be drawn. */
   looksState?: () => Promise<LooksState>;
   /** Draw candidates for a description. */
-  generatePet?: (text: string) => Promise<GenerateResult>;
+  /** `token`: the Clerk session token, when drawing goes through the draw server. */
+  generatePet?: (text: string, token?: string) => Promise<GenerateResult>;
   cancelPetGenerate?: () => Promise<void>;
-  /** Save a candidate as a look and make it the pet. */
-  keepLook?: (candidateId: string) => Promise<LooksStoreState | null>;
+  /** Save a candidate as a look and make it the pet; its moods are drawn in the background. */
+  keepLook?: (candidateId: string, token?: string) => Promise<LooksStoreState | null>;
+  /** Draw a saved look's moods (one kept before moods existed, or whose drawing failed). */
+  drawLookMoods?: (id: string, token?: string) => Promise<LooksStoreState | null>;
+  /** Looks changed in the main process (moods landed); returns unsubscribe. */
+  onLooksChanged?: (callback: (state: LooksStoreState) => void) => () => void;
   /** A saved look, or null for the classic Mochi. */
   setCurrentLook?: (id: string | null) => Promise<LooksStoreState | null>;
   deleteLook?: (id: string) => Promise<LooksStoreState | null>;
@@ -219,20 +222,30 @@ export function looksState(): Promise<LooksState | null> {
   return b.looksState().catch(() => null);
 }
 
-export function generatePet(text: string): Promise<GenerateResult> {
+export function generatePet(text: string, token?: string | null): Promise<GenerateResult> {
   const b = bridge();
   if (!b?.generatePet) return Promise.resolve({ ok: false, error: { kind: 'error' } });
-  return b.generatePet(text).catch(() => ({ ok: false, error: { kind: 'error' } }));
+  return b.generatePet(text, token ?? undefined).catch(() => ({ ok: false, error: { kind: 'error' } }));
 }
 
 export function cancelPetGenerate(): void {
   void bridge()?.cancelPetGenerate?.().catch(() => {});
 }
 
-export function keepLook(candidateId: string): Promise<LooksStoreState | null> {
+export function keepLook(candidateId: string, token?: string | null): Promise<LooksStoreState | null> {
   const b = bridge();
   if (!b?.keepLook) return Promise.resolve(null);
-  return b.keepLook(candidateId).catch(() => null);
+  return b.keepLook(candidateId, token ?? undefined).catch(() => null);
+}
+
+export function drawLookMoods(id: string, token?: string | null): Promise<LooksStoreState | null> {
+  const b = bridge();
+  if (!b?.drawLookMoods) return Promise.resolve(null);
+  return b.drawLookMoods(id, token ?? undefined).catch(() => null);
+}
+
+export function onLooksChanged(callback: (state: LooksStoreState) => void): () => void {
+  return bridge()?.onLooksChanged?.(callback) ?? (() => {});
 }
 
 export function setCurrentLook(id: string | null): Promise<LooksStoreState | null> {

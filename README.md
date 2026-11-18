@@ -110,6 +110,52 @@ title, opened in the last week; only SEVs opened in the last day bubble. Titles
 about security holes or personal data are left out, so they never pop up on a
 shared screen. If `meta` is missing or the read fails, Mochi stays quiet.
 
+## Customize Mochi (sign-in and the draw server)
+
+Customize Mochi draws a new look from a description. Real drawings go through
+Mochi's draw server (`server/`), which holds the Model API key so the app never
+ships one. People sign in with Clerk (email code) on the Ember lab's Clerk app,
+and the server only draws for members of its **Codimango Companion**
+organization, with per-person and overall daily limits. The image model gets
+only the description and a SHA-256 of the Clerk user ID. Clerk sign-in is only
+for drawing: Codimango data still comes from the `codimango` CLI under your own
+login, which never leaves the Mac. Keeping a pet also redraws it happy,
+sleepy, nervous and focused (an edit of the kept picture, about 30 seconds in
+the background), so it changes its face with its mood; that set counts as one
+drawing.
+
+**From source** (the server runs on your Mac with the Model API key from your
+Keychain under `mochi-model-api`):
+
+```
+CLERK_PUBLISHABLE_KEY=pk_test_cGlja2VkLWJ1bGxkb2ctODg4OC5jbGVyay5hY2NvdW50cy5kZXYk \
+MOCHI_ORG_ID=org_3MDK53AuMTJALY1oggNVDkqFndl MOCHI_MODEL=muse node server/main.mjs
+MOCHI_PET_GENERATOR=proxy npm run desktop      # in a second terminal
+```
+
+Without `MOCHI_PET_GENERATOR`, Customize uses practice drawings. A packaged
+build can be tried against that server with
+`MOCHI_DRAW_URL=http://127.0.0.1:8787 out/Mochi-darwin-arm64/Mochi.app/Contents/MacOS/Mochi`.
+
+**Adding a tester** (AMT → Applied AI Labs → Platform → Infrastructure → Clerk →
+Ember, Development):
+
+1. Configure → User & authentication → Access mode: add their email to the
+   allowlist (many @meta.com addresses are already on it).
+2. They open Customize Mochi and sign in once with the emailed code; that
+   creates their account and shows "not on Mochi's tester list yet".
+3. Organizations → Codimango Companion → Members: add them.
+4. They sign out in Customize and sign in again, then draw.
+
+Labs policy allows about 10 testers on the Development instance; past 100
+people is company-wide dogfooding and needs Phase 2 approval.
+
+**Packaged builds** keep Customize hidden until the draw server is deployed
+(behind Ember's dogfooding domain and its gate) and `DRAW_URL` in
+`electron/clerkConfig.mjs` names it; sign-in tokens only go to https. The
+instance's allowed origins must list `mochi://renderer` (and
+`http://localhost:5173` for development).
+
 ## Install as a Mac app (one-click download)
 
 Download **`Mochi.dmg`** from the latest release

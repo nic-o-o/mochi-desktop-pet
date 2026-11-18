@@ -23,7 +23,7 @@
  * "Delegate to agent" launches Green on the devserver instead
  * (electron/delegate.mjs).
  */
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, safeStorage, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -57,8 +57,10 @@ import {
 } from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
-import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
+import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererCsp, rendererResponse } from './rendererProtocol.mjs';
+import { CLERK_PUBLISHABLE_KEY, frontendApiHost } from './clerkConfig.mjs';
 import { MARKER_FILE, migrateRendererStorage } from './storageMigration.mjs';
+import { createTokenStore, registerClerkBridge } from './clerkTokens.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
@@ -164,8 +166,9 @@ function createWindow() {
     },
   });
   // The window only ever shows Mochi: no navigating away, no new windows (links go to the browser).
+  // Within the app, only loads that keep `?mochi-shell=1`: without it the page is the browser preview.
   win.webContents.on('will-navigate', (event, url) => {
-    if (!isAppNavigation(url, DEV_URL)) event.preventDefault();
+    if (!isAppNavigation(url, DEV_URL) || new URL(url).searchParams.get('mochi-shell') !== '1') event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedLink(url)) void shell.openExternal(url);
@@ -189,8 +192,12 @@ function createWindow() {
   // Permanent observability: bridge/render proof in the terminal.
   win.webContents.on('console-message', (event) => {
     const message = event.message;
-    if (typeof message === 'string' && message.startsWith('[mochi]')) {
+    if (typeof message !== 'string') return;
+    if (message.startsWith('[mochi]')) {
       console.log('[renderer]', message);
+    } else if (DEV_URL && (event.level === 'error' || event.level === 'warning')) {
+      // From source, renderer errors (such as Clerk failing to load) land in the terminal too.
+      console.warn(`[renderer ${event.level}]`, message.slice(0, 2000));
     }
   });
 
@@ -374,10 +381,23 @@ ipcMain.handle('mochi:app-setting-set', (_event, key, value) => {
   if (app.isPackaged) setDockMenu();
   return appSettings();
 });
-ipcMain.handle('mochi:looks-state', () => ({ available: customizer?.available() ?? false, practice: customizer?.practice() ?? false, ...(customizer?.state() ?? { looks: [], currentId: null }) }));
-ipcMain.handle('mochi:pet-generate', (_event, text) => customizer?.generate(String(text ?? '')) ?? { ok: false, error: { kind: 'error' } });
+ipcMain.handle('mochi:looks-state', () => ({
+  available: customizer?.available() ?? false,
+  practice: customizer?.practice() ?? false,
+  signIn: customizer?.signIn() ?? false,
+  moods: customizer?.moods() ?? false,
+  ...(customizer?.state() ?? { looks: [], currentId: null }),
+}));
+/* The Clerk session token rides along per request (draw server only); the main process never stores it. */
+const clerkToken = (token) => (typeof token === 'string' && token.length < 8192 ? token : null);
+ipcMain.handle(
+  'mochi:pet-generate',
+  (_event, text, token) => customizer?.generate(String(text ?? ''), { token: clerkToken(token) }) ?? { ok: false, error: { kind: 'error' } },
+);
 ipcMain.handle('mochi:pet-generate-cancel', () => customizer?.cancel());
-ipcMain.handle('mochi:look-keep', (_event, candidateId) => customizer?.keep(String(candidateId ?? '')) ?? null);
+/* Keeping a look draws its moods in the background; they arrive as mochi:looks. */
+ipcMain.handle('mochi:look-keep', (_event, candidateId, token) => customizer?.keep(String(candidateId ?? ''), { token: clerkToken(token) }) ?? null);
+ipcMain.handle('mochi:look-draw-moods', (_event, id, token) => customizer?.drawMoods(String(id ?? ''), { token: clerkToken(token) }) ?? null);
 ipcMain.handle('mochi:look-set-current', (_event, id) => customizer?.setCurrent(typeof id === 'string' ? id : null) ?? null);
 ipcMain.handle('mochi:look-delete', (_event, id) => customizer?.remove(String(id ?? '')) ?? null);
 
@@ -457,9 +477,14 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
-  protocol.handle(SCHEME, (request) => rendererResponse(DIST_DIR, request.url, fs.promises.readFile));
-  // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai.
-  // Packaged builds keep Customize hidden until the key-holding proxy exists (B3).
+  // Clerk's sources join the renderer's CSP only while Customize signs in (drawing through the draw server).
+  protocol.handle(SCHEME, (request) =>
+    rendererResponse(DIST_DIR, request.url, fs.promises.readFile, rendererCsp(customizer?.signIn() ? frontendApiHost(CLERK_PUBLISHABLE_KEY) : null)),
+  );
+  // Customize Mochi's Clerk sign-in keeps its session here (Keychain-encrypted).
+  registerClerkBridge(ipcMain, createTokenStore({ file: path.join(app.getPath('userData'), 'clerk-tokens.json'), safeStorage, fs }));
+  // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai|proxy.
+  // Packaged builds draw through the draw server once it's deployed (DRAW_URL), else hide Customize.
   const pets = pickGenerator({
     packaged: app.isPackaged,
     env: process.env,
@@ -473,6 +498,8 @@ app.whenReady().then(() => {
     generator: pets.generator,
     codec: imageCodec,
     log: (fields) => events?.log({ event_name: 'mochi_pet_generate', source: pets.generator?.kind, ...fields }),
+    logMoods: (fields) => events?.log({ event_name: 'mochi_pet_generate', kind: 'moods', source: pets.generator?.kind, ...fields }),
+    onChange: (state) => win?.webContents.send('mochi:looks', state),
   });
   if (app.isPackaged) {
     console.log(`[mochi] logging to ${installFileLog(app.getPath('logs'))}`);

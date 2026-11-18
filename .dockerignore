@@ -1,0 +1,8 @@
+# Only what server/Dockerfile copies.
+*
+!server/
+!electron/petGenerator.mjs
+!electron/looks.mjs
+!electron/clerkConfig.mjs
+server/*.test.mjs
+server/Dockerfile

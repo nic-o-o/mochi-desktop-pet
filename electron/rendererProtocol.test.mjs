@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CSP, ORIGIN, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse, resolveRendererFile } from './rendererProtocol.mjs';
+import { CSP, ORIGIN, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererCsp, rendererResponse, resolveRendererFile } from './rendererProtocol.mjs';
 
 const DIST = path.resolve('/app/dist');
 
@@ -86,5 +86,22 @@ describe('policy and navigation', () => {
     const calls = [];
     registerRendererScheme({ registerSchemesAsPrivileged: (s) => calls.push(s) });
     expect(calls[0][0]).toMatchObject({ scheme: 'mochi', privileges: { standard: true, secure: true, supportFetchAPI: true } });
+  });
+});
+
+describe('rendererCsp', () => {
+  it('stays strict without sign-in, and adds only Clerk\'s documented sources with it', async () => {
+    expect(rendererCsp(null)).toBe(CSP);
+    const csp = rendererCsp('picked-bulldog-8888.clerk.accounts.dev');
+    const directive = (name) => csp.split('; ').find((d) => d.startsWith(`${name} `));
+    expect(directive('script-src')).toBe("script-src 'self' 'unsafe-inline' https://picked-bulldog-8888.clerk.accounts.dev https://challenges.cloudflare.com https://*.protect.clerk.com");
+    expect(directive('connect-src')).toContain('https://picked-bulldog-8888.clerk.accounts.dev');
+    expect(directive('img-src')).toBe("img-src 'self' data: https://img.clerk.com");
+    expect(directive('frame-src')).toContain('https://challenges.cloudflare.com');
+    expect(csp).not.toContain('unsafe-eval');
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    const res = await rendererResponse('/dist', STORAGE_PAGE, async () => Buffer.from(''), csp);
+    expect(res.headers.get('Content-Security-Policy')).toBe(csp);
   });
 });

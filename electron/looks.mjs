@@ -1,7 +1,8 @@
 /* Saved pet looks (main process): userData/pet-looks/.
  *
- * One folder per look holding look.json ({ id, createdAtMs, prompt }) and
- * base.png (the sprite), plus a `current` file naming the active look; no file
+ * One folder per look holding look.json ({ id, createdAtMs, prompt }),
+ * base.png (the sprite) and, once drawn, mood-<mood>.png for each of its moods
+ * (MOODS), plus a `current` file naming the active look; no file
  * (or "classic") means the classic Mochi. The prompt stays on this Mac so "My
  * Mochis" can show it; it is never logged. A look that can't be read is
  * skipped, and a current look that can't be read falls back to classic.
@@ -9,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { MOODS } from './petGenerator.mjs';
 
 export const MAX_LOOKS = 30;
 const MAX_PNG_BYTES = 2 * 1024 * 1024;
@@ -38,7 +40,16 @@ export function createLookStore(root, { fsImpl = fs, now = Date.now, newId = () 
       const meta = JSON.parse(fsImpl.readFileSync(path.join(dirOf(id), 'look.json'), 'utf8'));
       const png = fsImpl.readFileSync(path.join(dirOf(id), 'base.png'));
       if (meta?.id !== id || !isPng(png)) return null;
-      return { id, createdAtMs: Number(meta.createdAtMs) || 0, prompt: String(meta.prompt ?? ''), image: dataUrl(png) };
+      const moods = {};
+      for (const mood of MOODS) {
+        try {
+          const m = fsImpl.readFileSync(path.join(dirOf(id), `mood-${mood}.png`));
+          if (isPng(m)) moods[mood] = dataUrl(m);
+        } catch {
+          /* not drawn (yet) */
+        }
+      }
+      return { id, createdAtMs: Number(meta.createdAtMs) || 0, prompt: String(meta.prompt ?? ''), image: dataUrl(png), moods };
     } catch {
       return null;
     }
@@ -98,6 +109,12 @@ export function createLookStore(root, { fsImpl = fs, now = Date.now, newId = () 
       const keep = new Set([currentId(), id]);
       for (const old of list().slice(MAX_LOOKS)) if (!keep.has(old.id)) fsImpl.rmSync(dirOf(old.id), { recursive: true, force: true });
       return id;
+    },
+    /** Save a look's picture for one mood; false for an unknown look, mood or a bad image. */
+    saveMood(id, mood, png) {
+      if (!MOODS.includes(mood) || !isPng(png) || !read(id)) return false;
+      fsImpl.writeFileSync(path.join(dirOf(id), `mood-${mood}.png`), png);
+      return true;
     },
     /** Make a look the pet, or null for classic. Unknown ids change nothing. */
     setCurrent(id) {
