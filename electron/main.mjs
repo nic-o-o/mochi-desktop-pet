@@ -23,11 +23,12 @@
  * "Delegate to agent" launches Green on the devserver instead
  * (electron/delegate.mjs).
  */
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAddedSkills, createAgentReviews, listReviewSkills, resolveReviewSkill } from './agentReview.mjs';
 import {
   checkDelegateStatus,
@@ -56,10 +57,15 @@ import {
 } from './harvester.mjs';
 import { createLookStore } from './looks.mjs';
 import { pickGenerator } from './petGenerator.mjs';
+import { ORIGIN, SCHEME, STORAGE_PAGE, isAppNavigation, registerRendererScheme, rendererResponse } from './rendererProtocol.mjs';
+import { MARKER_FILE, migrateRendererStorage } from './storageMigration.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* null in the packaged app: load the built files instead of the Vite server. */
 const DEV_URL = process.env.MOCHI_DEV_URL ?? (app.isPackaged ? null : 'http://localhost:5173/');
+/* The packaged renderer lives at mochi://renderer/ (see rendererProtocol.mjs); the scheme must be registered before ready. */
+const DIST_DIR = path.join(here, '..', 'dist');
+registerRendererScheme(protocol);
 const SYNC_WARN_MS = 5000;
 const SIMULATE_ACCELERATOR = 'CommandOrControl+Shift+M';
 const RESOURCE_SAMPLE_MS = 60 * 60_000;
@@ -120,6 +126,21 @@ function showOnAllDesktops(target) {
   target.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 }
 
+/* True while the storage migration's hidden pages are the only windows: closing them must not quit Mochi. */
+let migratingStorage = false;
+
+/** An invisible, sandboxed page with no preload, for the storage migration. */
+async function openHiddenPage(url) {
+  const page = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  try {
+    await page.loadURL(url);
+  } catch (err) {
+    page.destroy();
+    throw err;
+  }
+  return { run: (js) => page.webContents.executeJavaScript(js), close: () => page.destroy() };
+}
+
 function createWindow() {
   win = new BrowserWindow({
     ...defaultBounds(),
@@ -136,7 +157,19 @@ function createWindow() {
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(here, 'preload.cjs'),
+      // Electron's defaults, stated so they can't drift: the renderer gets no Node and runs sandboxed.
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
     },
+  });
+  // The window only ever shows Mochi: no navigating away, no new windows (links go to the browser).
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAppNavigation(url, DEV_URL)) event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedLink(url)) void shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   win.setAlwaysOnTop(true, 'floating');
@@ -150,7 +183,7 @@ function createWindow() {
   if (DEV_URL) {
     win.loadURL(`${DEV_URL}${DEV_URL.includes('?') ? '&' : '?'}mochi-shell=1`);
   } else {
-    win.loadFile(path.join(here, '..', 'dist', 'index.html'), { query: { 'mochi-shell': '1' } });
+    win.loadURL(`${ORIGIN}/index.html?mochi-shell=1`);
   }
 
   // Permanent observability: bridge/render proof in the terminal.
@@ -424,6 +457,7 @@ function setDockMenu() {
 
 app.whenReady().then(() => {
   if (!isPrimary) return;
+  protocol.handle(SCHEME, (request) => rendererResponse(DIST_DIR, request.url, fs.promises.readFile));
   // Practice drawings from source by default; a real model with MOCHI_PET_GENERATOR=muse|openai.
   // Packaged builds keep Customize hidden until the key-holding proxy exists (B3).
   const pets = pickGenerator({
@@ -478,7 +512,21 @@ app.whenReady().then(() => {
   setTimeout(flush, 60_000).unref();
   setInterval(flush, FLUSH_MS).unref();
   setInterval(sampleResources, RESOURCE_SAMPLE_MS).unref();
-  createWindow();
+  /* Packaged builds moved from file:// to mochi://renderer: carry saved settings over once, before the pet appears. */
+  migratingStorage = !DEV_URL;
+  void (DEV_URL ? Promise.resolve() : migrateRendererStorage({
+    markerPath: path.join(app.getPath('userData'), MARKER_FILE),
+    legacyUrl: pathToFileURL(path.join(here, 'legacy-storage.html')).href,
+    targetUrl: STORAGE_PAGE,
+    openHidden: openHiddenPage,
+    fs: fs.promises,
+    log: (line) => console.log(line),
+  }))
+    .catch((err) => console.warn('[mochi] storage migration failed:', err))
+    .finally(() => {
+      createWindow();
+      migratingStorage = false;
+    });
   // `screen` is unusable before ready — this must live in here, not at module scope.
   for (const event of ['display-metrics-changed', 'display-added', 'display-removed']) {
     screen.on(event, () => win?.webContents.send('mochi:display-changed'));
@@ -513,6 +561,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  if (migratingStorage) return;
   // Quit everywhere (including macOS) — a pet with no windows is just
   // a dock icon, and the prototype has no tray menu yet.
   app.quit();
