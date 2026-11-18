@@ -113,7 +113,7 @@ export interface Scenario {
     /** Customize Mochi: whether this build can draw pets, saved looks by description, and which is current. */
     customize?: { available?: boolean; looks?: string[]; current?: number };
     /** A Harvester board on this Mac: its status per task name. */
-    harvester?: Record<string, { kind: HarvesterTaskStatus['kind']; reason?: string; state?: string; intent?: 'revive' | 'revision' }>;
+    harvester?: Record<string, { kind: HarvesterTaskStatus['kind']; reason?: string; state?: string; intent?: 'revive' | 'revision'; reason_ago_h?: number }>;
   };
   steps: Step[];
 }
@@ -319,7 +319,8 @@ export async function runScenario(file: ScenarioFile, sc: Scenario): Promise<voi
           runId: `run-${taskName}`,
           intent: g.intent ?? 'revive',
           restartCount: 0,
-          sinceMs: now - 5 * 60_000,
+          sinceMs: g.reason_ago_h === undefined ? now - 5 * 60_000 : now - g.reason_ago_h * 3_600_000,
+          reasonMs: g.reason_ago_h === undefined ? null : now - g.reason_ago_h * 3_600_000,
           startedMs: now - 60 * 60_000,
           taskName,
           base: 'http://127.0.0.1:44101',

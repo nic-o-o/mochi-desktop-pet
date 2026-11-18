@@ -108,6 +108,8 @@ export function mapRun(run) {
     intent: str(run?.intent) === 'revision' ? 'revision' : 'revive',
     restartCount: restarts,
     sinceMs: latestMs([run?.last_progress_at, detail.at, run?.moved_at, run?.lifecycle_started_at, run?.ended_at, run?.started_at]),
+    /* When Harvester wrote the reason, so the panel can tell a "waiting for validation" from before Codimango's verdict. */
+    reasonMs: epochMs(detail.at),
     startedMs: epochMs(run?.started_at),
   };
 }

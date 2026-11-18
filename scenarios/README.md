@@ -40,6 +40,7 @@ Rows are shorthand; times are relative to when the test runs:
 | `validation`, `failed_checks`, `errored_checks`, `oracle` | `passing` / `failed` / `pending`; failed check labels; checks that errored (infra); `"1/3"` |
 | `due_in_h`, `claimed_ago_h`, `pooled_ago_h`, `reviewed_ago_h`, `updated_ago_h` | Hours ahead / ago |
 | `warned_ago_d`, `failing_since_d`, `escalation` | Stale-archive warning, failing since (days), escalation level |
+| `commit` | `validated`: Codimango's verdict is for the latest push; `unvalidated`: the latest push is newer than the validated commit. Left out, Mochi can't tell |
 
 Snapshot-level `age_min` makes a saved snapshot older (default 0).
 

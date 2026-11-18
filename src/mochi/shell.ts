@@ -420,6 +420,8 @@ export interface HarvesterTaskStatus {
   intent: 'revive' | 'revision';
   restartCount: number;
   sinceMs: number | null;
+  /** When Harvester wrote its reason; null when it's not from this run. */
+  reasonMs?: number | null;
   startedMs: number | null;
   taskName: string;
   base: string;
